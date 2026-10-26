@@ -1,9 +1,9 @@
 // Page du ladder : lit le JSONL, calcule le classement, affiche les parties et le replay.
 // Serveur : la balise meta scoreboard-server (posée par le workflow GitHub Pages), sinon le site qui
 // sert la page. Données : ?data=URL, sinon <serveur>/data/games.jsonl.
-// ?session=, ?team= et ?game= suivent les choix de la page : l'adresse se partage telle quelle.
+// ?session=, ?team=, ?window= et ?game= suivent les choix de la page : l'adresse se partage telle quelle.
 
-import { computeRatings, moveTimes, parseJsonl, percentile, sessions, START, versions } from './elo.js'
+import { computeRatings, moveTimes, parseJsonl, percentile, sessions, since, START, versions } from './elo.js'
 import { BLACK, DESTROYED, positions, RED, SIZE, squareName } from './replay.js'
 
 const params = new URLSearchParams(location.search)
@@ -18,6 +18,9 @@ const GLOBAL = ''
 const SESSION = params.get('session') ?? GLOBAL
 const TEAM = params.get('team') ?? GLOBAL
 const GAME = params.get('game')
+// Fenêtres de la courbe Elo en ms ; une valeur absente vaut « Tout ».
+const WINDOWS = { '1h': 36e5, '24h': 864e5, '7j': 6048e5 }
+const WINDOW = params.get('window') ?? GLOBAL
 
 const $ = (id) => document.getElementById(id)
 
@@ -236,12 +239,21 @@ function renderChart(ratings) {
     const found = query() ? ratings.filter((r) => matches(r.team)) : []
     const r = found.find((r) => r.team.toLowerCase() === query()) ?? (found.length === 1 ? found[0] : null)
     $('elo-chart').hidden = !r
-    if (!r) {
+    const w = document.querySelector('#elo-window input:checked')?.value
+    const { start, points: recent } = r ? since(r.history, Date.now() - (WINDOWS[w] ?? Infinity)) : { points: [] }
+    $('elo-plot').hidden = !recent.length
+    if (!recent.length) {
         chart.points = []
+        if (r)
+            $('elo-caption').replaceChildren(
+                el('strong', {}, `${Math.round(start)} Elo`),
+                ' aucune partie dans cette fenêtre'
+            )
         return
     }
     const byId = new Map(games.map((g) => [g.id, g]))
-    const points = [{ rating: START }, ...r.history.map((h) => ({ ...h, game: byId.get(h.id) }))]
+    const before = recent.length < r.history.length
+    const points = [{ rating: start, before }, ...recent.map((h) => ({ ...h, game: byId.get(h.id) }))]
     const values = points.map((p) => p.rating)
     const min = Math.min(...values)
     const max = Math.max(...values)
@@ -287,8 +299,9 @@ function placeCursor(i) {
         parts.push(el('span', {}, context))
         text += `${d ? ` (${signed(d)})` : ''},${context}`
     } else {
-        parts.push(el('span', {}, ` départ de ${team}`))
-        text += `, départ de ${team}`
+        const context = p.before ? ' début de la fenêtre' : ` départ de ${team}`
+        parts.push(el('span', {}, context))
+        text += `,${context}`
     }
     $('elo-caption').replaceChildren(...parts)
     $('elo-plot').setAttribute('aria-valuenow', String(chart.index))
@@ -485,6 +498,12 @@ for (const [id, event] of [
     })
 }
 $('share').addEventListener('click', share)
+for (const input of document.querySelectorAll('#elo-window input'))
+    input.checked = input.value === (WINDOW in WINDOWS ? WINDOW : GLOBAL)
+$('elo-window').addEventListener('change', (e) => {
+    setParam('window', e.target.value)
+    render()
+})
 
 const plot = $('elo-plot')
 const pointAt = (e) => {

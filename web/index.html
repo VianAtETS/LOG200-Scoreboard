@@ -153,6 +153,12 @@
                     <div id="elo-cursor" class="elo-cursor"></div>
                     <div id="elo-dot" class="elo-dot"></div>
                 </div>
+                <div id="elo-window" class="elo-window" role="radiogroup" aria-label="Fenêtre de la courbe">
+                    <label><input type="radio" name="window" value="1h" />1 h</label>
+                    <label><input type="radio" name="window" value="24h" />24 h</label>
+                    <label><input type="radio" name="window" value="7j" />7 j</label>
+                    <label><input type="radio" name="window" value="" checked />Tout</label>
+                </div>
             </figure>
             <ol id="games" class="scroll games-list" tabindex="-1"></ol>
         </section>

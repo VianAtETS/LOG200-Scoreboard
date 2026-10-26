@@ -9,6 +9,7 @@ import {
     percentile,
     PROVISIONAL_GAMES,
     sessions,
+    since,
     START,
     versions,
 } from './elo.js'
@@ -136,4 +137,14 @@ test('replay squares follow server indices', () => {
     assert.equal(last[squareIndex('D', 7)], DESTROYED)
     assert.equal(last[squareIndex('G', 2)], DESTROYED)
     assert.ok(steps[1].opening && !steps[2].opening)
+})
+
+test('since starts from the rating just before the cutoff', () => {
+    const [r] = computeRatings([game('a', 'z', 'red'), game('a', 'z', 'red'), game('a', 'z', 'red')]).filter(
+        (r) => r.team === 'a'
+    )
+    const at = (i) => Date.parse(r.history[i].ts)
+    assert.deepEqual(since(r.history, -Infinity), { start: START, points: r.history })
+    assert.deepEqual(since(r.history, at(1)), { start: r.history[0].rating, points: r.history.slice(1) })
+    assert.deepEqual(since(r.history, at(2) + 1), { start: r.history[2].rating, points: [] })
 })

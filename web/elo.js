@@ -122,3 +122,10 @@ export function sessions(games) {
     }
     return [...latest.entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1)).map(([s]) => s)
 }
+
+// Historique d'une equipe a partir de `cutoff` (ms) : rating juste avant, puis les entrees suivantes.
+export function since(history, cutoff) {
+    const i = history.findIndex((h) => Date.parse(h.ts) >= cutoff)
+    const first = i === -1 ? history.length : i
+    return { start: history[first - 1]?.rating ?? START, points: history.slice(first) }
+}
