@@ -4,9 +4,6 @@ name: Release
 permissions:
   contents: read
 
-# Pousser un tag vX.Y.Z publie une release avec les binaires pour Linux, Windows et macOS, l'archive
-# de deploiement (deploy/), et l'image du ladder sur GHCR. Lance a la main (workflow_dispatch), le
-# workflow construit tout sans rien publier.
 on:
   push:
     tags:
@@ -14,33 +11,22 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-image:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-22.04
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-22.04-arm
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             docker: amd64
+            cross: false
           - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
             docker: arm64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          # Mac Intel, compile depuis le runner Apple Silicon : pas de tests.
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            cross: true
 
-    steps:
+    steps: &build-steps
       - name: Checkout code
         uses: actions/checkout@v7
 
@@ -57,7 +43,6 @@ jobs:
       - name: Build bot
         run: cargo build --profile bot --locked --target ${{ matrix.target }} --bin isolation-bot
 
-      # L'image du ladder reprend ces binaires, ladder compris, un dossier par architecture Docker.
       - name: Build ladder
         if: ${{ matrix.docker }}
         run: |
@@ -101,9 +86,31 @@ jobs:
           path: isolation-${{ matrix.target }}.*
           if-no-files-found: error
 
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            docker: ''
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            cross: true
+
+    steps: *build-steps
+
   image:
     name: Ladder image
-    needs: build
+    needs: build-image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,7 +127,6 @@ jobs:
           path: prebuilt
           merge-multiple: true
 
-      # Encore utile pour les etapes RUN (apt, apk) de l'image arm64.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -135,7 +141,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # Nom en minuscules, comme dans deploy/compose.yml.
       - name: Image tags
         id: meta
         uses: docker/metadata-action@v5
@@ -160,7 +165,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: [build, image]
+    needs: [build, build-image, image]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
