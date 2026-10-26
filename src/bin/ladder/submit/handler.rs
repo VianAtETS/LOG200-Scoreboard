@@ -5,7 +5,7 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -120,16 +120,16 @@ impl RateLimiter {
 pub struct Submissions {
     arena: Arc<Arena>,
     submit: SubmitConfig,
-    limiter: RateLimiter,
+    limiter: Mutex<RateLimiter>,
 }
 
 impl Submissions {
     pub fn new(arena: Arc<Arena>, submit: SubmitConfig) -> Self {
-        let limiter = RateLimiter::new(Duration::from_secs(submit.min_interval_s));
+        let limiter = Mutex::new(RateLimiter::new(Duration::from_secs(submit.min_interval_s)));
         Self { arena, submit, limiter }
     }
 
-    pub fn handle(&mut self, request: Request<'_, impl Read>) -> Result<Accepted, SubmitError> {
+    pub fn handle(&self, request: Request<'_, impl Read>) -> Result<Accepted, SubmitError> {
         match (request.method, request.url) {
             (Method::Get, "/api/health") => return Ok(Accepted::Health),
             (Method::Put | Method::Post, "/api/submit") => {}
@@ -141,14 +141,19 @@ impl Submissions {
         if fs::read(self.submit.current_jar(&team)).is_ok_and(|active| short_hash(&active) == hash) {
             return Ok(Accepted::AlreadyActive(hash));
         }
-        self.limiter
+        self.limiter()
             .acquire(&team, Instant::now())
             .map_err(SubmitError::TooSoon)?;
         let outcome = self.test_and_install(&team, &hash, &jar);
         if matches!(outcome, Err(SubmitError::Ladder(_))) {
-            self.limiter.release(&team);
+            self.limiter().release(&team);
         }
         outcome
+    }
+
+    /// Tenu le temps d'un `acquire` ou d'un `release` : les smoke tests attendent leur tour dans `Arena`.
+    fn limiter(&self) -> MutexGuard<'_, RateLimiter> {
+        self.limiter.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn authenticate(&self, authorization: Option<&str>) -> Result<TeamId, SubmitError> {
@@ -288,7 +293,7 @@ mod tests {
 
     #[test]
     fn routing_and_authentication() {
-        let (mut submissions, token) = submissions("routing");
+        let (submissions, token) = submissions("routing");
         let health = Request {
             method: &Method::Get,
             url: "/api/health",
@@ -316,7 +321,7 @@ mod tests {
 
     #[test]
     fn active_jar_is_not_tested_again() {
-        let (mut submissions, token) = submissions("active");
+        let (submissions, token) = submissions("active");
         let id: TeamId = "eq07".parse().unwrap();
         let current = submissions.submit.current_jar(&id);
         fs::create_dir_all(current.parent().unwrap()).unwrap();
@@ -327,7 +332,7 @@ mod tests {
 
     #[test]
     fn ladder_failure_is_logged_and_does_not_count_against_the_team() {
-        let (mut submissions, token) = submissions("ladder-error");
+        let (submissions, token) = submissions("ladder-error");
         let bearer = format!("Bearer {token}");
         for _ in 0..2 {
             let error = submissions.handle(put(&bearer, JAR)).unwrap_err();

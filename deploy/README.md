@@ -46,6 +46,8 @@ Hors du périmètre de ce compose : placer le reverse proxy de votre choix (Cadd
 
 Pour un pic de visiteurs (des centaines à la fois), un CDN comme Cloudflare absorbe la charge. Le serveur marque `/data/*` `Cache-Control: public, max-age=15`, le rythme de rafraîchissement de la page. Cloudflare ne met pas en cache les `.json` et `.jsonl` par défaut : ajouter une Cache Rule sur le chemin `/data/*`, « Eligible for cache », durée en cache de l'origine respectée. Le serveur sert alors chaque fichier une fois par 15 s et par point de présence, peu importe l'audience.
 
+Attention à `/api/submit` : Cloudflare coupe une requête sans réponse après 100 s (erreur 524), alors qu'un smoke test attend la partie en cours et les soumissions précédentes, ce qui peut prendre plusieurs minutes. Le ladder poursuit quand même : un 524 veut dire « verdict inconnu », pas « refusé » (voir `jars/submissions.jsonl` ou la version affichée sur la page). Pour que la CI reçoive toujours le verdict, faire pointer son `LADDER_URL` vers un nom d'hôte non proxifié (nuage gris dans Cloudflare) qui mène au même serveur.
+
 ## Page sur GitHub Pages (optionnel)
 
 La page reste servie par ce compose, mais elle peut aussi être publiée sur GitHub Pages : une modification de `web/` est alors en ligne à chaque push sur `main`, sans tag ni redémarrage du ladder. Elle lit toujours les parties et l'API sur ce serveur, qui doit donc être en HTTPS (section précédente).

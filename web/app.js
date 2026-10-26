@@ -150,7 +150,7 @@ function follow() {
     const team = searchedTeam()
     if (team !== followed.team) followed = { team, offset: null, rows: [] }
     const state = followed
-    following = following.catch(() => {}).then(() => (state.team ? tail(teamUrl(state.team), state) : false))
+    following = following.catch(() => { }).then(() => (state.team ? tail(teamUrl(state.team), state) : false))
     return following
 }
 
@@ -278,9 +278,9 @@ function renderChart(ratings, rows, key) {
     $('elo-chart').hidden = !r
     const history = r
         ? rows.map((g) => {
-              const [rating, delta] = (g.red.team === r.team ? g.red : g.black)[key]
-              return { id: g.id, ts: g.ts, rating, delta, game: g }
-          })
+            const [rating, delta] = (g.red.team === r.team ? g.red : g.black)[key]
+            return { id: g.id, ts: g.ts, rating, delta, game: g }
+        })
         : []
     const w = document.querySelector('#elo-window input:checked')?.value
     const { start, points: recent } = r ? since(history, Date.now() - (WINDOWS[w] ?? Infinity)) : { points: [] }
@@ -615,7 +615,7 @@ async function setupSubmit() {
         const file = $('submit-file').files[0]
         $('submit-button').disabled = true
         status.dataset.state = 'pending'
-        status.textContent = 'Parties de test en cours, jusqu’à deux minutes…'
+        status.textContent = "Parties de test en cours : une à deux minutes, plus si d'autres soumissions attendent…"
         try {
             const res = await fetch(`${API}/submit`, {
                 method: 'PUT',

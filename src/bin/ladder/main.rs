@@ -11,7 +11,7 @@ mod standings;
 mod submit;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::thread;
@@ -34,6 +34,7 @@ use submit::TeamId;
 /// Pause après une partie annulée : une config cassée ne doit pas faire tourner le ladder à vide.
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 const IDLE_DELAY: Duration = Duration::from_secs(10);
+const LOG_RETENTION: Duration = Duration::from_hours(90 * 24);
 
 #[derive(Parser)]
 #[command(
@@ -94,6 +95,7 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut scheduler = Scheduler::from_history(&history.games, &cfg.session);
     let mut standings = Standings::from_history(cfg.data_dir(), &history.games, &history.at)
         .with_context(|| cfg.data_dir().display().to_string())?;
+    drop(history);
 
     let arena = Arc::new(Arena::new(cfg));
     arena.sweep();
@@ -146,6 +148,7 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
             }
         }
         scheduler.record(&a.id, &b.id, 2);
+        prune_logs(&logs, LOG_RETENTION);
         thread::sleep(Duration::from_secs(cfg.pause_s));
     }
     Ok(())
@@ -164,4 +167,46 @@ fn roster(cfg: &Config) -> Vec<Team> {
         }
     }
     teams
+}
+
+/// Supprime les journaux plus vieux que `retention`. Un échec ne doit pas arrêter le ladder.
+fn prune_logs(dir: &Path, retention: Duration) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age > retention));
+        if old {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prune_logs_removes_only_old_files() {
+        let dir = std::env::temp_dir().join(format!("isolation-logs-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let (old, new) = (dir.join("old.log"), dir.join("new.log"));
+        fs::write(&old, "").unwrap();
+        fs::write(&new, "").unwrap();
+        let week_ago = std::time::SystemTime::now() - Duration::from_hours(8 * 24);
+        fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(week_ago)
+            .unwrap();
+        prune_logs(&dir, LOG_RETENTION);
+        assert!(!old.exists());
+        assert!(new.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
