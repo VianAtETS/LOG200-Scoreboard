@@ -50,11 +50,13 @@ pub enum Verdict {
     Error(GameError),
 }
 
+pub const SMOKE_OPPONENT: &str = "test-aleatoire";
+
 pub fn smoke_test(arena: &Arena, submit: &SubmitConfig, id: &TeamId, jar: &Path) -> Verdict {
     let cfg = arena.config();
     let candidate = cfg.team_with_jar(id, jar);
     let opponent = Team {
-        id: "test-aleatoire".into(),
+        id: SMOKE_OPPONENT.into(),
         cmd: submit.opponent.clone(),
         build: None,
         anchor: false,

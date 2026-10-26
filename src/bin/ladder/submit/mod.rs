@@ -14,6 +14,7 @@ use anyhow::anyhow;
 
 pub use auth::{DEFAULT_TEAMS, RegistryError, TeamId, add_team};
 use handler::{Request, Submissions};
+pub use smoke::SMOKE_OPPONENT;
 
 use crate::arena::Arena;
 use crate::config::{Config, Team};

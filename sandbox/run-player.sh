@@ -3,7 +3,7 @@
 # lecture seule, et seulement la socket de sa couleur. Les variables SANDBOX_* viennent de la section
 # [sandbox] de ladder.toml.
 # Usage : run-player.sh GAME SIDE PORT FICHIER.jar
-#         run-player.sh GAME SIDE PORT --bot random|greedy
+#         run-player.sh GAME SIDE PORT --bot random|greedy|aleatoire|niveau-1|niveau-2|niveau-3
 set -euo pipefail
 game=$1 side=$2 port=$3
 shift 3

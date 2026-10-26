@@ -33,6 +33,7 @@ Pour que chaque push sur `main` soumette le jar, ajouter [`templates/ladder.yml`
 | Suivre les parties | `docker compose logs -f ladder` |
 | Voir les soumissions | `jars/submissions.jsonl` (verdict et raison de chaque refus) |
 | Retirer une équipe | supprimer sa ligne dans `jars/teams.toml` et son dossier `jars/<équipe>/` |
+| Changer le temps par coup | `time_ms` dans `ladder.toml`, puis `docker compose restart ladder` ; les bots `niveau-N` suivent le temps annoncé |
 | Mettre à jour | `docker compose pull && docker compose up -d` |
 | Fixer une version | `SCOREBOARD_TAG=v0.2.0 docker compose up -d` |
 | Arrêter | `docker compose down` (les parties restent dans `data/`) |

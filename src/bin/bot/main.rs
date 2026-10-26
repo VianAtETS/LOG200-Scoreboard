@@ -14,6 +14,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 
 use isolation::board::{Board, Color, Move, SIZE};
+use isolation::cpu;
 use isolation::protocol::{LineConn, Outcome, RecvError, ServerMsg};
 use isolation::rules;
 use isolation::strategy::Strategy;
@@ -36,9 +37,13 @@ struct Cli {
     /// Graine du hasard, pour rejouer une partie à l'identique.
     #[arg(long)]
     seed: Option<u64>,
+    #[arg(long, default_value_t = 50)]
+    margin_ms: u64,
     /// Envoie d'abord, à chaque tour, un coup que notre moteur refuse.
     #[arg(long)]
     probe_illegal: bool,
+    #[arg(long, value_enum)]
+    expect: Option<Strategy>,
     #[arg(long, default_value_t = 30_000)]
     connect_timeout_ms: u64,
     /// Affiche les messages échangés.
@@ -65,6 +70,9 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: &Cli) -> anyhow::Result<Report> {
+    if cli.expect.is_some_and(|s| s != Strategy::Niveau1) {
+        bail!("--expect : seul niveau-1 se vérifie coup par coup");
+    }
     let rng = cli.seed.map_or_else(rand::make_rng, StdRng::seed_from_u64);
     let conn = connect(&cli.host, cli.port, Duration::from_millis(cli.connect_timeout_ms))?;
     let mut client = Client {
@@ -72,7 +80,9 @@ fn run(cli: &Cli) -> anyhow::Result<Report> {
             conn,
             strategy: cli.strategy,
             rng,
+            margin: Duration::from_millis(cli.margin_ms),
             probe: cli.probe_illegal,
+            expect: cli.expect.is_some(),
             verbose: cli.verbose,
         },
         report: Report::default(),
@@ -99,6 +109,7 @@ fn connect(host: &str, port: u16, timeout: Duration) -> anyhow::Result<LineConn>
 struct Report {
     games: u32,
     checked: u32,
+    expected: u32,
     mismatches: Vec<String>,
     probes_rejected: u32,
     probes_accepted: Vec<String>,
@@ -116,11 +127,17 @@ impl Report {
 
 impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "bilan : {} partie(s), {} coups adverses vérifiés",
+            self.games, self.checked
+        )?;
+        if self.expected > 0 {
+            write!(f, " ({} comparés au niveau 1)", self.expected)?;
+        }
         writeln!(
             f,
-            "bilan : {} partie(s), {} coups adverses vérifiés, {} divergence(s), sondes refusées {} / acceptées {}",
-            self.games,
-            self.checked,
+            ", {} divergence(s), sondes refusées {} / acceptées {}",
             self.mismatches.len(),
             self.probes_rejected,
             self.probes_accepted.len()
@@ -154,10 +171,21 @@ struct Game {
     last_own: Option<Move>,
     probed_this_turn: bool,
     turn: usize,
+    budget: Duration,
+    deadline: Instant,
+    search: SearchStats,
+    opponent_moves: Vec<(Board, Move)>,
+}
+
+#[derive(Default)]
+struct SearchStats {
+    moves: u32,
+    fallbacks: u32,
+    deepest: u8,
 }
 
 impl Game {
-    fn new(color: Color) -> Self {
+    fn new(color: Color, budget: Duration) -> Self {
         Self {
             board: Board::initial(),
             color,
@@ -165,12 +193,17 @@ impl Game {
             last_own: None,
             probed_this_turn: false,
             turn: 0,
+            budget,
+            deadline: Instant::now() + budget,
+            search: SearchStats::default(),
+            opponent_moves: Vec::new(),
         }
     }
 
     fn new_turn(&mut self) {
         self.turn += 1;
         self.probed_this_turn = false;
+        self.deadline = Instant::now() + self.budget;
     }
 
     /// Le serveur a accepté le coup en attente.
@@ -193,7 +226,28 @@ impl Game {
         if !rules::is_legal(&self.board, self.color.other(), mv) {
             report.mismatch(format!("coup adverse jugé illégal : {mv}\n{}", self.board));
         }
+        self.opponent_moves.push((self.board.clone(), mv));
         self.board.apply(mv);
+    }
+
+    fn check_level_1(&self, report: &mut Report) {
+        let before = report.mismatches.len();
+        for (board, mv) in &self.opponent_moves {
+            report.expected += 1;
+            let accepted = cpu::accepted_moves(board, self.color.other());
+            if !accepted.contains(mv) {
+                let accepted: Vec<String> = accepted.iter().map(Move::to_string).collect();
+                report.mismatch(format!(
+                    "coup {mv} hors des coups du niveau 1 ({})\n{board}",
+                    accepted.join(" ")
+                ));
+            }
+        }
+        eprintln!(
+            "niveau 1 : {} coups comparés, {} divergence(s)",
+            self.opponent_moves.len(),
+            report.mismatches.len() - before
+        );
     }
 
     fn check_end(&self, outcome: Outcome, report: &mut Report) {
@@ -212,13 +266,13 @@ struct Player {
     conn: LineConn,
     strategy: Strategy,
     rng: StdRng,
+    margin: Duration,
     probe: bool,
+    expect: bool,
     verbose: bool,
 }
 
 impl Player {
-    /// Une sonde au plus par tour, puis notre coup. Si le serveur refuse un vrai coup, c'est une
-    /// divergence : on rejoue, et le serveur finira par déclarer un timeout.
     fn play(&mut self, game: &mut Game, report: &mut Report) -> anyhow::Result<()> {
         if self.probe && !game.probed_this_turn {
             game.probed_this_turn = true;
@@ -226,11 +280,19 @@ impl Player {
                 return self.send(game, Pending::Probe(mv, kind));
             }
         }
-        let Some(mv) = self.strategy.choose(&game.board, game.color, &mut self.rng) else {
+        let Some(choice) = self
+            .strategy
+            .choose(&game.board, game.color, game.deadline, &mut self.rng)
+        else {
             report.mismatch(format!("demande de coup sans coup légal\n{}", game.board));
             return Ok(());
         };
-        self.send(game, Pending::Move(mv))
+        if let Some(depth) = choice.depth {
+            game.search.moves += 1;
+            game.search.fallbacks += u32::from(depth == 0);
+            game.search.deepest = game.search.deepest.max(depth);
+        }
+        self.send(game, Pending::Move(choice.mv))
     }
 
     fn send(&mut self, game: &mut Game, pending: Pending) -> anyhow::Result<()> {
@@ -280,7 +342,8 @@ impl Client {
                     bail!("plateau {rows}x{cols} non géré");
                 }
                 eprintln!("nouvelle partie : {color}, {time_ms} ms");
-                self.game = Some(Game::new(color));
+                let budget = Duration::from_millis(time_ms).saturating_sub(self.player.margin);
+                self.game = Some(Game::new(color, budget));
             }
             ServerMsg::Board { color, board } => {
                 let game = self.game.as_mut().context("plateau reçu avant le message 0")?;
@@ -317,8 +380,18 @@ impl Client {
                     game.opponent_move(mv, &mut self.report);
                 }
                 game.check_end(outcome, &mut self.report);
+                if self.player.expect {
+                    game.check_level_1(&mut self.report);
+                }
                 self.report.games += 1;
                 eprintln!("fin : {outcome} ({} cases détruites)", game.board.destroyed());
+                let search = &game.search;
+                if search.moves > 0 {
+                    eprintln!(
+                        "recherche : {} coups, profondeur max {}, {} au hasard faute de temps",
+                        search.moves, search.deepest, search.fallbacks
+                    );
+                }
             }
         }
         Ok(())

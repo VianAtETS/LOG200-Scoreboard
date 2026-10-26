@@ -10,6 +10,7 @@ mod schedule;
 mod standings;
 mod submit;
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -105,8 +106,9 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut rng = rand::rng();
     let mut round = 0;
     let mut waiting = false;
+    let mut warned = HashSet::new();
     while rounds.is_none_or(|n| round < n) {
-        let teams = roster(cfg);
+        let teams = roster(cfg, &mut warned);
         let Some((a, b)) = scheduler.next_pair(&teams, &mut rng) else {
             if !waiting {
                 eprintln!("en attente d'au moins deux équipes ({} pour l'instant)", teams.len());
@@ -155,14 +157,25 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
 }
 
 /// Équipes de `[[team]]`, puis les équipes inscrites qui n'y figurent pas.
-fn roster(cfg: &Config) -> Vec<Team> {
+fn roster(cfg: &Config, warned: &mut HashSet<String>) -> Vec<Team> {
     let mut teams = cfg.teams.clone();
     let registered = submit::active_teams(cfg).unwrap_or_else(|e| {
         eprintln!("équipes inscrites ignorées : {e}");
         Vec::new()
     });
     for team in registered {
-        if !teams.iter().any(|t| t.id == team.id) {
+        let fixed = teams.iter().any(|t| t.id == team.id);
+        if (fixed || team.id == submit::SMOKE_OPPONENT) && warned.insert(team.id.clone()) {
+            if fixed {
+                eprintln!(
+                    "équipe inscrite {} ignorée : une équipe fixe de la config a le même id",
+                    team.id
+                );
+            } else {
+                eprintln!("équipe inscrite {} : même id que l'adversaire du smoke test", team.id);
+            }
+        }
+        if !fixed {
             teams.push(team);
         }
     }
@@ -207,6 +220,38 @@ mod tests {
         prune_logs(&dir, LOG_RETENTION);
         assert!(!old.exists());
         assert!(new.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn registered_team_named_like_a_fixed_team_is_reported_once() {
+        let dir = std::env::temp_dir().join(format!("isolation-roster-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let toml = format!(
+            "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\n\
+             [submit]\nteams = {teams:?}\njars = {jars:?}\n\
+             [[team]]\nid = \"niveau-1\"\ncmd = [\"bot\"]\n",
+            teams = dir.join("teams.toml"),
+            jars = dir.join("jars"),
+        );
+        let cfg: Config = toml.parse().unwrap();
+        let submit = cfg.submit.clone().unwrap();
+        for id in ["niveau-1", "eq01", submit::SMOKE_OPPONENT] {
+            let id: TeamId = id.parse().unwrap();
+            submit::add_team(&submit.teams, id.clone()).unwrap();
+            let jar = submit.current_jar(&id);
+            fs::create_dir_all(jar.parent().unwrap()).unwrap();
+            fs::write(jar, "").unwrap();
+        }
+        let mut warned = HashSet::new();
+        for _ in 0..2 {
+            let ids: Vec<String> = roster(&cfg, &mut warned).into_iter().map(|t| t.id).collect();
+            assert_eq!(ids, ["niveau-1", "eq01", submit::SMOKE_OPPONENT]);
+        }
+        assert_eq!(
+            warned,
+            HashSet::from(["niveau-1".into(), submit::SMOKE_OPPONENT.into()])
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

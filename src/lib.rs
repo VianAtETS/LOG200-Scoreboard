@@ -2,6 +2,7 @@
 //! dans docs/formats.md.
 
 pub mod board;
+pub mod cpu;
 pub mod notation;
 pub mod protocol;
 pub mod record;

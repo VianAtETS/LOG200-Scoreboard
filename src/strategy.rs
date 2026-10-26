@@ -1,9 +1,12 @@
-//! Stratégies des bots de test, pour faire tourner le ladder sans jars d'équipes.
+//! Stratégies des bots : bots de test, et répliques du CPU du serveur officiel (`cpu`).
+
+use std::time::Instant;
 
 use rand::Rng;
 use rand::seq::IndexedRandom;
 
 use crate::board::{Board, Color, Move};
+use crate::cpu::{self, Choice, Level};
 use crate::rules::{self, mobility};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
@@ -13,14 +16,30 @@ pub enum Strategy {
     /// Gagne tout de suite si possible, sinon maximise sa mobilité moins celle de l'adversaire ;
     /// hasard entre les ex aequo.
     Greedy,
+    /// CPU "Aléatoire" du serveur officiel : un coup légal au hasard, comme `random`.
+    #[value(name = "aleatoire")]
+    Aleatoire,
+    /// CPU "Niveau 1" du serveur officiel : minimax alpha-bêta, deux demi-coups après le sien.
+    #[value(name = "niveau-1")]
+    Niveau1,
+    /// CPU "Niveau 2" du serveur officiel : le même minimax, approfondi tant que le temps le permet.
+    #[value(name = "niveau-2")]
+    Niveau2,
+    /// CPU "Niveau 3" du serveur officiel : negamax avec table de transposition, approfondi tant que
+    /// le temps le permet ; tient aussi compte du bord et des cases voisines libres.
+    #[value(name = "niveau-3")]
+    Niveau3,
 }
 
 impl Strategy {
-    pub fn choose(self, board: &Board, color: Color, rng: &mut impl Rng) -> Option<Move> {
-        let moves = rules::legal_moves(board, color);
+    pub fn choose(self, board: &Board, color: Color, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
+        let unsearched = |mv| Choice { mv, depth: None };
         match self {
-            Self::Random => moves.choose(rng).copied(),
-            Self::Greedy => greedy(board, color, &moves, rng),
+            Self::Random | Self::Aleatoire => rules::legal_moves(board, color).choose(rng).copied().map(unsearched),
+            Self::Greedy => greedy(board, color, &rules::legal_moves(board, color), rng).map(unsearched),
+            Self::Niveau1 => cpu::choose(board, color, Level::One, deadline, rng),
+            Self::Niveau2 => cpu::choose(board, color, Level::Two, deadline, rng),
+            Self::Niveau3 => cpu::choose(board, color, Level::Three, deadline, rng),
         }
     }
 }
@@ -50,17 +69,21 @@ fn greedy(board: &Board, color: Color, moves: &[Move], rng: &mut impl Rng) -> Op
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::board::test_support::diagram;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
     #[test]
-    fn both_strategies_play_legal_moves() {
+    fn all_strategies_play_legal_moves() {
+        use clap::ValueEnum;
         let b = Board::initial();
         let mut rng = StdRng::seed_from_u64(1);
-        for s in [Strategy::Random, Strategy::Greedy] {
-            let m = s.choose(&b, Color::Red, &mut rng).unwrap();
+        for &s in Strategy::value_variants() {
+            let deadline = Instant::now() + Duration::from_millis(200);
+            let m = s.choose(&b, Color::Red, deadline, &mut rng).unwrap().mv;
             assert!(rules::is_legal(&b, Color::Red, m), "{s:?}");
         }
     }
@@ -83,7 +106,10 @@ mod tests {
              ............",
         );
         let mut rng = StdRng::seed_from_u64(1);
-        let m = Strategy::Greedy.choose(&b, Color::Red, &mut rng).unwrap();
+        let m = Strategy::Greedy
+            .choose(&b, Color::Red, Instant::now(), &mut rng)
+            .unwrap()
+            .mv;
         let mut after = b.clone();
         after.apply(m);
         assert_eq!(rules::winner_after(&after, Color::Red), Some(Color::Red), "{m}");
@@ -104,8 +130,9 @@ mod tests {
                     Strategy::Random
                 };
                 let m = s
-                    .choose(&b, turn, &mut rng)
-                    .expect("le joueur au trait a toujours un coup");
+                    .choose(&b, turn, Instant::now(), &mut rng)
+                    .expect("le joueur au trait a toujours un coup")
+                    .mv;
                 b.apply(m);
                 if let Some(w) = rules::winner_after(&b, turn) {
                     break w;
@@ -121,6 +148,8 @@ mod tests {
     fn parses_names() {
         use clap::ValueEnum;
         assert_eq!(Strategy::from_str("greedy", false), Ok(Strategy::Greedy));
+        assert_eq!(Strategy::from_str("aleatoire", false), Ok(Strategy::Aleatoire));
+        assert_eq!(Strategy::from_str("niveau-2", false), Ok(Strategy::Niveau2));
         assert!(Strategy::from_str("2", false).is_err());
     }
 }

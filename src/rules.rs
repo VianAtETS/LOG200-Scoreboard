@@ -45,22 +45,21 @@ fn destroy_rings(destroyed: u32) -> &'static [RangeInclusive<i8>] {
     }
 }
 
+fn targets(
+    board: &Board,
+    from: Square,
+    to: Square,
+    opponent: Square,
+    ring: RangeInclusive<i8>,
+) -> impl Iterator<Item = Square> + '_ {
+    DIRS.into_iter()
+        .flat_map(move |(dx, dy)| ring.clone().map_while(move |k| opponent.offset(dx * k, dy * k)))
+        .filter(move |&target| target != to && (target == from || board.is_empty(target)))
+}
+
 fn push_moves(board: &Board, from: Square, opponent: Square, ring: RangeInclusive<i8>, out: &mut Vec<Move>) {
     destinations(board, from, |to| {
-        for (dx, dy) in DIRS {
-            for k in ring.clone() {
-                let Some(target) = opponent.offset(dx * k, dy * k) else {
-                    break;
-                };
-                if target != to && (target == from || board.is_empty(target)) {
-                    out.push(Move {
-                        from,
-                        to,
-                        destroyed: target,
-                    });
-                }
-            }
-        }
+        out.extend(targets(board, from, to, opponent, ring.clone()).map(|destroyed| Move { from, to, destroyed }));
     });
 }
 
@@ -87,8 +86,17 @@ pub fn is_legal(board: &Board, color: Color, mv: Move) -> bool {
     mv.from == board.pawn(color) && legal_moves(board, color).contains(&mv)
 }
 
+/// Comme `!legal_moves(..).is_empty()`, sans construire la liste.
 pub fn has_moves(board: &Board, color: Color) -> bool {
-    !legal_moves(board, color).is_empty()
+    let from = board.pawn(color);
+    let opponent = board.pawn(color.other());
+    destroy_rings(board.destroyed()).iter().any(|ring| {
+        let mut found = false;
+        destinations(board, from, |to| {
+            found = found || targets(board, from, to, opponent, ring.clone()).next().is_some();
+        });
+        found
+    })
 }
 
 /// Après un coup de `mover`, il gagne si l'adversaire n'a plus aucun coup : pas de nulle.
@@ -382,6 +390,49 @@ mod tests {
         assert!(!has_moves(&board, Color::Red));
         assert_eq!(winner_after(&board, Color::Black), Some(Color::Black));
         assert_eq!(winner_after(&board, Color::Red), None);
+    }
+
+    #[test]
+    fn mobile_player_without_target_has_no_moves() {
+        // 20 cases détruites : l'anneau 1..=2 autour de A12 est entièrement détruit. Rouge peut
+        // bouger, mais n'a rien à détruire.
+        let board = diagram(
+            "B##.........
+             ##..........
+             #.#.........
+             ............
+             ............
+             ......R.....
+             ############
+             ##..........
+             ............
+             ............
+             ............
+             ............",
+        );
+        assert_eq!(board.destroyed(), 20);
+        assert!(mobility(&board, Color::Red) > 0);
+        assert!(!has_moves(&board, Color::Red));
+    }
+
+    #[test]
+    fn has_moves_matches_legal_moves() {
+        let mut rng = StdRng::seed_from_u64(3);
+        for _ in 0..20 {
+            let mut board = Board::initial();
+            let mut turn = Color::Red;
+            while let Some(&mv) = legal_moves(&board, turn).choose(&mut rng) {
+                board.apply(mv);
+                turn = turn.other();
+                for color in [Color::Red, Color::Black] {
+                    assert_eq!(
+                        has_moves(&board, color),
+                        !legal_moves(&board, color).is_empty(),
+                        "\n{board}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

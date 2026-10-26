@@ -4,11 +4,17 @@
 #
 # Pour developper sans Docker, lancer l'arbitre et les joueurs directement :
 #   referee = ["target/release/isolation-referee", "--port", "{port}", "--time-ms", "{time_ms}", "--opening", "{opening}"]
-#   cmd = ["target/bot/isolation-bot", "--strategy", "greedy", "--port", "{port}"]
+#   cmd = ["target/bot/isolation-bot", "--strategy", "niveau-1", "--port", "{port}"]
 # et retirer cleanup. Les jars tournent alors sans aucune isolation.
 
 # Arbitre : n'importe quel programme qui respecte le contrat (docs/formats.md).
-referee = ["sandbox/run-referee.sh", "{game}", "{port}", "{time_ms}", "{opening}"]
+referee = [
+    "sandbox/run-referee.sh",
+    "{game}",
+    "{port}",
+    "{time_ms}",
+    "{opening}",
+]
 port = 8888
 time_ms = 500
 session = "ladder-2026-11"
@@ -66,8 +72,49 @@ min_interval_s = 300
 # Equipes fixes, en plus des equipes inscrites. Dans cmd, {port}, {game} et {side} (red ou black)
 # sont remplaces. `anchor = true` fige le rating a 1500.
 [[team]]
-id = "glouton"
-cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "--bot", "greedy"]
+id = "aleatoire"
+cmd = [
+    "sandbox/run-player.sh",
+    "{game}",
+    "{side}",
+    "{port}",
+    "--bot",
+    "aleatoire",
+]
+
+[[team]]
+id = "niveau-1"
+cmd = [
+    "sandbox/run-player.sh",
+    "{game}",
+    "{side}",
+    "{port}",
+    "--bot",
+    "niveau-1",
+]
+anchor = true
+
+[[team]]
+id = "niveau-2"
+cmd = [
+    "sandbox/run-player.sh",
+    "{game}",
+    "{side}",
+    "{port}",
+    "--bot",
+    "niveau-2",
+]
+
+[[team]]
+id = "niveau-3"
+cmd = [
+    "sandbox/run-player.sh",
+    "{game}",
+    "{side}",
+    "{port}",
+    "--bot",
+    "niveau-3",
+]
 
 # [[team]]
 # id = "eq01"
