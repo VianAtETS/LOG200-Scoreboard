@@ -1,6 +1,7 @@
 //! `GameResult` est ce que l'arbitre écrit sur stdout, `GameRecord` la ligne du JSONL, complétée
 //! par le ladder. Les lignes de version inconnue sont ignorées.
 
+use std::ops::Range;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -124,18 +125,26 @@ pub struct SkippedLine {
 #[derive(Debug, Default)]
 pub struct Jsonl {
     pub games: Vec<GameRecord>,
+    pub at: Vec<Range<u64>>,
     pub skipped: Vec<SkippedLine>,
 }
 
 impl Jsonl {
     pub fn parse(text: &str) -> Self {
         let mut jsonl = Self::default();
-        for (index, line) in text.lines().enumerate() {
+        let mut offset = 0;
+        for (index, raw) in text.split_inclusive('\n').enumerate() {
+            let start = offset;
+            offset += raw.len() as u64;
+            let line = raw.trim_end_matches(['\n', '\r']);
             if line.trim().is_empty() {
                 continue;
             }
             match parse_line(line) {
-                Ok(game) => jsonl.games.push(game),
+                Ok(game) => {
+                    jsonl.games.push(game);
+                    jsonl.at.push(start..offset);
+                }
                 Err(reason) => jsonl.skipped.push(SkippedLine {
                     line: index + 1,
                     reason,
@@ -225,6 +234,7 @@ mod tests {
         let text = format!("{line}\n{{\"v\":2}}\n{}", &line[..line.len() / 2]);
         let jsonl = Jsonl::parse(&text);
         assert_eq!(jsonl.games, vec![sample()]);
+        assert_eq!((jsonl.at.len(), jsonl.at[0].clone()), (1, 0..line.len() as u64 + 1));
         assert_eq!(jsonl.skipped.iter().map(|s| s.line).collect::<Vec<_>>(), [2, 3]);
         assert!(matches!(jsonl.skipped[0].reason, SkipReason::Version(Some(2))));
         assert!(matches!(jsonl.skipped[1].reason, SkipReason::Json(_)));

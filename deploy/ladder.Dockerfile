@@ -13,7 +13,6 @@ RUN cargo build --release --locked \
     --bin isolation-ladder --bin isolation-referee --bin isolation-check
 RUN cargo build --profile bot --locked --bin isolation-bot
 
-# Copy all binaries into artifacts directory
 FROM scratch AS build
 COPY --from=compile /src/target/release/isolation-ladder \
     /src/target/release/isolation-referee \

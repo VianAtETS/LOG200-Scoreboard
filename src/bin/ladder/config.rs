@@ -103,8 +103,13 @@ impl FromStr for Config {
 }
 
 impl Config {
+    /// Dossier de `out`, servi à la page : `summary.json` et `teams/` y sont écrits.
+    pub fn data_dir(&self) -> &Path {
+        self.out.parent().unwrap_or(Path::new("."))
+    }
+
     pub fn logs_dir(&self) -> PathBuf {
-        self.out.parent().unwrap_or(Path::new(".")).join("logs")
+        self.data_dir().join("logs")
     }
 
     pub fn game_timeout(&self) -> Duration {

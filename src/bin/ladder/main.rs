@@ -7,6 +7,7 @@ mod config;
 mod digest;
 mod journal;
 mod schedule;
+mod standings;
 mod submit;
 
 use std::fs;
@@ -27,6 +28,7 @@ use arena::Arena;
 use config::{Config, Team};
 use journal::append_jsonl;
 use schedule::Scheduler;
+use standings::Standings;
 use submit::TeamId;
 
 /// Pause après une partie annulée : une config cassée ne doit pas faire tourner le ladder à vide.
@@ -87,9 +89,11 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let logs = cfg.logs_dir();
     fs::create_dir_all(&logs).with_context(|| logs.display().to_string())?;
     let history = fs::read_to_string(&cfg.out)
-        .map(|text| Jsonl::parse(&text).games)
+        .map(|text| Jsonl::parse(&text))
         .unwrap_or_default();
-    let mut scheduler = Scheduler::from_history(&history, &cfg.session);
+    let mut scheduler = Scheduler::from_history(&history.games, &cfg.session);
+    let mut standings = Standings::from_history(cfg.data_dir(), &history.games, &history.at)
+        .with_context(|| cfg.data_dir().display().to_string())?;
 
     let arena = Arc::new(Arena::new(cfg));
     arena.sweep();
@@ -121,7 +125,10 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
         for (red, black) in [(a, b), (b, a)] {
             match arena.play(red, black, &opening) {
                 Ok(record) => {
-                    append_jsonl(&cfg.out, &record).with_context(|| cfg.out.display().to_string())?;
+                    let at = append_jsonl(&cfg.out, &record).with_context(|| cfg.out.display().to_string())?;
+                    if let Err(e) = standings.record(&record, at) {
+                        eprintln!("   classement non publié : {e}");
+                    }
                     let result = &record.result;
                     eprintln!(
                         "   {} (rouge) contre {} (noir) : {} gagne ({:?}, {} coups)",

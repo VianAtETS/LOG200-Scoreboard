@@ -1,6 +1,6 @@
 # Ladder Isolation : contrat de l'arbitre et format des parties
 
-Le ladder dépend de deux interfaces. La première permet de remplacer notre arbitre (`isolation-referee`) par une autre implémentation, par exemple la CLI C++ du serveur officiel. La seconde est le seul fichier que lit la page web. Les deux sont en version 1.
+Le ladder dépend de deux interfaces. La première permet de remplacer notre arbitre (`isolation-referee`) par une autre implémentation, par exemple la CLI C++ du serveur officiel. La seconde est le fichier des parties, dont le ladder tire aussi ce que lit la page web. Les deux sont en version 1.
 
 ```mermaid
 flowchart LR
@@ -9,6 +9,7 @@ flowchart LR
     red[client rouge]
     black[client noir]
     jsonl[(data/games.jsonl)]
+    page[("data/summary.json<br/>data/teams/")]
     web[web/index.html]
 
     ladder -- lance --> referee
@@ -18,7 +19,9 @@ flowchart LR
     black <-- TCP --> referee
     referee -- "1 objet JSON (stdout)" --> ladder
     ladder -- ajoute une ligne --> jsonl
-    jsonl -- fetch --> web
+    ladder -- classement, historiques --> page
+    page -- fetch --> web
+    jsonl -- "une partie (Range)" --> web
 ```
 
 ## Contrat de l'arbitre
@@ -128,6 +131,34 @@ Une ligne JSON par partie terminée, en ajout seul. Chaque ligne reprend l'objet
 - `build` : les 16 premiers caractères hexadécimaux du sha256 du jar. Un nouveau hash correspond à une nouvelle soumission : le rating est conservé mais repasse en K provisoire.
 - `anchor` (absent par défaut) : joueur de référence dont le rating reste à 1500. Sans ancre, le classement est relatif entre les équipes.
 - Chaque ligne part en une seule écriture suivie d'un flush. Un lecteur peut donc tomber sur une dernière ligne incomplète ; la page et `isolation-check` l'ignorent, comme les versions inconnues.
+
+## Fichiers de la page (`data/summary.json`, `data/teams/`)
+
+La page ne lit jamais `games.jsonl` en entier : en fin de session, il pèse des centaines de Mo. Le ladder calcule le classement Elo et les temps par coup, et publie à côté de `games.jsonl` :
+
+- `summary.json`, réécrit après chaque partie (fichier temporaire puis renommage) :
+  - `sessions` : la plus récente d'abord ;
+  - `builds` : builds de chaque équipe dans l'ordre d'apparition, pour le badge vN ;
+  - `scopes` : `""` pour toutes les sessions, puis une clé par session. Chacune donne `games` (nombre), `time_ms` (temps alloués), `ratings` (classement, meilleur d'abord) et `recent` (50 dernières parties).
+- `teams/<équipe>.jsonl` : une ligne par partie de l'équipe, en ajout seul comme `games.jsonl`. La page le suit quand la recherche désigne une seule équipe : courbe Elo et liste de ses parties.
+
+Une ligne de partie (dans `recent` et `teams/`) reprend la partie sans les coups :
+
+```json
+{
+  "v": 1, "id": "20261024T142103.512Z-eq07-eq12", "ts": "2026-10-24T14:21:03.512Z",
+  "session": "ladder-2026-11", "time_ms": 500, "winner": "red", "reason": "no_moves",
+  "moves": 48, "duration_ms": 15100,
+  "red": { "team": "eq07", "build": "3fa9c2d1e0b4a7f6", "all": [1520.0, 20.0], "session": [1520.0, 20.0] },
+  "black": { "team": "eq12", "all": [1480.0, -20.0], "session": [1480.0, -20.0] },
+  "at": [0, 912]
+}
+```
+
+- `all` et `session` : rating après la partie et variation, toutes sessions confondues puis dans la session de la partie.
+- `at` : position et longueur de la ligne complète dans `games.jsonl`. Le replay la lit avec `Range: bytes=<début>-<fin>`.
+- Une ligne de `ratings` : `team`, `rating`, `games`, `wins`, `losses`, `anchor`, `provisional`, `build`, `last` (dernière partie), et `pace` (absent sans temps mesurés) : `p50`, `p95`, `p99`, `max` et `count` des temps par coup du build courant, `limit` le plus petit temps alloué.
+- Au démarrage, le ladder réécrit `teams/` et `summary.json` à partir de `games.jsonl`. Une équipe dont le nom n'est pas fait de lettres, chiffres, `-` et `_` (64 au plus) n'a pas de fichier d'équipe.
 
 ## Protocole des clients
 
@@ -251,4 +282,6 @@ npx http-server . -p 8000                   # ou python3 -m http.server 8000
 # puis ouvrir http://localhost:8000/web/
 ```
 
-La page lit `../data/games.jsonl` par défaut (une autre source se passe avec `web/?data=URL`) et se rafraîchit toutes les 15 secondes. Après la première lecture, elle ne demande que les nouvelles lignes (en-tête `Range`). Un serveur qui ignore `Range`, comme `python3 -m http.server`, renvoie le fichier entier à chaque fois : ça fonctionne, mais sans le gain.
+La page lit le dossier `../data` par défaut (un autre dossier se passe avec `web/?data=URL`) et se rafraîchit toutes les 15 secondes. Les fichiers qu'elle lit sont écrits par le ladder : pour regarder un `games.jsonl` sans lancer de parties, `isolation-ladder ladder.toml --rounds 0` les génère, avec `out` qui pointe vers ce fichier.
+
+Elle lit les fichiers d'équipe et les parties du replay par morceaux (en-tête `Range`). Un serveur qui ignore `Range`, comme `python3 -m http.server`, renvoie le fichier entier : ça fonctionne, mais sans le gain.

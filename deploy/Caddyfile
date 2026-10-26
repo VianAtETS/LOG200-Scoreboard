@@ -5,13 +5,13 @@
 	# La page peut aussi etre servie ailleurs (GitHub Pages). Origine libre : aucun cookie, le token
 	# d'equipe passe en en-tete Authorization, que seul l'appelant connait.
 	encode zstd gzip
-	@cors path /api/* /data/games.jsonl
+	@cors path /api/* /data/*
 	header @cors Access-Control-Allow-Origin *
-	# La page relit games.jsonl par morceaux (Range) et lit la taille dans Content-Range.
+	# La page lit les JSONL de /data par morceaux (Range) et lit la taille dans Content-Range.
 	header @cors Access-Control-Expose-Headers Content-Range
 	@preflight {
 		method OPTIONS
-		path /api/* /data/games.jsonl
+		path /api/* /data/*
 	}
 	handle @preflight {
 		header Access-Control-Allow-Methods "GET, PUT"
@@ -21,6 +21,7 @@
 	}
 	# Journaux des joueurs : restent prives.
 	respond /data/logs/* 404
-	header /data/* Cache-Control "no-cache"
+	# 15 s : le rafraichissement de la page, pour un CDN devant le serveur.
+	header /data/* Cache-Control "public, max-age=15"
 	file_server
 }

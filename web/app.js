@@ -1,14 +1,15 @@
-// Page du ladder : lit le JSONL, calcule le classement, affiche les parties et le replay.
+// Page du ladder : classement et dernières parties de summary.json, historique de l'équipe
+// recherchée dans teams/, replay lu partie par partie dans games.jsonl.
 // Serveur : la balise meta scoreboard-server (posée par le workflow GitHub Pages), sinon le site qui
-// sert la page. Données : ?data=URL, sinon <serveur>/data/games.jsonl.
+// sert la page. Données : ?data=URL du dossier, sinon <serveur>/data.
 // ?session=, ?team=, ?window= et ?game= suivent les choix de la page : l'adresse se partage telle quelle.
 
-import { computeRatings, moveTimes, parseJsonl, percentile, sessions, since, START, versions } from './elo.js'
+import { parseJsonl, since } from './elo.js'
 import { BLACK, DESTROYED, positions, RED, SIZE, squareName } from './replay.js'
 
 const params = new URLSearchParams(location.search)
 const SERVER = document.querySelector('meta[name="scoreboard-server"]')?.content || '..'
-const DATA_URL = params.get('data') ?? `${SERVER}/data/games.jsonl`
+const DATA = params.get('data') ?? `${SERVER}/data`
 const REFRESH_MS = 15000
 const RECENT_GAMES = 50
 const PLAY_MS = 500
@@ -40,15 +41,19 @@ const ENDINGS = {
     no_show: (loser) => `${loser} ne s'est pas connecté`,
 }
 
-let offset = null
-let games = []
-let computed = null
+let summary = null
+let summaryText = null
+// Équipe recherchée et ses parties (teams/<équipe>.jsonl).
+let followed = { team: null, offset: null, rows: [] }
+let following = Promise.resolve(false)
 // Équipe vers ses builds dans l'ordre, toutes sessions : sert à afficher vN.
 let builds = new Map()
 // Courbe de l'équipe recherchée : points[0] est le départ à START, puis une entrée d'historique par partie.
 let chart = { team: null, points: [], min: 0, max: 0, index: 0 }
-// `pinned` : la personne a choisi une partie ; sinon le replay suit la dernière jouée.
-let replay = { game: null, steps: [], index: 0, timer: null, pinned: false }
+// `pinned` : la personne a choisi une partie (ou un lien ?game=) ; sinon le replay suit la dernière jouée.
+let replay = { game: null, steps: [], index: 0, timer: null, pinned: Boolean(GAME) }
+// Dernier replay demandé : une réponse plus ancienne arrivée en retard est ignorée.
+let replaySeq = 0
 
 function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag)
@@ -83,44 +88,82 @@ function ago(ts) {
 
 async function refresh() {
     try {
-        const first = offset === null
-        const headers = offset ? { Range: `bytes=${offset}-` } : {}
-        const res = await fetch(DATA_URL, { cache: 'no-store', headers })
-        let changed = false
-        if (res.status === 416) {
-            if (Number(res.headers.get('Content-Range')?.split('/')[1]) < offset) {
-                offset = 0
-                return refresh()
-            }
-        } else if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`)
-        } else {
-            const bytes = new Uint8Array(await res.arrayBuffer())
-            const end = bytes.lastIndexOf(10) + 1
-            const whole = res.status === 200
-            changed = whole ? end !== offset : end > 0
-            if (changed) {
-                const added = parseJsonl(new TextDecoder().decode(bytes.subarray(0, end))).games
-                games = whole ? added : games.concat(added)
-                offset = (whole ? 0 : offset) + end
-            }
-        }
+        const res = await fetch(`${DATA}/summary.json`, { cache: 'no-store' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const text = await res.text()
+        const first = summary === null
+        let changed = text !== summaryText
         if (changed) {
-            builds = versions(games)
-            computed = null
+            summaryText = text
+            summary = JSON.parse(text)
+            builds = new Map(Object.entries(summary.builds))
             renderSessions(first)
-            const linked = first && games.find((g) => g.id === GAME)
-            if (linked) showGame(linked, true)
-            render()
-            if (!first) pulse()
-        } else {
-            render()
         }
+        changed = (await follow()) || changed
+        if (first && GAME) openLinked().catch(() => (replay.pinned = false))
+        render()
+        if (changed && !first) pulse()
         $('live').className = 'live on'
     } catch (e) {
         $('live').className = 'live error'
         $('status').textContent = `Données indisponibles : ${e.message}`
     }
+}
+
+// JSONL en ajout seul : lu en entier, puis seulement la suite (Range). Vrai si des lignes sont arrivées.
+async function tail(url, state) {
+    const headers = state.offset ? { Range: `bytes=${state.offset}-` } : {}
+    const res = await fetch(url, { cache: 'no-store', headers })
+    if (res.status === 416) {
+        // Rien après offset, sauf si le fichier a rétréci (réécrit) : on relit tout.
+        if (Number(res.headers.get('Content-Range')?.split('/')[1]) < state.offset) {
+            state.offset = 0
+            return tail(url, state)
+        }
+        return false
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    // Une dernière ligne en cours d'écriture est relue au tour suivant.
+    const end = bytes.lastIndexOf(10) + 1
+    // 200 : fichier entier (première lecture, ou serveur qui ignore Range).
+    const whole = res.status === 200
+    if (whole ? end === state.offset : end === 0) return false
+    const added = parseJsonl(new TextDecoder().decode(bytes.subarray(0, end))).games
+    state.rows = whole ? added : state.rows.concat(added)
+    state.offset = (whole ? 0 : state.offset) + end
+    return true
+}
+
+const teamUrl = (team) => `${DATA}/teams/${encodeURIComponent(team)}.jsonl`
+const allTeams = () => summary.scopes[GLOBAL].ratings.map((r) => r.team)
+
+// Équipe désignée par la recherche : nom exact, sinon seule équipe qui correspond.
+function searchedTeam() {
+    if (!summary || !query()) return null
+    const found = allTeams().filter(matches)
+    return found.find((t) => t.toLowerCase() === query()) ?? (found.length === 1 ? found[0] : null)
+}
+
+// Lectures du fichier d'équipe à la file : deux lectures en parallèle doubleraient des lignes.
+function follow() {
+    const team = searchedTeam()
+    if (team !== followed.team) followed = { team, offset: null, rows: [] }
+    const state = followed
+    following = following.catch(() => {}).then(() => (state.team ? tail(teamUrl(state.team), state) : false))
+    return following
+}
+
+// Lien ?game= : l'id finit par `-<rouge>-<noir>`, la partie est dans le fichier de l'équipe rouge.
+async function openLinked() {
+    const pair = GAME.slice(GAME.indexOf('-') + 1)
+    const teams = allTeams()
+    const red = teams.find((t) => pair.startsWith(`${t}-`) && teams.includes(pair.slice(t.length + 1)))
+    const state = { offset: null, rows: [] }
+    if (red) await tail(teamUrl(red), state)
+    const row = state.rows.find((g) => g.id === GAME)
+    if (row) showGame(row, true)
+    else replay.pinned = false
 }
 
 // Fondu en bas d'une zone tant qu'il reste du contenu à faire défiler.
@@ -145,9 +188,8 @@ function fillSelect(select, values, wanted = select.value) {
 }
 
 function renderSessions(first) {
-    fillSelect($('session'), sessions(games), first ? SESSION : $('session').value)
-    const teams = [...new Set(games.flatMap((g) => [g.red.team, g.black.team]))].sort()
-    $('teams').replaceChildren(...teams.map((t) => el('option', { value: t })))
+    fillSelect($('session'), summary.sessions, first ? SESSION : $('session').value)
+    $('teams').replaceChildren(...allTeams().sort().map((t) => el('option', { value: t })))
     if (first) $('team').value = TEAM
 }
 
@@ -162,28 +204,24 @@ function setParam(key, value) {
 const query = () => $('team').value.trim().toLowerCase()
 const matches = (team) => team.toLowerCase().includes(query())
 
-function selectedGames() {
-    const s = $('session').value
-    return games.filter((g) => (s === GLOBAL || g.session === s) && (matches(g.red.team) || matches(g.black.team)))
-}
-
 function render() {
-    const session = $('session').value || null
-    const list = selectedGames()
-    if (computed?.session !== session) {
-        const ratings = computeRatings(games, session)
-        const deltas = new Map(ratings.flatMap((r) => r.history.map((h) => [`${h.id}|${r.team}`, h])))
-        computed = { session, ratings, pace: paces(ratings, session), deltas }
-    }
-    const { ratings } = computed
-    renderRanking(ratings, computed.pace)
-    renderChart(ratings)
-    renderGames(list, computed.deltas)
+    if (!summary) return
+    const session = $('session').value
+    const scope = summary.scopes[session]
+    // Colonne Elo des lignes : toutes sessions, ou la session choisie.
+    const key = session === GLOBAL ? 'all' : 'session'
+    const list = followed.team
+        ? followed.rows.filter((g) => session === GLOBAL || g.session === session)
+        : scope.recent.filter((g) => matches(g.red.team) || matches(g.black.team))
+    renderRanking(scope.ratings)
+    renderChart(scope.ratings, list, key)
+    renderGames(list, key)
 
-    const times = [...new Set(list.map((g) => g.time_ms))]
+    const times = scope.time_ms
     $('time-ms').textContent = times.join(', ') || '?'
     const pace = times.length === 1 ? `, ${times[0]} ms par coup` : ''
-    $('status').textContent = `${list.length} parties${pace}, à jour à ${timeFormat.format(new Date())}`
+    const count = followed.team ? list.length : scope.games
+    $('status').textContent = `${count} parties${pace}, à jour à ${timeFormat.format(new Date())}`
 
     scrollAreas.forEach(markOverflow)
 
@@ -197,36 +235,14 @@ function version(player) {
     return n ? `v${n}` : ''
 }
 
-// Temps par coup de chaque équipe avec son build du classement : coups triés et plus petit temps alloué.
-function paces(ratings, session) {
-    const current = new Map(ratings.map((r) => [r.team, r.build]))
-    const out = new Map()
-    for (const g of games) {
-        if (session !== null && g.session !== session) continue
-        for (const color of ['red', 'black']) {
-            const p = g[color]
-            if ((p.build ?? null) !== current.get(p.team)) continue
-            const ms = moveTimes(g, color)
-            if (!ms.length) continue
-            const pace = out.get(p.team) ?? { ms: [], limit: Infinity }
-            pace.ms.push(...ms)
-            pace.limit = Math.min(pace.limit, g.time_ms)
-            out.set(p.team, pace)
-        }
-    }
-    for (const pace of out.values()) pace.ms.sort((a, b) => a - b)
-    return out
-}
-
 function paceCell(pace) {
     if (!pace) return el('td', { class: 'num pace' })
-    const [p50, p95, p99] = [0.5, 0.95, 0.99].map((p) => percentile(pace.ms, p))
-    const title = `Médiane ${p50} ms, p99 ${p99} ms, max ${pace.ms.at(-1)} ms, ${pace.ms.length} coups`
-    const warn = p99 >= PACE_WARN * pace.limit ? ' warn' : ''
-    return el('td', { class: `num pace${warn}`, title }, `${p95} ms`)
+    const title = `Médiane ${pace.p50} ms, p99 ${pace.p99} ms, max ${pace.max} ms, ${pace.count} coups`
+    const warn = pace.p99 >= PACE_WARN * pace.limit ? ' warn' : ''
+    return el('td', { class: `num pace${warn}`, title }, `${pace.p95} ms`)
 }
 
-function renderRanking(ratings, pace) {
+function renderRanking(ratings) {
     $('ranking-empty').hidden = ratings.length > 0
     $('anchor-note').hidden = !ratings.some((r) => r.anchor)
     $('ranking')
@@ -246,7 +262,7 @@ function renderRanking(ratings, pace) {
                     el('td', { class: 'num elo' }, String(Math.round(r.rating))),
                     el('td', { class: 'num record' }, `${r.wins}–${r.losses}`),
                     el('td', { class: 'num pct' }, `${Math.round((100 * r.wins) / r.games)} %`),
-                    paceCell(pace.get(r.team)),
+                    paceCell(r.pace),
                     el(
                         'td',
                         { class: 'num last-col', title: r.last ? fullFormat.format(new Date(r.last)) : '' },
@@ -257,13 +273,17 @@ function renderRanking(ratings, pace) {
         )
 }
 
-function renderChart(ratings) {
-    // Courbe pour une seule équipe : nom exact, sinon seule équipe qui correspond à la recherche.
-    const found = query() ? ratings.filter((r) => matches(r.team)) : []
-    const r = found.find((r) => r.team.toLowerCase() === query()) ?? (found.length === 1 ? found[0] : null)
+function renderChart(ratings, rows, key) {
+    const r = ratings.find((r) => r.team === followed.team)
     $('elo-chart').hidden = !r
+    const history = r
+        ? rows.map((g) => {
+              const [rating, delta] = (g.red.team === r.team ? g.red : g.black)[key]
+              return { id: g.id, ts: g.ts, rating, delta, game: g }
+          })
+        : []
     const w = document.querySelector('#elo-window input:checked')?.value
-    const { start, points: recent } = r ? since(r.history, Date.now() - (WINDOWS[w] ?? Infinity)) : { points: [] }
+    const { start, points: recent } = r ? since(history, Date.now() - (WINDOWS[w] ?? Infinity)) : { points: [] }
     $('elo-plot').hidden = !recent.length
     if (!recent.length) {
         chart.points = []
@@ -274,9 +294,8 @@ function renderChart(ratings) {
             )
         return
     }
-    const byId = new Map(games.map((g) => [g.id, g]))
-    const before = recent.length < r.history.length
-    const points = [{ rating: start, before }, ...recent.map((h) => ({ ...h, game: byId.get(h.id) }))]
+    const before = recent.length < history.length
+    const points = [{ rating: start, before }, ...recent]
     const values = points.map((p) => p.rating)
     const min = Math.min(...values)
     const max = Math.max(...values)
@@ -339,14 +358,12 @@ function openPoint(i) {
 const signed = (n) => `${n > 0 ? '+' : '−'}${Math.abs(n).toLocaleString('fr-CA')}`
 const roundDelta = (d) => Math.round(d) || Math.round(d * 10) / 10
 
-// `deltas` : clé `${id}|${équipe}` vers l'entrée d'historique Elo de cette partie.
-function renderGames(list, deltas) {
+function renderGames(list, key) {
     const items = list
         .slice(-RECENT_GAMES)
         .reverse()
         .map((g) => {
-            const entry = (color) => deltas.get(`${g.id}|${g[color].team}`)
-            const change = (color) => roundDelta(entry(color)?.delta ?? 0)
+            const change = (color) => roundDelta(g[color][key][1])
             const side = (color) => {
                 const node = el(
                     'span',
@@ -355,7 +372,7 @@ function renderGames(list, deltas) {
                 )
                 const d = change(color)
                 if (d) {
-                    const title = `Elo après la partie : ${Math.round(entry(color).rating)}`
+                    const title = `Elo après la partie : ${Math.round(g[color][key][0])}`
                     node.append(el('span', { class: `delta ${d > 0 ? 'up' : 'down'}`, title }, signed(d)))
                 }
                 return node
@@ -375,7 +392,7 @@ function renderGames(list, deltas) {
                 el(
                     'span',
                     { class: 'meta' },
-                    `${REASONS[g.reason] ?? g.reason}, ${g.moves.length} coups, ${Math.round(g.duration_ms / 1000)} s`
+                    `${REASONS[g.reason] ?? g.reason}, ${g.moves} coups, ${Math.round(g.duration_ms / 1000)} s`
                 )
             )
             if (replay.game?.id === g.id) button.setAttribute('aria-current', 'true')
@@ -387,7 +404,29 @@ function renderGames(list, deltas) {
     )
 }
 
-function showGame(g, pinned = replay.pinned) {
+async function loadGame(row) {
+    const [start, length] = row.at
+    const res = await fetch(`${DATA}/games.jsonl`, { headers: { Range: `bytes=${start}-${start + length - 1}` } })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    // 200 : serveur qui ignore Range, fichier entier.
+    const line = res.status === 200 ? bytes.subarray(start, start + length) : bytes
+    const g = JSON.parse(new TextDecoder().decode(line))
+    if (g.id !== row.id) throw new Error('partie introuvable')
+    return g
+}
+
+// Un échec (copie en cache de games.jsonl plus vieille que le résumé) est réessayé au rafraîchissement suivant.
+async function showGame(row, pinned = replay.pinned) {
+    const seq = ++replaySeq
+    let g
+    try {
+        g = await loadGame(row)
+    } catch (e) {
+        if (seq === replaySeq) $('replay-info').textContent = `Partie pas encore disponible (${e.message}).`
+        return
+    }
+    if (seq !== replaySeq) return
     stopPlayback()
     const steps = positions(g)
     // moveMs[k] : temps du coup moves[k], vide si absent ou incohérent.
@@ -517,7 +556,7 @@ for (const [id, event] of [
     $(id).addEventListener(event, () => {
         setParam(id, $(id).value.trim())
         replay.pinned = false
-        render()
+        follow().then(render, render)
     })
 }
 $('share').addEventListener('click', share)

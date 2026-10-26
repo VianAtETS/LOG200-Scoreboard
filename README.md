@@ -17,7 +17,7 @@ flowchart LR
     API["PUT /api/submit<br>team token"] --> Smoke{"Smoke test<br>vs random bot"}
     Smoke -- fails --> Reason["Rejected, reason<br>sent back"]
     Smoke -- passes --> Ladder["Ladder<br>games in gVisor sandboxes"]
-    Ladder --> Games[("data/games.jsonl")]
+    Ladder --> Games[("data/games.jsonl<br>ranking: data/summary.json")]
     Games --> Page["Page<br>Elo, games, replays"]
 ```
 
@@ -51,7 +51,7 @@ The referee checks every move and prints the result at the end (`winner`, and `r
 | `src/rules.rs` | Game rules as applied by the official server (see `docs/rules.md`) |
 | `isolation-referee` | Headless referee for one game; speaks the official protocol, prints one JSON result |
 | `isolation-bot` | Protocol client with a simple strategy (random or greedy), used for tests and conformance checks |
-| `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, and receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`) |
+| `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, publishes the Elo ranking the page reads (`data/summary.json`, `data/teams/`), and receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`) |
 | `isolation-check` | Replays and validates a JSONL file or an official save (`BOARDGAME 1`) |
 | `sandbox/` | gVisor sandboxes for the referee and each player (see `docs/formats.md`) |
 | `web/` | Static page (vanilla JS): Elo ranking, recent games, replay |

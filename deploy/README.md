@@ -44,6 +44,8 @@ Les journaux des joueurs vont dans `data/logs/`, les jars et les tokens dans `ja
 
 Hors du périmètre de ce compose : placer le reverse proxy de votre choix (Caddy, Nginx…) devant le port 8080.
 
+Pour un pic de visiteurs (des centaines à la fois), un CDN comme Cloudflare absorbe la charge. Le serveur marque `/data/*` `Cache-Control: public, max-age=15`, le rythme de rafraîchissement de la page. Cloudflare ne met pas en cache les `.json` et `.jsonl` par défaut : ajouter une Cache Rule sur le chemin `/data/*`, « Eligible for cache », durée en cache de l'origine respectée. Le serveur sert alors chaque fichier une fois par 15 s et par point de présence, peu importe l'audience.
+
 ## Page sur GitHub Pages (optionnel)
 
 La page reste servie par ce compose, mais elle peut aussi être publiée sur GitHub Pages : une modification de `web/` est alors en ligne à chaque push sur `main`, sans tag ni redémarrage du ladder. Elle lit toujours les parties et l'API sur ce serveur, qui doit donc être en HTTPS (section précédente).

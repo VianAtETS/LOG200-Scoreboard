@@ -1,0 +1,575 @@
+//! Classement Elo tenu à jour partie par partie, publié pour la page dans `summary.json` et
+//! `teams/<équipe>.jsonl` (format dans docs/formats.md).
+
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::fs::{self, File};
+use std::io::{self, BufWriter, ErrorKind, Write};
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+
+use isolation::board::{ByColor, Color};
+use isolation::record::{GameRecord, Player, Reason};
+
+use crate::journal::append_jsonl;
+
+const START: f64 = 1500.0;
+const K_PROVISIONAL: f64 = 40.0;
+const K_STABLE: f64 = 20.0;
+/// Parties à K provisoire après chaque nouveau build.
+const PROVISIONAL_GAMES: u32 = 20;
+const RECENT_GAMES: usize = 50;
+/// Clé de `scopes` pour toutes les sessions confondues.
+const ALL: &str = "";
+
+fn expected(ra: f64, rb: f64) -> f64 {
+    1.0 / (1.0 + 10f64.powf((rb - ra) / 400.0))
+}
+
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
+}
+
+/// Temps par coup d'un build : les temps sont des ms entières, un compte par valeur suffit.
+#[derive(Default)]
+struct Pace {
+    counts: BTreeMap<u64, u64>,
+    total: u64,
+    limit: u64,
+}
+
+impl Pace {
+    /// Rang le plus proche.
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "rang positif, bien en deçà de 2^52"
+    )]
+    fn percentile(&self, p: f64) -> u64 {
+        let rank = ((p * self.total as f64).ceil() as u64).max(1);
+        let mut seen = 0;
+        for (&ms, &n) in &self.counts {
+            seen += n;
+            if seen >= rank {
+                return ms;
+            }
+        }
+        0
+    }
+
+    fn view(&self) -> PaceView {
+        PaceView {
+            p50: self.percentile(0.5),
+            p95: self.percentile(0.95),
+            p99: self.percentile(0.99),
+            max: self.counts.keys().next_back().copied().unwrap_or(0),
+            count: self.total,
+            limit: self.limit,
+        }
+    }
+}
+
+struct Standing {
+    /// Ordre d'arrivée : départage les ratings égaux.
+    order: usize,
+    rating: f64,
+    games: u32,
+    wins: u32,
+    losses: u32,
+    anchor: bool,
+    build: Option<String>,
+    games_on_build: u32,
+    last: String,
+    paces: HashMap<Option<String>, Pace>,
+}
+
+/// Une session, ou toutes.
+#[derive(Default)]
+struct Scope {
+    teams: HashMap<String, Standing>,
+    games: u64,
+    time_ms: BTreeSet<u64>,
+    recent: VecDeque<Row>,
+    last: String,
+}
+
+impl Scope {
+    fn enter(&mut self, player: &Player) -> &mut Standing {
+        let order = self.teams.len();
+        let s = self.teams.entry(player.team.clone()).or_insert_with(|| Standing {
+            order,
+            rating: START,
+            games: 0,
+            wins: 0,
+            losses: 0,
+            anchor: false,
+            build: None,
+            games_on_build: 0,
+            last: String::new(),
+            paces: HashMap::new(),
+        });
+        s.anchor |= player.anchor;
+        // Nouvelle soumission : le rating est conservé, K repasse en provisoire.
+        if player.build.is_some() && player.build != s.build {
+            s.build.clone_from(&player.build);
+            s.games_on_build = 0;
+        }
+        s
+    }
+
+    /// Rating après la partie et variation, par couleur.
+    fn play(&mut self, game: &GameRecord) -> ByColor<[f64; 2]> {
+        let result = &game.result;
+        self.games += 1;
+        self.time_ms.insert(result.time_ms);
+        self.last.clone_from(&game.ts);
+        let players = ByColor {
+            red: &game.red,
+            black: &game.black,
+        };
+        let expected_red = expected(self.enter(players.red).rating, self.enter(players.black).rating);
+        let timed = result.move_ms.len() == result.moves.len();
+        let mut out = ByColor::default();
+        for color in [Color::Red, Color::Black] {
+            let won = result.winner == color;
+            let exp = if color == Color::Red {
+                expected_red
+            } else {
+                1.0 - expected_red
+            };
+            let s = self.enter(players[color]);
+            let k = if s.games_on_build < PROVISIONAL_GAMES {
+                K_PROVISIONAL
+            } else {
+                K_STABLE
+            };
+            let delta = if s.anchor {
+                0.0
+            } else {
+                k * (f64::from(u8::from(won)) - exp)
+            };
+            s.rating += delta;
+            s.games += 1;
+            s.games_on_build += 1;
+            if won {
+                s.wins += 1;
+            } else {
+                s.losses += 1;
+            }
+            s.last.clone_from(&game.ts);
+            // Le rouge joue les coups pairs.
+            let first = usize::from(color == Color::Black);
+            let ms: Vec<u64> = if timed {
+                result.move_ms.iter().skip(first).step_by(2).copied().collect()
+            } else {
+                vec![]
+            };
+            if !ms.is_empty() {
+                let pace = s.paces.entry(players[color].build.clone()).or_insert_with(|| Pace {
+                    limit: u64::MAX,
+                    ..Pace::default()
+                });
+                for m in ms {
+                    *pace.counts.entry(m).or_default() += 1;
+                    pace.total += 1;
+                }
+                pace.limit = pace.limit.min(result.time_ms);
+            }
+            out[color] = [round2(s.rating), round2(delta)];
+        }
+        out
+    }
+
+    fn push_recent(&mut self, row: Row) {
+        if self.recent.len() == RECENT_GAMES {
+            self.recent.pop_front();
+        }
+        self.recent.push_back(row);
+    }
+
+    /// Meilleur rating d'abord. Temps par coup : ceux du build courant de l'équipe.
+    fn ratings(&self) -> Vec<RatingRow<'_>> {
+        let mut rows: Vec<_> = self.teams.iter().collect();
+        rows.sort_by(|(_, a), (_, b)| b.rating.total_cmp(&a.rating).then(a.order.cmp(&b.order)));
+        rows.into_iter()
+            .map(|(team, s)| RatingRow {
+                team,
+                rating: round2(s.rating),
+                games: s.games,
+                wins: s.wins,
+                losses: s.losses,
+                anchor: s.anchor,
+                provisional: !s.anchor && s.games_on_build < PROVISIONAL_GAMES,
+                build: s.build.as_deref(),
+                last: &s.last,
+                pace: s.paces.get(&s.build).map(Pace::view),
+            })
+            .collect()
+    }
+
+    fn view(&self) -> ScopeView<'_> {
+        ScopeView {
+            games: self.games,
+            time_ms: &self.time_ms,
+            ratings: self.ratings(),
+            recent: &self.recent,
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
+struct Side {
+    team: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    build: Option<String>,
+    /// Rating après la partie et variation, toutes sessions puis dans la session.
+    all: [f64; 2],
+    session: [f64; 2],
+}
+
+/// Une partie telle que la page l'affiche, sans les coups : `at` donne ses octets dans `games.jsonl`.
+#[derive(Serialize, Clone)]
+struct Row {
+    v: u32,
+    id: String,
+    ts: String,
+    session: String,
+    time_ms: u64,
+    winner: Color,
+    reason: Reason,
+    moves: usize,
+    duration_ms: u64,
+    red: Side,
+    black: Side,
+    at: [u64; 2],
+}
+
+#[derive(Serialize)]
+struct PaceView {
+    p50: u64,
+    p95: u64,
+    p99: u64,
+    max: u64,
+    count: u64,
+    limit: u64,
+}
+
+#[derive(Serialize)]
+struct RatingRow<'a> {
+    team: &'a str,
+    rating: f64,
+    games: u32,
+    wins: u32,
+    losses: u32,
+    anchor: bool,
+    provisional: bool,
+    build: Option<&'a str>,
+    last: &'a str,
+    pace: Option<PaceView>,
+}
+
+#[derive(Serialize)]
+struct ScopeView<'a> {
+    games: u64,
+    time_ms: &'a BTreeSet<u64>,
+    ratings: Vec<RatingRow<'a>>,
+    recent: &'a VecDeque<Row>,
+}
+
+#[derive(Serialize)]
+struct Summary<'a> {
+    v: u32,
+    sessions: Vec<&'a str>,
+    builds: &'a BTreeMap<String, Vec<String>>,
+    scopes: BTreeMap<&'a str, ScopeView<'a>>,
+}
+
+pub struct Standings {
+    dir: PathBuf,
+    all: Scope,
+    sessions: HashMap<String, Scope>,
+    builds: BTreeMap<String, Vec<String>>,
+}
+
+impl Standings {
+    /// Rejoue l'historique, dans l'ordre du fichier, et réécrit les fichiers d'équipe et le résumé.
+    pub fn from_history(dir: &Path, games: &[GameRecord], at: &[Range<u64>]) -> io::Result<Self> {
+        let mut standings = Self {
+            dir: dir.to_path_buf(),
+            all: Scope::default(),
+            sessions: HashMap::new(),
+            builds: BTreeMap::new(),
+        };
+        let teams = dir.join("teams");
+        match fs::remove_dir_all(&teams) {
+            Err(e) if e.kind() != ErrorKind::NotFound => return Err(e),
+            _ => fs::create_dir_all(&teams)?,
+        }
+        let mut files: HashMap<String, BufWriter<File>> = HashMap::new();
+        for (game, at) in games.iter().zip(at) {
+            let row = standings.play(game, at.clone());
+            for team in [&game.red.team, &game.black.team] {
+                let Some(path) = standings.team_path(team) else {
+                    continue;
+                };
+                let file = match files.entry(team.clone()) {
+                    Entry::Occupied(e) => e.into_mut(),
+                    Entry::Vacant(e) => e.insert(BufWriter::new(File::create(path)?)),
+                };
+                serde_json::to_writer(&mut *file, &row)?;
+                file.write_all(b"\n")?;
+            }
+        }
+        for file in files.values_mut() {
+            file.flush()?;
+        }
+        standings.write_summary()?;
+        Ok(standings)
+    }
+
+    /// `at` : octets de la partie dans `games.jsonl`.
+    pub fn record(&mut self, game: &GameRecord, at: Range<u64>) -> io::Result<()> {
+        let row = self.play(game, at);
+        for team in [&game.red.team, &game.black.team] {
+            if let Some(path) = self.team_path(team) {
+                append_jsonl(&path, &row)?;
+            }
+        }
+        self.write_summary()
+    }
+
+    fn play(&mut self, game: &GameRecord, at: Range<u64>) -> Row {
+        for player in [&game.red, &game.black] {
+            if let Some(build) = &player.build {
+                let list = self.builds.entry(player.team.clone()).or_default();
+                if !list.contains(build) {
+                    list.push(build.clone());
+                }
+            }
+        }
+        let all = self.all.play(game);
+        let session = self.sessions.entry(game.session.clone()).or_default();
+        let in_session = session.play(game);
+        let side = |player: &Player, color: Color| Side {
+            team: player.team.clone(),
+            build: player.build.clone(),
+            all: all[color],
+            session: in_session[color],
+        };
+        let result = &game.result;
+        let row = Row {
+            v: 1,
+            id: game.id.clone(),
+            ts: game.ts.clone(),
+            session: game.session.clone(),
+            time_ms: result.time_ms,
+            winner: result.winner,
+            reason: result.reason,
+            moves: result.moves.len(),
+            duration_ms: result.duration_ms,
+            red: side(&game.red, Color::Red),
+            black: side(&game.black, Color::Black),
+            at: [at.start, at.end - at.start],
+        };
+        session.push_recent(row.clone());
+        self.all.push_recent(row.clone());
+        row
+    }
+
+    /// `None` si le nom ne fait pas un nom de fichier sûr : les équipes de `ladder.toml` sont libres.
+    fn team_path(&self, team: &str) -> Option<PathBuf> {
+        let safe =
+            (1..=64).contains(&team.len()) && team.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        safe.then(|| self.dir.join("teams").join(format!("{team}.jsonl")))
+    }
+
+    fn summary(&self) -> Summary<'_> {
+        let mut sessions: Vec<_> = self.sessions.iter().collect();
+        sessions.sort_by(|(_, a), (_, b)| b.last.cmp(&a.last));
+        let mut scopes: BTreeMap<_, _> = sessions
+            .iter()
+            .map(|(name, scope)| (name.as_str(), scope.view()))
+            .collect();
+        scopes.insert(ALL, self.all.view());
+        Summary {
+            v: 1,
+            sessions: sessions.into_iter().map(|(name, _)| name.as_str()).collect(),
+            builds: &self.builds,
+            scopes,
+        }
+    }
+
+    /// Écrit à côté puis renomme : un lecteur ne voit jamais un résumé à moitié écrit.
+    fn write_summary(&self) -> io::Result<()> {
+        let tmp = self.dir.join("summary.json.tmp");
+        fs::write(&tmp, serde_json::to_vec(&self.summary())?)?;
+        fs::rename(tmp, self.dir.join("summary.json"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use isolation::record::{GameResult, InvalidCounts, RECORD_VERSION};
+
+    use super::*;
+
+    fn player(team: &str) -> Player {
+        Player {
+            team: team.into(),
+            build: None,
+            anchor: false,
+        }
+    }
+
+    fn game(red: &str, black: &str, winner: Color) -> GameRecord {
+        GameRecord {
+            id: format!("20261024T120000.000Z-{red}-{black}"),
+            session: "s1".into(),
+            ts: "2026-10-24T12:00:00.000Z".into(),
+            red: player(red),
+            black: player(black),
+            result: GameResult {
+                v: RECORD_VERSION,
+                time_ms: 500,
+                opening: vec![],
+                moves: vec![],
+                winner,
+                reason: Reason::NoMoves,
+                invalid: InvalidCounts::default(),
+                duration_ms: 0,
+                move_ms: vec![],
+            },
+        }
+    }
+
+    fn rating<'a>(ratings: &'a [RatingRow<'a>], team: &str) -> &'a RatingRow<'a> {
+        ratings.iter().find(|r| r.team == team).unwrap()
+    }
+
+    #[test]
+    fn expected_score_is_symmetric() {
+        assert!((expected(1500.0, 1500.0) - 0.5).abs() < 1e-12);
+        assert!((expected(1600.0, 1400.0) + expected(1400.0, 1600.0) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn first_game_moves_both_ratings_by_half_k() {
+        let mut scope = Scope::default();
+        let out = scope.play(&game("a", "b", Color::Red));
+        assert_eq!(out.red, [START + 20.0, 20.0]);
+        assert_eq!(out.black, [START - 20.0, -20.0]);
+        let ratings = scope.ratings();
+        assert_eq!(ratings[0].team, "a");
+        assert_eq!((ratings[0].wins, ratings[1].losses), (1, 1));
+        assert!(ratings[0].provisional);
+    }
+
+    #[test]
+    fn anchor_rating_never_moves() {
+        let mut scope = Scope::default();
+        let mut g = game("a", "ref", Color::Black);
+        g.black.anchor = true;
+        assert_eq!(scope.play(&g).black, [START, 0.0]);
+        assert_eq!(scope.play(&game("ref", "a", Color::Red)).red, [START, 0.0]);
+        let ratings = scope.ratings();
+        let r = rating(&ratings, "ref");
+        assert_eq!((r.rating, r.games, r.provisional, r.anchor), (START, 2, false, true));
+    }
+
+    #[test]
+    fn k_drops_after_the_provisional_period_and_resets_on_a_new_build() {
+        let mut scope = Scope::default();
+        for i in 0..PROVISIONAL_GAMES {
+            let mut g = game("a", "b", if i % 2 == 0 { Color::Black } else { Color::Red });
+            g.red.build = Some("v1".into());
+            scope.play(&g);
+        }
+        assert!(!rating(&scope.ratings(), "a").provisional);
+        let mut next = game("a", "b", Color::Red);
+        next.red.build = Some("v2".into());
+        scope.play(&next);
+        let ratings = scope.ratings();
+        let a = rating(&ratings, "a");
+        assert!(a.provisional);
+        assert_eq!((a.games, a.build), (PROVISIONAL_GAMES + 1, Some("v2")));
+    }
+
+    #[test]
+    fn pace_uses_nearest_rank_on_the_current_build_and_skips_inconsistent_games() {
+        let mut scope = Scope::default();
+        let mut g = game("a", "b", Color::Red);
+        g.red.build = Some("v1".into());
+        g.result.moves = vec![String::new(); 200];
+        g.result.move_ms = (1..=100).flat_map(|i| [i, 1000]).collect();
+        scope.play(&g);
+        let mut broken = game("a", "b", Color::Red);
+        broken.red.build = Some("v1".into());
+        broken.result.moves = vec![String::new(); 2];
+        broken.result.move_ms = vec![9999];
+        scope.play(&broken);
+        let ratings = scope.ratings();
+        let pace = rating(&ratings, "a").pace.as_ref().unwrap();
+        assert_eq!((pace.p50, pace.p95, pace.p99, pace.max), (50, 95, 99, 100));
+        assert_eq!((pace.count, pace.limit), (100, 500));
+        assert!(rating(&ratings, "b").pace.is_some());
+
+        let mut newer = game("a", "b", Color::Red);
+        newer.red.build = Some("v2".into());
+        scope.play(&newer);
+        assert!(rating(&scope.ratings(), "a").pace.is_none());
+    }
+
+    #[test]
+    fn files_follow_sessions_builds_and_byte_offsets() {
+        let dir = std::env::temp_dir().join(format!("isolation-standings-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("teams")).unwrap();
+        fs::write(dir.join("teams/stale.jsonl"), "").unwrap();
+
+        let mut g1 = game("a", "b", Color::Red);
+        g1.red.build = Some("h1".into());
+        let mut standings = Standings::from_history(&dir, &[g1], std::slice::from_ref(&(0..10))).unwrap();
+        assert!(!dir.join("teams/stale.jsonl").exists());
+
+        let mut g2 = game("b", "a", Color::Red);
+        g2.session = "s2".into();
+        g2.ts = "2026-10-25T12:00:00.000Z".into();
+        g2.black.build = Some("h2".into());
+        standings.record(&g2, 10..25).unwrap();
+
+        let lines = fs::read_to_string(dir.join("teams/a.jsonl")).unwrap();
+        let rows: Vec<serde_json::Value> = lines.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1]["at"], serde_json::json!([10, 15]));
+        // Toutes sessions : a part de 1520 contre 1480. Dans s2, les deux repartent de 1500.
+        assert_eq!(rows[1]["black"]["all"][1], serde_json::json!(-22.29));
+        assert_eq!(rows[1]["black"]["session"], serde_json::json!([1480.0, -20.0]));
+
+        let summary: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("summary.json")).unwrap()).unwrap();
+        assert_eq!(summary["sessions"], serde_json::json!(["s2", "s1"]));
+        assert_eq!(summary["builds"]["a"], serde_json::json!(["h1", "h2"]));
+        assert_eq!(summary["scopes"][""]["games"], 2);
+        assert_eq!(summary["scopes"]["s2"]["recent"].as_array().unwrap().len(), 1);
+        assert_eq!(summary["scopes"]["s1"]["ratings"][0]["team"], "a");
+        assert!(!dir.join("summary.json.tmp").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unsafe_team_names_get_no_file() {
+        let s = Standings {
+            dir: PathBuf::from("d"),
+            all: Scope::default(),
+            sessions: HashMap::new(),
+            builds: BTreeMap::new(),
+        };
+        assert!(s.team_path("eq-07_b").is_some());
+        for bad in ["", "../x", "a/b", "a.b", &"x".repeat(65)] {
+            assert!(s.team_path(bad).is_none(), "{bad}");
+        }
+    }
+}
