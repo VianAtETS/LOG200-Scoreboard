@@ -197,12 +197,12 @@ mod tests {
         let (old, new) = (dir.join("old.log"), dir.join("new.log"));
         fs::write(&old, "").unwrap();
         fs::write(&new, "").unwrap();
-        let week_ago = std::time::SystemTime::now() - Duration::from_hours(8 * 24);
+        let expired = std::time::SystemTime::now() - LOG_RETENTION - Duration::from_hours(24);
         fs::File::options()
             .write(true)
             .open(&old)
             .unwrap()
-            .set_modified(week_ago)
+            .set_modified(expired)
             .unwrap();
         prune_logs(&dir, LOG_RETENTION);
         assert!(!old.exists());
