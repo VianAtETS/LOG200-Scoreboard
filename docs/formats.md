@@ -251,4 +251,4 @@ npx http-server . -p 8000                   # ou python3 -m http.server 8000
 # puis ouvrir http://localhost:8000/web/
 ```
 
-La page lit `../data/games.jsonl` par défaut (une autre source se passe avec `web/?data=URL`) et se rafraîchit toutes les 15 secondes.
+La page lit `../data/games.jsonl` par défaut (une autre source se passe avec `web/?data=URL`) et se rafraîchit toutes les 15 secondes. Après la première lecture, elle ne demande que les nouvelles lignes (en-tête `Range`). Un serveur qui ignore `Range`, comme `python3 -m http.server`, renvoie le fichier entier à chaque fois : ça fonctionne, mais sans le gain.

@@ -4,15 +4,18 @@
 	reverse_proxy /api/* ladder:8090
 	# La page peut aussi etre servie ailleurs (GitHub Pages). Origine libre : aucun cookie, le token
 	# d'equipe passe en en-tete Authorization, que seul l'appelant connait.
+	encode zstd gzip
 	@cors path /api/* /data/games.jsonl
 	header @cors Access-Control-Allow-Origin *
+	# La page relit games.jsonl par morceaux (Range) et lit la taille dans Content-Range.
+	header @cors Access-Control-Expose-Headers Content-Range
 	@preflight {
 		method OPTIONS
-		path /api/*
+		path /api/* /data/games.jsonl
 	}
 	handle @preflight {
 		header Access-Control-Allow-Methods "GET, PUT"
-		header Access-Control-Allow-Headers "Authorization, Content-Type"
+		header Access-Control-Allow-Headers "Authorization, Content-Type, Range"
 		header Access-Control-Max-Age 86400
 		respond 204
 	}

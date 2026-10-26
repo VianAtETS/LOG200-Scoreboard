@@ -40,8 +40,9 @@ const ENDINGS = {
     no_show: (loser) => `${loser} ne s'est pas connecté`,
 }
 
-let lastText = null
+let offset = null
 let games = []
+let computed = null
 // Équipe vers ses builds dans l'ordre, toutes sessions : sert à afficher vN.
 let builds = new Map()
 // Courbe de l'équipe recherchée : points[0] est le départ à START, puis une entrée d'historique par partie.
@@ -82,14 +83,31 @@ function ago(ts) {
 
 async function refresh() {
     try {
-        const res = await fetch(DATA_URL, { cache: 'no-store' })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const text = await res.text()
-        if (text !== lastText) {
-            const first = lastText === null
-            lastText = text
-            games = parseJsonl(text).games
+        const first = offset === null
+        const headers = offset ? { Range: `bytes=${offset}-` } : {}
+        const res = await fetch(DATA_URL, { cache: 'no-store', headers })
+        let changed = false
+        if (res.status === 416) {
+            if (Number(res.headers.get('Content-Range')?.split('/')[1]) < offset) {
+                offset = 0
+                return refresh()
+            }
+        } else if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`)
+        } else {
+            const bytes = new Uint8Array(await res.arrayBuffer())
+            const end = bytes.lastIndexOf(10) + 1
+            const whole = res.status === 200
+            changed = whole ? end !== offset : end > 0
+            if (changed) {
+                const added = parseJsonl(new TextDecoder().decode(bytes.subarray(0, end))).games
+                games = whole ? added : games.concat(added)
+                offset = (whole ? 0 : offset) + end
+            }
+        }
+        if (changed) {
             builds = versions(games)
+            computed = null
             renderSessions(first)
             const linked = first && games.find((g) => g.id === GAME)
             if (linked) showGame(linked, true)
@@ -152,10 +170,15 @@ function selectedGames() {
 function render() {
     const session = $('session').value || null
     const list = selectedGames()
-    const ratings = computeRatings(games, session)
-    renderRanking(ratings, paces(ratings, session))
+    if (computed?.session !== session) {
+        const ratings = computeRatings(games, session)
+        const deltas = new Map(ratings.flatMap((r) => r.history.map((h) => [`${h.id}|${r.team}`, h])))
+        computed = { session, ratings, pace: paces(ratings, session), deltas }
+    }
+    const { ratings } = computed
+    renderRanking(ratings, computed.pace)
     renderChart(ratings)
-    renderGames(list, new Map(ratings.flatMap((r) => r.history.map((h) => [`${h.id}|${r.team}`, h]))))
+    renderGames(list, computed.deltas)
 
     const times = [...new Set(list.map((g) => g.time_ms))]
     $('time-ms').textContent = times.join(', ') || '?'
