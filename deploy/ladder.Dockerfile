@@ -4,18 +4,26 @@
 # La CI passe BINARIES=prebuilt pour reprendre les binaires deja compiles par release.yml.
 ARG BINARIES=build
 
-FROM rust:1.99.1-alpine3.24 AS build
+FROM rust:1.99.1-alpine3.24 AS compile
 RUN apk add --no-cache musl-dev
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY src src
 RUN cargo build --release --locked \
-    --bin isolation-ladder --bin isolation-referee --bin isolation-bot --bin isolation-check
+    --bin isolation-ladder --bin isolation-referee --bin isolation-check
+RUN cargo build --profile bot --locked --bin isolation-bot
+
+# Copy all binaries into artifacts directory
+FROM scratch AS build
+COPY --from=compile /src/target/release/isolation-ladder \
+    /src/target/release/isolation-referee \
+    /src/target/release/isolation-check /artifacts/
+COPY --from=compile /src/target/bot/isolation-bot /artifacts/
 
 # Binaires musl de la CI, un dossier par architecture ; l'artefact perd le bit executable.
 FROM scratch AS prebuilt
 ARG TARGETARCH
-COPY --chmod=755 prebuilt/${TARGETARCH}/ /src/target/release/
+COPY --chmod=755 prebuilt/${TARGETARCH}/ /artifacts/
 
 FROM ${BINARIES} AS binaries
 
@@ -38,10 +46,10 @@ RUN mkdir -p /etc/docker \
     && printf '{"runtimes":{"runsc-host-uds":{"path":"/usr/local/bin/runsc","runtimeArgs":["--host-uds=all"]}}}\n' \
         > /etc/docker/daemon.json
 
-COPY --from=binaries /src/target/release/isolation-ladder /src/target/release/isolation-check /usr/local/bin/
+COPY --from=binaries /artifacts/isolation-ladder /artifacts/isolation-check /usr/local/bin/
 # Contexte de l'image des bacs a sable, construite par le Docker interne au demarrage.
 COPY sandbox/Dockerfile sandbox/referee-entry.sh sandbox/player-entry.sh /opt/sandbox-image/
-COPY --from=binaries /src/target/release/isolation-referee /src/target/release/isolation-bot /opt/sandbox-image/
+COPY --from=binaries /artifacts/isolation-referee /artifacts/isolation-bot /opt/sandbox-image/
 COPY sandbox/run-referee.sh sandbox/run-player.sh sandbox/cleanup.sh /srv/sandbox/
 COPY web /opt/web
 COPY deploy/ladder-entrypoint.sh /usr/local/bin/

@@ -59,13 +59,20 @@ The referee checks every move and prints the result at the end (`winner`, and `r
 
 The referee contract and the JSONL format are described in `docs/formats.md`. Any referee that follows it, such as the official C++ CLI, can replace ours.
 
+## Build from source
+
+Only the bot uses full LTO and one codegen unit, giving the compiler more optimization opportunities. Other tools use normal release settings to avoid extra build time. The bot is built in `target/bot/`, the other binaries in `target/release/`.
+
 ```sh
-cargo build --release
+cargo build --release --bin isolation-referee --bin isolation-ladder --bin isolation-check
+cargo build --profile bot --bin isolation-bot
 sandbox/build.sh                     # sandbox image (needs Docker with gVisor)
 cp ladder.example.toml ladder.toml   # teams, time per move, session
 target/release/isolation-ladder ladder.toml
 npx http-server . -p 8000            # then open http://localhost:8000/web/
 ```
+
+Optional for local-only builds: `export RUSTFLAGS="-C target-cpu=native"` before building, then `unset RUSTFLAGS` afterward. Do not distribute these CPU-specific binaries or images.
 
 Tests: `cargo test` and `node --test web/*.test.mjs`.
 
@@ -74,7 +81,7 @@ Tests: `cargo test` and `node --test web/*.test.mjs`.
 Start a game in the server GUI (noVNC, port 6080) with one socket player and one CPU player, then connect our bot as the socket player:
 
 ```sh
-target/release/isolation-bot --port 8888 --strategy random --probe-illegal
+target/bot/isolation-bot --port 8888 --strategy random --probe-illegal
 ```
 
 The bot checks every move of the official CPU with our engine. Each turn it first sends a move our engine considers illegal and expects `4` back. A `DIVERGENCE` line in its report means our rules differ from the server's.

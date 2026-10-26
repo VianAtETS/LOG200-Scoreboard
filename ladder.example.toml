@@ -4,7 +4,7 @@
 #
 # Pour developper sans Docker, lancer l'arbitre et les joueurs directement :
 #   referee = ["target/release/isolation-referee", "--port", "{port}", "--time-ms", "{time_ms}", "--opening", "{opening}"]
-#   cmd = ["target/release/isolation-bot", "--strategy", "greedy", "--port", "{port}"]
+#   cmd = ["target/bot/isolation-bot", "--strategy", "greedy", "--port", "{port}"]
 # et retirer cleanup. Les jars tournent alors sans aucune isolation.
 
 # Arbitre : n'importe quel programme qui respecte le contrat (docs/formats.md).

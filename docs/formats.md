@@ -241,7 +241,8 @@ act workflow_dispatch -P ubuntu-latest=catthehacker/ubuntu:act-latest --network 
 ## Mise en route
 
 ```sh
-cargo build --release
+cargo build --release --bin isolation-referee --bin isolation-ladder --bin isolation-check
+cargo build --profile bot --bin isolation-bot
 sandbox/build.sh                            # image des bacs a sable
 cp ladder.example.toml ladder.toml          # equipes, temps, session
 target/release/isolation-ladder ladder.toml # Ctrl+C pour arreter, relancer reprend la session

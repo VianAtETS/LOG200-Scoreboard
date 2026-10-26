@@ -28,6 +28,12 @@ assert_is_empty = "allow"
 
 [profile.release]
 debug = 1
+opt-level = 3 # Lock to 3 (default) to ensure it doesn't change
+
+[profile.bot]
+inherits = "release"
+lto = "fat" # Let LLVM optimize calls between the bot and its dependencies at link time.
+codegen-units = 1 # Optimize each crate as a whole instead of splitting it for parallel compilation.
 
 [[bin]]
 name = "isolation-referee"

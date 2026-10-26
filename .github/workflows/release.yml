@@ -52,7 +52,10 @@ jobs:
         run: cargo test --release --locked --target ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-bot --bin isolation-referee --bin isolation-check
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-referee --bin isolation-check
+
+      - name: Build bot
+        run: cargo build --profile bot --locked --target ${{ matrix.target }} --bin isolation-bot
 
       # L'image du ladder reprend ces binaires, ladder compris, un dossier par architecture Docker.
       - name: Build ladder
@@ -60,9 +63,10 @@ jobs:
         run: |
           cargo build --release --locked --target ${{ matrix.target }} --bin isolation-ladder
           mkdir -p "prebuilt/${{ matrix.docker }}"
-          for bin in isolation-ladder isolation-referee isolation-bot isolation-check; do
+          for bin in isolation-ladder isolation-referee isolation-check; do
             cp "target/${{ matrix.target }}/release/$bin" "prebuilt/${{ matrix.docker }}/"
           done
+          cp "target/${{ matrix.target }}/bot/isolation-bot" "prebuilt/${{ matrix.docker }}/"
 
       - name: Upload image binaries
         if: ${{ matrix.docker }}
@@ -79,9 +83,10 @@ jobs:
           ext=""
           [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
           mkdir "$name"
-          for bin in isolation-bot isolation-referee isolation-check; do
+          for bin in isolation-referee isolation-check; do
             cp "target/${{ matrix.target }}/release/$bin$ext" "$name/"
           done
+          cp "target/${{ matrix.target }}/bot/isolation-bot$ext" "$name/"
           cp README.md "$name/"
           if [[ -n "$ext" ]]; then
             7z a "$name.zip" "$name" > /dev/null
