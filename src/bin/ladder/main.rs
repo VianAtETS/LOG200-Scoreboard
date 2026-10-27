@@ -109,7 +109,7 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut warned = HashSet::new();
     while rounds.is_none_or(|n| round < n) {
         let teams = roster(cfg, &mut warned);
-        let Some((a, b)) = scheduler.next_pair(&teams, &mut rng) else {
+        let Some((a, b)) = scheduler.next_pair(&teams, |id| standings.rating(id), &mut rng) else {
             if !waiting {
                 eprintln!("en attente d'au moins deux équipes ({} pour l'instant)", teams.len());
                 waiting = true;

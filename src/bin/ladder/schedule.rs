@@ -1,5 +1,5 @@
 //! Choix des paires : la moins jouée de la session, pour que le ladder reprenne là où il s'est
-//! arrêté.
+//! arrêté, parmi les équipes de niveau voisin.
 
 use std::collections::HashMap;
 
@@ -9,6 +9,8 @@ use rand::{Rng, RngExt};
 use isolation::record::GameRecord;
 
 use crate::config::Team;
+
+const MAX_GAP: f64 = 800.0;
 
 /// Paire d'équipes, sans ordre.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -43,12 +45,25 @@ impl Scheduler {
         self.played.get(&PairKey::new(a, b)).copied().unwrap_or(0)
     }
 
-    /// Une des paires les moins jouées, dans un ordre au hasard. `None` s'il y a moins de deux équipes.
-    pub fn next_pair<'t>(&self, teams: &'t [Team], rng: &mut impl Rng) -> Option<(&'t Team, &'t Team)> {
-        let pairs: Vec<(&Team, &Team, u32)> = teams
-            .iter()
-            .enumerate()
-            .flat_map(|(i, a)| teams[i + 1..].iter().map(move |b| (a, b, self.played(&a.id, &b.id))))
+    pub fn next_pair<'t>(
+        &self,
+        teams: &'t [Team],
+        rating: impl Fn(&str) -> f64,
+        rng: &mut impl Rng,
+    ) -> Option<(&'t Team, &'t Team)> {
+        let ratings: Vec<f64> = teams.iter().map(|t| rating(&t.id)).collect();
+        let gap = |i: usize, j: usize| (ratings[i] - ratings[j]).abs();
+        let nearest: Vec<Option<usize>> = (0..teams.len())
+            .map(|i| {
+                (0..teams.len())
+                    .filter(|&j| j != i)
+                    .min_by(|&x, &y| gap(i, x).total_cmp(&gap(i, y)))
+            })
+            .collect();
+        let pairs: Vec<(&Team, &Team, u32)> = (0..teams.len())
+            .flat_map(|i| (i + 1..teams.len()).map(move |j| (i, j)))
+            .filter(|&(i, j)| gap(i, j) <= MAX_GAP || nearest[i] == Some(j) || nearest[j] == Some(i))
+            .map(|(i, j)| (&teams[i], &teams[j], self.played(&teams[i].id, &teams[j].id)))
             .collect();
         let fewest = pairs.iter().map(|&(.., n)| n).min()?;
         let least_played: Vec<_> = pairs.into_iter().filter(|&(.., n)| n == fewest).collect();
@@ -59,6 +74,8 @@ impl Scheduler {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
@@ -82,7 +99,7 @@ mod tests {
         scheduler.record("c", "a", 2);
         let mut rng = StdRng::seed_from_u64(3);
         for _ in 0..20 {
-            let (x, y) = scheduler.next_pair(&teams, &mut rng).unwrap();
+            let (x, y) = scheduler.next_pair(&teams, |_| 1500.0, &mut rng).unwrap();
             let mut ids = [x.id.as_str(), y.id.as_str()];
             ids.sort_unstable();
             assert_eq!(ids, ["b", "c"]);
@@ -92,6 +109,57 @@ mod tests {
     #[test]
     fn needs_two_teams() {
         let mut rng = StdRng::seed_from_u64(3);
-        assert!(Scheduler::default().next_pair(&[team("a")], &mut rng).is_none());
+        assert!(
+            Scheduler::default()
+                .next_pair(&[team("a")], |_| 1500.0, &mut rng)
+                .is_none()
+        );
+    }
+
+    /// Paires tirées sur 50 essais, triées.
+    fn drawn(scheduler: &Scheduler, teams: &[Team], rating: impl Fn(&str) -> f64) -> BTreeSet<[String; 2]> {
+        let mut rng = StdRng::seed_from_u64(3);
+        (0..50)
+            .map(|_| {
+                let (x, y) = scheduler.next_pair(teams, &rating, &mut rng).unwrap();
+                let mut ids = [x.id.clone(), y.id.clone()];
+                ids.sort_unstable();
+                ids
+            })
+            .collect()
+    }
+
+    fn pair(a: &str, b: &str) -> [String; 2] {
+        [a.into(), b.into()]
+    }
+
+    #[test]
+    fn skips_pairs_too_far_apart() {
+        let teams = [team("a"), team("b"), team("c")];
+        let rating = |id: &str| match id {
+            "a" => 1500.0,
+            "b" => 1600.0,
+            _ => 2500.0,
+        };
+        let mut scheduler = Scheduler::default();
+        scheduler.record("a", "b", 4);
+        scheduler.record("b", "c", 4);
+        assert_eq!(
+            drawn(&scheduler, &teams, rating),
+            [pair("a", "b"), pair("b", "c")].into()
+        );
+    }
+
+    #[test]
+    fn isolated_team_still_plays_its_nearest() {
+        let teams = [team("a"), team("b"), team("c")];
+        let rating = |id: &str| match id {
+            "a" => 1500.0,
+            "b" => 1550.0,
+            _ => 3000.0,
+        };
+        let mut scheduler = Scheduler::default();
+        scheduler.record("a", "b", 4);
+        assert_eq!(drawn(&scheduler, &teams, rating), [pair("b", "c")].into());
     }
 }

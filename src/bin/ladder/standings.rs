@@ -330,6 +330,11 @@ impl Standings {
         Ok(standings)
     }
 
+    /// Rating toutes sessions, `START` pour une équipe qui n'a pas encore joué.
+    pub fn rating(&self, team: &str) -> f64 {
+        self.all.teams.get(team).map_or(START, |s| s.rating)
+    }
+
     /// `at` : octets de la partie dans `games.jsonl`.
     pub fn record(&mut self, game: &GameRecord, at: Range<u64>) -> io::Result<()> {
         let row = self.play(game, at);
@@ -539,6 +544,8 @@ mod tests {
         g2.ts = "2026-10-25T12:00:00.000Z".into();
         g2.black.build = Some("h2".into());
         standings.record(&g2, 10..25).unwrap();
+        assert!((standings.rating("a") - (1520.0 - 22.29)).abs() < 0.01);
+        assert_eq!(standings.rating("c"), START);
 
         let lines = fs::read_to_string(dir.join("teams/a.jsonl")).unwrap();
         let rows: Vec<serde_json::Value> = lines.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
