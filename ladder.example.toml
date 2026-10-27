@@ -60,7 +60,9 @@ cpuset_black = "3"
 
 # Parties simultanees : une par slot, chacun avec ses propres coeurs (jamais partages entre deux
 # parties). Chaque slot remplace les cles de [sandbox] qu'il redefinit. Sans [[slot]], une seule
-# partie a la fois avec les coeurs de [sandbox]. Une equipe ne joue qu'une paire a la fois.
+# partie a la fois avec les coeurs de [sandbox]. Tous les slots gardent le meme port (les jars visent
+# 8888 en dur) : sans Docker, garder un seul slot, sinon les arbitres se disputent le port. Une
+# equipe ne joue qu'une paire a la fois.
 # [[slot]]
 # cpuset_red = "2"
 # cpuset_black = "3"

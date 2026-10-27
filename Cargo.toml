@@ -1,6 +1,6 @@
 [package]
 name = "isolation"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 description = "Arbitre, bot et ladder pour le lab Isolation (LOG200)"
 publish = false

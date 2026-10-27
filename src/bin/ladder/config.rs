@@ -23,7 +23,6 @@ const MAX_PLIES: u64 = 144;
 pub struct Config {
     /// `{port}`, `{time_ms}`, `{opening}` et `{game}` sont remplacés.
     pub referee: CommandTemplate,
-    /// Port du premier slot ; le slot `i` reçoit `port + i`.
     #[serde(default = "default_port")]
     pub port: u16,
     pub time_ms: u64,
@@ -233,7 +232,7 @@ pub struct Vars<'a> {
 impl Vars<'_> {
     /// `side` remplace `{side}` ; vide pour l'arbitre et `cleanup`.
     pub fn command(&self, template: &CommandTemplate, side: Option<Color>) -> io::Result<Command> {
-        let port = (usize::from(self.cfg.port) + self.slot).to_string();
+        let port = self.cfg.port.to_string();
         let time_ms = self.cfg.time_ms.to_string();
         let side = side.map_or("", Color::name);
         let mut args = template.0.iter().map(|arg| {
@@ -307,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_overrides_sandbox_and_shifts_port() {
+    fn slot_overrides_sandbox_but_keeps_port() {
         let text = format!(
             "{MINIMAL}[sandbox]\ncpuset_red = \"2\"\nmemory = \"512m\"\n\
              [[slot]]\ncpuset_red = \"2\"\n[[slot]]\ncpuset_red = \"4\"\n"
@@ -333,6 +332,6 @@ mod tests {
             (port, var("SANDBOX_CPUSET_RED"), var("SANDBOX_MEMORY"))
         };
         assert_eq!(env(0), ("8888".into(), Some("2".into()), Some("512m".into())));
-        assert_eq!(env(1), ("8889".into(), Some("4".into()), Some("512m".into())));
+        assert_eq!(env(1), ("8888".into(), Some("4".into()), Some("512m".into())));
     }
 }

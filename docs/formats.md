@@ -32,7 +32,7 @@ Le ladder lance l'arbitre à partir d'un gabarit configurable (`referee` dans `l
 
 | Paramètre | Sens |
 | --- | --- |
-| `port` | Port TCP d'écoute. Les parties d'un même slot (voir « Isolation des joueurs ») se jouent l'une après l'autre sur ce port ; le slot `i` reçoit `port + i`. |
+| `port` | Port TCP d'écoute. Les parties d'un même slot (voir « Isolation des joueurs ») se jouent l'une après l'autre sur ce port. Tous les slots gardent le même : les jars du lab visent 8888 en dur, et le bac à sable donne à chaque partie son propre réseau. |
 | `time_ms` | Temps par coup, annoncé aux clients et appliqué (500 ms au ladder, 5000 ms au tournoi). |
 | `opening` | Optionnel. Demi-coups imposés avant de donner la main aux clients, séparés par des virgules (`G1-G4-F9,F12-F10-G7`). Toujours en nombre pair, pour que le rouge joue le premier coup client. |
 
