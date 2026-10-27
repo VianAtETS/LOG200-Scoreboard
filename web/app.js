@@ -16,7 +16,7 @@ const PLAY_MS = 500
 // p99 au-delà de cette part du temps par coup : l'équipe frôle le timeout.
 const PACE_WARN = 0.8
 const GLOBAL = ''
-const SESSION = params.get('session') ?? GLOBAL
+const SESSION = params.get('session')
 const TEAM = params.get('team') ?? GLOBAL
 const GAME = params.get('game')
 // Fenêtres de la courbe Elo en ms ; une valeur absente vaut « Tout ».
@@ -188,14 +188,14 @@ function fillSelect(select, values, wanted = select.value) {
 }
 
 function renderSessions(first) {
-    fillSelect($('session'), summary.sessions, first ? SESSION : $('session').value)
+    fillSelect($('session'), summary.sessions, first ? (SESSION ?? summary.sessions[0]) : $('session').value)
     $('teams').replaceChildren(...allTeams().sort().map((t) => el('option', { value: t })))
     if (first) $('team').value = TEAM
 }
 
-function setParam(key, value) {
+function setParam(key, value, keepEmpty = false) {
     const url = new URL(location.href)
-    if (value) url.searchParams.set(key, value)
+    if (value || (keepEmpty && value === '')) url.searchParams.set(key, value)
     else url.searchParams.delete(key)
     history.replaceState(null, '', url)
 }
@@ -217,9 +217,9 @@ function render() {
     renderChart(scope.ratings, list, key)
     renderGames(list, key)
 
-    const times = scope.time_ms
-    $('time-ms').textContent = times.join(', ') || '?'
-    const pace = times.length === 1 ? `, ${times[0]} ms par coup` : ''
+    const time = scope.recent.at(-1)?.time_ms
+    $('time-ms').textContent = time ?? '?'
+    const pace = time ? `, ${time} ms par coup` : ''
     const count = followed.team ? list.length : scope.games
     $('status').textContent = `${count} parties${pace}, à jour à ${timeFormat.format(new Date())}`
 
@@ -554,7 +554,7 @@ for (const [id, event] of [
     ['team', 'input'],
 ]) {
     $(id).addEventListener(event, () => {
-        setParam(id, $(id).value.trim())
+        setParam(id, $(id).value.trim(), id === 'session')
         replay.pinned = false
         follow().then(render, render)
     })
