@@ -4,7 +4,7 @@
 // sert la page. Données : ?data=URL du dossier, sinon <serveur>/data.
 // ?session=, ?team=, ?window= et ?game= suivent les choix de la page : l'adresse se partage telle quelle.
 
-import { parseJsonl, since } from './elo.js'
+import { parseJsonl, since, versionStarts } from './elo.js'
 import { BLACK, DESTROYED, positions, RED, SIZE, squareName } from './replay.js'
 
 const params = new URLSearchParams(location.search)
@@ -282,15 +282,18 @@ function renderChart(ratings, rows, key) {
     $('elo-chart').hidden = !r
     const history = r
         ? rows.map((g) => {
-            const [rating, delta] = (g.red.team === r.team ? g.red : g.black)[key]
-            return { id: g.id, ts: g.ts, rating, delta, game: g }
+            const side = g.red.team === r.team ? g.red : g.black
+            const [rating, delta] = side[key]
+            return { id: g.id, ts: g.ts, rating, delta, game: g, build: side.build, version: version(side) }
         })
         : []
+    for (const k of versionStarts(history)) history[k].newVersion = true
     const w = document.querySelector('#elo-window input:checked')?.value
     const { start, points: recent } = r ? since(history, Date.now() - (WINDOWS[w] ?? Infinity)) : { points: [] }
     $('elo-plot').hidden = !recent.length
     if (!recent.length) {
         chart.points = []
+        $('elo-versions').replaceChildren()
         if (r)
             $('elo-caption').replaceChildren(
                 el('strong', {}, `${Math.round(start)} Elo`),
@@ -314,6 +317,15 @@ function renderChart(ratings, rows, key) {
     stroke.setAttribute('points', line)
     svg.setAttribute('viewBox', `0 0 ${values.length - 1} ${bottom}`)
     svg.replaceChildren(area, stroke)
+    $('elo-versions').replaceChildren(
+        ...points.flatMap((p, i) => {
+            if (!p.newVersion) return []
+            const left = (i - 1) / (points.length - 1)
+            const marker = el('div', { class: `elo-version${left > 0.9 ? ' end' : ''}`, 'data-label': p.version })
+            marker.style.left = `${100 * left}%`
+            return [marker]
+        })
+    )
     $('elo-plot').setAttribute('aria-valuemax', String(values.length - 1))
     placeCursor(replayPoint())
 }
@@ -340,7 +352,8 @@ function placeCursor(i) {
         const color = p.game.red.team === team ? 'red' : 'black'
         const opponent = p.game[color === 'red' ? 'black' : 'red'].team
         const d = roundDelta(p.delta)
-        const context = ` ${p.game.winner === color ? 'victoire' : 'défaite'} contre ${opponent}, ${fullFormat.format(new Date(p.ts))}`
+        const release = p.newVersion ? `, nouvelle version ${p.version}` : ''
+        const context = ` ${p.game.winner === color ? 'victoire' : 'défaite'} contre ${opponent}, ${fullFormat.format(new Date(p.ts))}${release}`
         if (d) parts.push(' ', el('span', { class: `delta ${d > 0 ? 'up' : 'down'}` }, signed(d)))
         parts.push(el('span', {}, context))
         text += `${d ? ` (${signed(d)})` : ''},${context}`

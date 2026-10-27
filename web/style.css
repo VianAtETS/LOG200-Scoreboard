@@ -869,6 +869,32 @@ input[type='range'] {
     pointer-events: none;
 }
 
+.elo-version {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px dashed var(--muted);
+    pointer-events: none;
+}
+
+.elo-version::after {
+    content: attr(data-label);
+    position: absolute;
+    top: -2px;
+    left: 3px;
+    padding: 0 3px;
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 0.6875rem;
+    line-height: 1.3;
+}
+
+.elo-version.end::after {
+    left: auto;
+    right: 3px;
+}
+
 .elo-dot {
     position: absolute;
     width: 10px;
@@ -880,7 +906,6 @@ input[type='range'] {
     pointer-events: none;
 }
 
-/* Radios natives en pastilles : clavier et lecteurs d'écran sans code. */
 .elo-window {
     display: flex;
     gap: 4px;

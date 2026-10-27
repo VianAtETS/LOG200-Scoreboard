@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { parseJsonl, since, START } from './elo.js'
+import { parseJsonl, since, START, versionStarts } from './elo.js'
 import { BLACK, DESTROYED, EMPTY, positions, RED, squareIndex, squareName } from './replay.js'
 
 let clock = 0
@@ -48,4 +48,10 @@ test('since starts from the rating just before the cutoff', () => {
     assert.deepEqual(since(history, -Infinity), { start: START, points: history })
     assert.deepEqual(since(history, at(1)), { start: history[0].rating, points: history.slice(1) })
     assert.deepEqual(since(history, at(2) + 1), { start: history[2].rating, points: [] })
+})
+
+test('versionStarts marks each new build after the first entry', () => {
+    const history = ['a', 'a', 'b', 'b', undefined, 'c'].map((build) => ({ build }))
+    assert.deepEqual(versionStarts(history), [2, 5])
+    assert.deepEqual(versionStarts([{ build: 'a' }]), [])
 })

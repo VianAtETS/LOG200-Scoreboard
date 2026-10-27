@@ -25,3 +25,11 @@ export function since(history, cutoff) {
     const first = i === -1 ? history.length : i
     return { start: history[first - 1]?.rating ?? START, points: history.slice(first) }
 }
+
+export function versionStarts(history) {
+    const starts = []
+    for (let k = 1; k < history.length; k++) {
+        if (history[k].build && history[k].build !== history[k - 1].build) starts.push(k)
+    }
+    return starts
+}
