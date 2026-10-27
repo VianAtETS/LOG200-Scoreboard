@@ -32,7 +32,7 @@ Le ladder lance l'arbitre à partir d'un gabarit configurable (`referee` dans `l
 
 | Paramètre | Sens |
 | --- | --- |
-| `port` | Port TCP d'écoute. Les parties se jouent l'une après l'autre sur ce port. |
+| `port` | Port TCP d'écoute. Les parties d'un même slot (voir « Isolation des joueurs ») se jouent l'une après l'autre sur ce port ; le slot `i` reçoit `port + i`. |
 | `time_ms` | Temps par coup, annoncé aux clients et appliqué (500 ms au ladder, 5000 ms au tournoi). |
 | `opening` | Optionnel. Demi-coups imposés avant de donner la main aux clients, séparés par des virgules (`G1-G4-F9,F12-F10-G7`). Toujours en nombre pair, pour que le rouge joue le premier coup client. |
 
@@ -202,6 +202,7 @@ Ce que ça garantit, vérifié avec des jars hostiles :
 - Un jar n'atteint que la socket de sa couleur, et chaque relais n'accepte qu'une connexion. Il ne peut donc pas en ouvrir une seconde pour jouer à la place de l'adversaire. Sous gVisor, deux conteneurs ne partagent pas de loopback, d'où les sockets Unix.
 - Le jar tourne en `nobody`, sans capacités, sur un système de fichiers en lecture seule (sauf un `/tmp` de 64 Mo). Il ne voit ni le jar ni la socket de l'adversaire, et ne peut pas tuer son relais.
 - Mémoire, processus et CPU sont plafonnés, avec un cœur dédié par couleur. Un dépassement de mémoire tue le conteneur du joueur, pas la machine. Les threads Java ne comptent pas dans le plafond de processus.
+- Plusieurs parties peuvent se jouer en même temps, une par `[[slot]]` de `ladder.toml`. Chaque slot remplace les clés de `[sandbox]` qu'il redéfinit, en pratique `cpuset_red` et `cpuset_black` : deux parties ne partagent jamais un cœur. Une équipe ne joue qu'une paire à la fois, et une paire n'est lancée que si elle fait partie des moins jouées. Sans `[[slot]]`, une seule partie à la fois. Les smoke tests prennent eux aussi un slot libre.
 - Les conteneurs et les sockets sont supprimés après chaque partie, et au démarrage du ladder après un arrêt brutal.
 
 Le coût : environ 60 ms de plus au démarrage, et 20 à 30 % de calcul en moins sur un test qui alloue beaucoup. C'est pareil pour les deux joueurs, mais un bot va un peu moins loin qu'au tournoi.

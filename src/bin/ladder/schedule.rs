@@ -1,7 +1,7 @@
 //! Choix des paires : la moins jouée de la session, pour que le ladder reprenne là où il s'est
 //! arrêté, parmi les équipes de niveau voisin.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rand::seq::IndexedRandom;
 use rand::{Rng, RngExt};
@@ -48,6 +48,7 @@ impl Scheduler {
     pub fn next_pair<'t>(
         &self,
         teams: &'t [Team],
+        busy: &HashSet<String>,
         rating: impl Fn(&str) -> f64,
         rng: &mut impl Rng,
     ) -> Option<(&'t Team, &'t Team)> {
@@ -66,7 +67,10 @@ impl Scheduler {
             .map(|(i, j)| (&teams[i], &teams[j], self.played(&teams[i].id, &teams[j].id)))
             .collect();
         let fewest = pairs.iter().map(|&(.., n)| n).min()?;
-        let least_played: Vec<_> = pairs.into_iter().filter(|&(.., n)| n == fewest).collect();
+        let least_played: Vec<_> = pairs
+            .into_iter()
+            .filter(|&(a, b, n)| n == fewest && !busy.contains(&a.id) && !busy.contains(&b.id))
+            .collect();
         let &(a, b, _) = least_played.choose(rng)?;
         Some(if rng.random() { (a, b) } else { (b, a) })
     }
@@ -99,7 +103,9 @@ mod tests {
         scheduler.record("c", "a", 2);
         let mut rng = StdRng::seed_from_u64(3);
         for _ in 0..20 {
-            let (x, y) = scheduler.next_pair(&teams, |_| 1500.0, &mut rng).unwrap();
+            let (x, y) = scheduler
+                .next_pair(&teams, &HashSet::new(), |_| 1500.0, &mut rng)
+                .unwrap();
             let mut ids = [x.id.as_str(), y.id.as_str()];
             ids.sort_unstable();
             assert_eq!(ids, ["b", "c"]);
@@ -111,7 +117,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(3);
         assert!(
             Scheduler::default()
-                .next_pair(&[team("a")], |_| 1500.0, &mut rng)
+                .next_pair(&[team("a")], &HashSet::new(), |_| 1500.0, &mut rng)
                 .is_none()
         );
     }
@@ -121,7 +127,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(3);
         (0..50)
             .map(|_| {
-                let (x, y) = scheduler.next_pair(teams, &rating, &mut rng).unwrap();
+                let (x, y) = scheduler.next_pair(teams, &HashSet::new(), &rating, &mut rng).unwrap();
                 let mut ids = [x.id.clone(), y.id.clone()];
                 ids.sort_unstable();
                 ids
@@ -161,5 +167,32 @@ mod tests {
         let mut scheduler = Scheduler::default();
         scheduler.record("a", "b", 4);
         assert_eq!(drawn(&scheduler, &teams, rating), [pair("b", "c")].into());
+    }
+
+    #[test]
+    fn busy_teams_are_left_out() {
+        let teams = [team("a"), team("b"), team("c"), team("d")];
+        let mut scheduler = Scheduler::default();
+        scheduler.record("a", "b", 2);
+        let busy = HashSet::from(["a".to_string(), "b".to_string()]);
+        let mut rng = StdRng::seed_from_u64(3);
+        for _ in 0..20 {
+            let (x, y) = scheduler.next_pair(&teams, &busy, |_| 1500.0, &mut rng).unwrap();
+            let mut ids = [x.id.as_str(), y.id.as_str()];
+            ids.sort_unstable();
+            assert_eq!(ids, ["c", "d"]);
+        }
+    }
+
+    #[test]
+    fn free_teams_wait_rather_than_replay() {
+        let teams = [team("a"), team("b"), team("c"), team("d")];
+        let mut scheduler = Scheduler::default();
+        scheduler.record("a", "b", 2);
+        scheduler.record("c", "d", 2);
+        // a-b vient de finir, c-d joue encore : a-c, a-d, b-c et b-d attendent c et d.
+        let busy = HashSet::from(["c".to_string(), "d".to_string()]);
+        let mut rng = StdRng::seed_from_u64(3);
+        assert!(scheduler.next_pair(&teams, &busy, |_| 1500.0, &mut rng).is_none());
     }
 }

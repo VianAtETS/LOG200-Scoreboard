@@ -6,7 +6,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
@@ -42,17 +42,20 @@ pub enum GameError {
     Inconsistent(#[from] ValidationError),
 }
 
-/// Joue les parties une par une, ladder et smoke tests confondus : pas de port ni de cœur partagé.
+/// Joue au plus une partie par slot, ladder et smoke tests confondus : pas de port ni de cœur partagé.
 pub struct Arena {
     cfg: Config,
-    one_game: Mutex<()>,
+    free: Mutex<Vec<usize>>,
+    freed: Condvar,
 }
 
 impl Arena {
-    pub const fn new(cfg: Config) -> Self {
+    pub fn new(cfg: Config) -> Self {
+        let free = (0..cfg.slots()).rev().collect();
         Self {
             cfg,
-            one_game: Mutex::new(()),
+            free: Mutex::new(free),
+            freed: Condvar::new(),
         }
     }
 
@@ -60,10 +63,24 @@ impl Arena {
         &self.cfg
     }
 
+    /// Attend un slot libre.
+    fn take_slot(&self) -> Slot<'_> {
+        let free = self.free.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut free = self
+            .freed
+            .wait_while(free, |free| free.is_empty())
+            .unwrap_or_else(PoisonError::into_inner);
+        let Some(index) = free.pop() else {
+            unreachable!("attendu tant qu'aucun slot n'est libre");
+        };
+        Slot { arena: self, index }
+    }
+
     /// Ramasse les restes d'un arrêt brutal : `cleanup` avec `{game}` vide.
     pub fn sweep(&self) {
         let vars = Vars {
             cfg: &self.cfg,
+            slot: 0,
             opening: String::new(),
             game: "",
         };
@@ -71,12 +88,20 @@ impl Arena {
     }
 
     pub fn play(&self, red: &Team, black: &Team, opening: &[Move]) -> Result<GameRecord, GameError> {
-        let _turn = self.one_game.lock().unwrap_or_else(PoisonError::into_inner);
+        let slot = self.take_slot();
         let cfg = &self.cfg;
         let ts = now_rfc3339();
         let id = format!("{}-{}-{}", compact_timestamp(&ts), red.id, black.id);
+        // Avant la partie : un smoke test peut remplacer le jar pendant qu'elle se joue.
+        let entry = |team: &Team| Player {
+            team: team.id.clone(),
+            build: build_hash(team),
+            anchor: team.anchor,
+        };
+        let (red_entry, black_entry) = (entry(red), entry(black));
         let vars = Vars {
             cfg,
+            slot: slot.index,
             opening: notation::join(opening),
             game: &id,
         };
@@ -105,19 +130,29 @@ impl Arena {
         let result = referee.finish(cfg.game_timeout())?;
         drop(players);
 
-        let entry = |team: &Team| Player {
-            team: team.id.clone(),
-            build: build_hash(team),
-            anchor: team.anchor,
-        };
         Ok(GameRecord {
             id,
             session: cfg.session.clone(),
             ts,
-            red: entry(red),
-            black: entry(black),
+            red: red_entry,
+            black: black_entry,
             result,
         })
+    }
+}
+
+/// Rendu à la sortie de portée, après le nettoyage de la partie.
+struct Slot<'a> {
+    arena: &'a Arena,
+    index: usize,
+}
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        let mut free = self.arena.free.lock().unwrap_or_else(PoisonError::into_inner);
+        free.push(self.index);
+        free.sort_unstable_by(|a, b| b.cmp(a));
+        self.arena.freed.notify_one();
     }
 }
 
@@ -154,9 +189,10 @@ impl RefereeProcess {
         };
 
         let (line_tx, lines) = mpsc::channel();
+        let game = vars.game.to_string();
         thread::spawn(move || {
             for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                eprintln!("   [arbitre] {line}");
+                eprintln!("   [{game}] {line}");
                 if line_tx.send(line).is_err() {
                     break;
                 }
@@ -270,4 +306,30 @@ fn spawn_logged(mut command: Command, log: &Path) -> io::Result<Reaper> {
         }
     });
     Ok(Reaper(child))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_game_waits_for_a_free_slot() {
+        let cfg: Config = "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\n[[slot]]\n[[slot]]\n"
+            .parse()
+            .unwrap();
+        let arena = Arena::new(cfg);
+        let first = arena.take_slot();
+        let second = arena.take_slot();
+        assert_eq!((first.index, second.index), (0, 1));
+        thread::scope(|scope| {
+            let (tx, rx) = mpsc::channel();
+            let arena = &arena;
+            scope.spawn(move || tx.send(arena.take_slot().index).unwrap());
+            assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
+            drop(second);
+            assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(1));
+        });
+        drop(first);
+        assert_eq!(arena.take_slot().index, 0);
+    }
 }

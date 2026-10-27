@@ -1,6 +1,6 @@
-//! Enchaîne les parties entre équipes et ajoute une ligne par partie au JSONL. Les équipes sont
-//! celles de `ladder.toml` plus les équipes inscrites qui ont un jar accepté ; la liste est relue
-//! avant chaque paire.
+//! Enchaîne les parties entre équipes, une paire par slot libre, et ajoute une ligne par partie au
+//! JSONL. Les équipes sont celles de `ladder.toml` plus les équipes inscrites qui ont un jar
+//! accepté ; la liste est relue avant chaque paire.
 
 mod arena;
 mod config;
@@ -15,17 +15,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::sync::mpsc::{self, Sender};
 use std::thread;
 use std::time::Duration;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 
+use isolation::board::Move;
 use isolation::notation;
-use isolation::record::Jsonl;
+use isolation::record::{GameRecord, Jsonl};
 use isolation::rules::random_opening;
 
-use arena::Arena;
+use arena::{Arena, GameError};
 use config::{Config, Team};
 use journal::append_jsonl;
 use schedule::Scheduler;
@@ -107,53 +109,105 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut round = 0;
     let mut waiting = false;
     let mut warned = HashSet::new();
-    while rounds.is_none_or(|n| round < n) {
-        let teams = roster(cfg, &mut warned);
-        let Some((a, b)) = scheduler.next_pair(&teams, |id| standings.rating(id), &mut rng) else {
-            if !waiting {
-                eprintln!("en attente d'au moins deux équipes ({} pour l'instant)", teams.len());
-                waiting = true;
+    let (reports, received) = mpsc::channel();
+    let mut running = 0;
+    let mut busy = HashSet::new();
+    loop {
+        if rounds.is_none_or(|n| round < n) {
+            if running < cfg.slots() {
+                let teams = roster(cfg, &mut warned);
+                if let Some((a, b)) = scheduler.next_pair(&teams, &busy, |id| standings.rating(id), &mut rng) {
+                    waiting = false;
+                    round += 1;
+                    running += 1;
+                    scheduler.record(&a.id, &b.id, 2);
+                    busy.extend([a.id.clone(), b.id.clone()]);
+                    let opening = random_opening(cfg.opening_plies, &mut rng);
+                    eprintln!(
+                        "== paire {round} : {} contre {} (ouverture {})",
+                        a.id,
+                        b.id,
+                        notation::join(&opening)
+                    );
+                    spawn_pair(Arc::clone(&arena), a.clone(), b.clone(), opening, reports.clone());
+                    continue;
+                }
+                if running == 0 && !waiting {
+                    eprintln!("en attente d'au moins deux équipes ({} pour l'instant)", teams.len());
+                    waiting = true;
+                }
             }
-            thread::sleep(IDLE_DELAY);
+        } else if running == 0 {
+            break;
+        }
+        let Ok(report) = received.recv_timeout(IDLE_DELAY) else {
             continue;
         };
-        waiting = false;
-        round += 1;
-        let opening = random_opening(cfg.opening_plies, &mut rng);
-        eprintln!(
-            "== paire {round} : {} contre {} (ouverture {})",
-            a.id,
-            b.id,
-            notation::join(&opening)
-        );
-        for (red, black) in [(a, b), (b, a)] {
-            match arena.play(red, black, &opening) {
-                Ok(record) => {
-                    let at = append_jsonl(&cfg.out, &record).with_context(|| cfg.out.display().to_string())?;
-                    if let Err(e) = standings.record(&record, at) {
-                        eprintln!("   classement non publié : {e}");
-                    }
-                    let result = &record.result;
-                    eprintln!(
-                        "   {} (rouge) contre {} (noir) : {} gagne ({:?}, {} coups)",
-                        red.id,
-                        black.id,
-                        result.winner,
-                        result.reason,
-                        result.moves.len()
-                    );
+        match report {
+            Report::Played {
+                red,
+                black,
+                outcome: Ok(record),
+            } => {
+                let at = append_jsonl(&cfg.out, &record).with_context(|| cfg.out.display().to_string())?;
+                if let Err(e) = standings.record(&record, at) {
+                    eprintln!("   classement non publié : {e}");
                 }
-                Err(e) => {
-                    eprintln!("   partie {} contre {} annulée : {e}", red.id, black.id);
-                    thread::sleep(RETRY_DELAY);
+                let result = &record.result;
+                eprintln!(
+                    "   {red} (rouge) contre {black} (noir) : {} gagne ({:?}, {} coups)",
+                    result.winner,
+                    result.reason,
+                    result.moves.len()
+                );
+            }
+            Report::Played {
+                red,
+                black,
+                outcome: Err(e),
+            } => eprintln!("   partie {red} contre {black} annulée : {e}"),
+            Report::Done(pair) => {
+                running -= 1;
+                for id in &pair {
+                    busy.remove(id);
                 }
+                prune_logs(&logs, LOG_RETENTION);
             }
         }
-        scheduler.record(&a.id, &b.id, 2);
-        prune_logs(&logs, LOG_RETENTION);
-        thread::sleep(Duration::from_secs(cfg.pause_s));
     }
     Ok(())
+}
+
+/// Compte rendu d'un thread de paire.
+#[expect(clippy::large_enum_variant, reason = "trois messages par paire")]
+enum Report {
+    Played {
+        red: String,
+        black: String,
+        outcome: Result<GameRecord, GameError>,
+    },
+    /// Les deux parties et la pause sont finies : les équipes sont libres.
+    Done([String; 2]),
+}
+
+/// Joue la paire dans les deux couleurs, avec la même ouverture. L'arène attribue un slot à chaque partie.
+fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: Sender<Report>) {
+    thread::spawn(move || {
+        for (red, black) in [(&a, &b), (&b, &a)] {
+            let outcome = arena.play(red, black, &opening);
+            let failed = outcome.is_err();
+            let _ = reports.send(Report::Played {
+                red: red.id.clone(),
+                black: black.id.clone(),
+                outcome,
+            });
+            if failed {
+                thread::sleep(RETRY_DELAY);
+            }
+        }
+        thread::sleep(Duration::from_secs(arena.config().pause_s));
+        let _ = reports.send(Report::Done([a.id, b.id]));
+    });
 }
 
 /// Équipes de `[[team]]`, puis les équipes inscrites qui n'y figurent pas.

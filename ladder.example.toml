@@ -58,6 +58,16 @@ cpuset_black = "3"
 # Si GameConnection vise un nom d'hote plutot que localhost, il est redirige vers le relais.
 # host_alias = "isolation.example.ca"
 
+# Parties simultanees : une par slot, chacun avec ses propres coeurs (jamais partages entre deux
+# parties). Chaque slot remplace les cles de [sandbox] qu'il redefinit. Sans [[slot]], une seule
+# partie a la fois avec les coeurs de [sandbox]. Une equipe ne joue qu'une paire a la fois.
+# [[slot]]
+# cpuset_red = "2"
+# cpuset_black = "3"
+# [[slot]]
+# cpuset_red = "4"
+# cpuset_black = "5"
+
 # Soumission des jars par HTTP (PUT /api/submit). Une equipe s'inscrit avec
 #   isolation-ladder add-team eq01        (dans le compose : docker compose exec ladder isolation-ladder add-team eq01)
 # qui affiche son token. Elle joue des que son premier jar a passe le smoke test.

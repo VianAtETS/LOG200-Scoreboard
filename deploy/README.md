@@ -6,6 +6,7 @@ Le ladder et sa page tournent avec un `docker compose up -d`. Chaque jar joue da
 
 - Une machine avec Docker : Linux de préférence, Docker Desktop fonctionne aussi.
 - Au moins 4 cœurs : chaque partie réserve un cœur par joueur (`cpuset_red`, `cpuset_black` dans `ladder.toml`).
+- Pour jouer plusieurs parties en même temps, déclarer un `[[slot]]` par partie dans `ladder.toml`. Il faut compter 2 cœurs et 2 × `memory` de RAM par slot, plus 1 ou 2 cœurs pour Docker et les arbitres. Avec 8 cœurs, par exemple, 3 slots sur les cœurs 2 à 7.
 - Le service `ladder` tourne en mode privilégié, parce qu'il héberge le Docker interne et gVisor qui isolent les jars. Le code des équipes, lui, n'a ni privilège ni réseau.
 
 ## Installation
