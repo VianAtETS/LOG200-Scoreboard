@@ -330,6 +330,14 @@ tbody tr:last-child td {
     letter-spacing: 0.01em;
 }
 
+tr.bot td {
+    color: var(--muted);
+}
+
+tr.bot .team {
+    font-weight: 500;
+}
+
 tbody tr:first-child .rank,
 tbody tr:first-child .elo {
     color: var(--red);

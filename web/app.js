@@ -245,18 +245,22 @@ function paceCell(pace) {
 function renderRanking(ratings) {
     $('ranking-empty').hidden = ratings.length > 0
     $('anchor-note').hidden = !ratings.some((r) => r.anchor)
+    const isBot = (r) => !r.build
+    $('bot-note').hidden = !ratings.some(isBot)
     $('ranking')
         .querySelector('tbody')
         .replaceChildren(
             ...ratings.map((r, i) => {
+                const bot = isBot(r)
                 const team = el('td', { class: 'team', title: r.team }, r.team)
                 const v = version(r)
                 if (v) team.append(el('span', { class: 'badge', title: `Build ${r.build}` }, v))
+                if (bot) team.append(el('span', { class: 'badge', title: 'Adversaire de référence' }, 'bot'))
                 if (r.anchor) team.append(el('span', { class: 'badge anchor' }, 'ancre'))
                 if (r.provisional) team.append(el('span', { class: 'badge' }, 'provisoire'))
                 return el(
                     'tr',
-                    {},
+                    bot ? { class: 'bot' } : {},
                     el('td', { class: 'num rank' }, String(i + 1)),
                     team,
                     el('td', { class: 'num elo' }, String(Math.round(r.rating))),
