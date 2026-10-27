@@ -23,6 +23,7 @@ use crate::journal::compact_timestamp;
 /// Au-delà, le journal d'un joueur est tronqué : un jar ne doit pas pouvoir remplir le disque.
 const LOG_CAP: usize = 1 << 20;
 const MARKER_TIMEOUT: Duration = Duration::from_secs(60);
+const LOG_FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Error)]
 pub enum GameError {
@@ -111,7 +112,7 @@ impl Arena {
 
         let startup = Duration::from_millis(cfg.startup_ms);
         let spawn_player = |team: &Team, side: Color| {
-            let log = cfg.logs_dir().join(format!("{id}-{}.log", team.id));
+            let log = cfg.player_log(&id, &team.id);
             vars.command(&team.cmd, Some(side))
                 .and_then(|command| spawn_logged(command, &log))
                 .map_err(|error| GameError::Spawn {
@@ -283,14 +284,29 @@ impl Drop for CleanupGuard {
     }
 }
 
+/// Joueur dont la sortie d'erreur va dans un journal.
+struct LoggedPlayer {
+    process: Option<Reaper>,
+    written: Receiver<()>,
+}
+
+impl Drop for LoggedPlayer {
+    fn drop(&mut self) {
+        drop(self.process.take());
+        let _ = self.written.recv_timeout(LOG_FLUSH_TIMEOUT);
+    }
+}
+
 /// Joueur dont la sortie d'erreur va dans `log`, tronquée à `LOG_CAP` octets.
-fn spawn_logged(mut command: Command, log: &Path) -> io::Result<Reaper> {
+fn spawn_logged(mut command: Command, log: &Path) -> io::Result<LoggedPlayer> {
     let mut file = File::create(log)?;
     let mut child = command.stdout(Stdio::null()).stderr(Stdio::piped()).spawn()?;
     let Some(mut stderr) = child.stderr.take() else {
         unreachable!("tube demandé au lancement");
     };
+    let (done, written) = mpsc::channel();
     thread::spawn(move || {
+        let _done = done;
         let mut kept = 0;
         let mut buf = [0u8; 8192];
         // On lit jusqu'au bout, même après le plafond, pour ne pas bloquer le joueur sur un tube plein.
@@ -305,7 +321,10 @@ fn spawn_logged(mut command: Command, log: &Path) -> io::Result<Reaper> {
             }
         }
     });
-    Ok(Reaper(child))
+    Ok(LoggedPlayer {
+        process: Some(Reaper(child)),
+        written,
+    })
 }
 
 #[cfg(test)]

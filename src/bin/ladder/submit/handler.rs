@@ -63,7 +63,7 @@ pub enum SubmitError {
     Registry(RegistryError),
     #[error("écriture du jar : {0}")]
     Stage(io::Error),
-    #[error("refusé ({0}) : le jar actif reste en jeu")]
+    #[error("refusé ({0}) : le jar actif reste en jeu{tail}", tail = .0.stderr_section())]
     Rejected(Forfeit),
     #[error("erreur du ladder pendant le smoke test, réessayer plus tard : {0}")]
     Ladder(GameError),

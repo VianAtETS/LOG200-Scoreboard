@@ -488,6 +488,8 @@ tbody tr:first-child .elo {
     margin-top: 10px;
     font-size: 0.8125rem;
     color: var(--muted);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .submit-status[data-state='ok'] {

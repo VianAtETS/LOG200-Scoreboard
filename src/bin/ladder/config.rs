@@ -115,6 +115,11 @@ impl Config {
         self.data_dir().join("logs")
     }
 
+    /// Sortie d'erreur de `team` pendant la partie `game`.
+    pub fn player_log(&self, game: &str, team: &str) -> PathBuf {
+        self.logs_dir().join(format!("{game}-{team}.log"))
+    }
+
     /// Parties simultanées : au moins une.
     pub fn slots(&self) -> usize {
         self.slots.len().max(1)
