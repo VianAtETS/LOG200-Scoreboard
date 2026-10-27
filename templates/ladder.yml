@@ -60,11 +60,14 @@ jobs:
           {
             echo "### Ladder : HTTP $code"
             echo
+            echo '````text'
             echo "$body"
+            echo '````'
             echo
             echo "Classement : ${LADDER_URL%/}/"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$code" != 200 ]; then
-            echo "::error::${body:-ladder injoignable a $LADDER_URL}"
+            reason=${body%%$'\n'*}
+            echo "::error::${reason:-ladder injoignable a $LADDER_URL}"
             exit 1
           fi
