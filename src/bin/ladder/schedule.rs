@@ -10,7 +10,7 @@ use isolation::record::GameRecord;
 
 use crate::config::Team;
 
-const MAX_GAP: f64 = 800.0;
+const MAX_GAP: f64 = 600.0;
 
 /// Paire d'équipes, sans ordre.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
