@@ -64,6 +64,20 @@ test('bots take no rank and sit between two teams', () => {
     assert.equal(series.get('bot').at(-1).bot, true)
 })
 
+test('bots between the same two teams spread out by rating', () => {
+    const rows = [
+        tick(['a', 1520, 'a1'], ['n3', 1510]),
+        tick(['b', 1480, 'b1'], ['n2', 1490]),
+        tick(['n1', 1470], ['n4', 1530]),
+    ]
+    const { series } = rankSeries(rows, { selected: ['a', 'b', 'n1', 'n2', 'n3', 'n4'] })
+    const rank = (team) => series.get(team).at(-1).rank
+    assert.deepEqual([rank('a'), rank('b')], [1, 2])
+    assert.equal(rank('n4'), 0.5)
+    assert.deepEqual([rank('n3'), rank('n2')], [1 + 1 / 3, 1 + 2 / 3])
+    assert.equal(rank('n1'), 2.5)
+})
+
 test('a new build is a version point, even without a rank change', () => {
     const rows = [
         tick(['a', 1520, 'a1'], ['b', 1480, 'b1']),
