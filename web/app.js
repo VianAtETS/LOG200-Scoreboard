@@ -1,29 +1,38 @@
 // Page du ladder : classement et dernières parties de summary.json, historique de l'équipe
 // recherchée dans teams/, replay lu partie par partie dans games.jsonl.
-// Serveur : la balise meta scoreboard-server (posée par le workflow GitHub Pages), sinon le site qui
-// sert la page. Données : ?data=URL du dossier, sinon <serveur>/data.
 // ?session=, ?team=, ?window= et ?game= suivent les choix de la page : l'adresse se partage telle quelle.
 
-import { parseJsonl, since, versionStarts } from './elo.js'
+import {
+    $,
+    DATA,
+    dayFormat,
+    el,
+    fillSelect,
+    fullFormat,
+    GLOBAL,
+    linkPages,
+    params,
+    pulse,
+    REFRESH_MS,
+    roundDelta,
+    SERVER,
+    setParam,
+    signed,
+    tail,
+    timeFormat,
+    WINDOWS,
+} from './common.js'
+import { since, versionStarts } from './elo.js'
 import { BLACK, DESTROYED, positions, RED, SIZE, squareName } from './replay.js'
 
-const params = new URLSearchParams(location.search)
-const SERVER = document.querySelector('meta[name="scoreboard-server"]')?.content || '..'
-const DATA = params.get('data') ?? `${SERVER}/data`
-const REFRESH_MS = 15000
 const RECENT_GAMES = 50
 const PLAY_MS = 500
 // p99 au-delà de cette part du temps par coup : l'équipe frôle le timeout.
 const PACE_WARN = 0.8
-const GLOBAL = ''
 const SESSION = params.get('session')
 const TEAM = params.get('team') ?? GLOBAL
 const GAME = params.get('game')
-// Fenêtres de la courbe Elo en ms ; une valeur absente vaut « Tout ».
-const WINDOWS = { '1h': 36e5, '24h': 864e5, '7j': 6048e5 }
 const WINDOW = params.get('window') ?? GLOBAL
-
-const $ = (id) => document.getElementById(id)
 
 // Raison de la fin, du point de vue du perdant : liste compacte, puis phrase du replay.
 const REASONS = {
@@ -54,20 +63,6 @@ let chart = { team: null, points: [], min: 0, max: 0, index: 0 }
 let replay = { game: null, steps: [], index: 0, timer: null, pinned: Boolean(GAME) }
 // Dernier replay demandé : une réponse plus ancienne arrivée en retard est ignorée.
 let replaySeq = 0
-
-function el(tag, attrs = {}, ...children) {
-    const node = document.createElement(tag)
-    for (const [k, v] of Object.entries(attrs)) {
-        if (k === 'class') node.className = v
-        else node.setAttribute(k, v)
-    }
-    node.append(...children)
-    return node
-}
-
-const timeFormat = new Intl.DateTimeFormat('fr-CA', { timeStyle: 'short' })
-const dayFormat = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short' })
-const fullFormat = new Intl.DateTimeFormat('fr-CA', { dateStyle: 'long', timeStyle: 'short' })
 
 function sameDay(a, b) {
     return a.toDateString() === b.toDateString()
@@ -110,31 +105,6 @@ async function refresh() {
     }
 }
 
-// JSONL en ajout seul : lu en entier, puis seulement la suite (Range). Vrai si des lignes sont arrivées.
-async function tail(url, state) {
-    const headers = state.offset ? { Range: `bytes=${state.offset}-` } : {}
-    const res = await fetch(url, { cache: 'no-store', headers })
-    if (res.status === 416) {
-        // Rien après offset, sauf si le fichier a rétréci (réécrit) : on relit tout.
-        if (Number(res.headers.get('Content-Range')?.split('/')[1]) < state.offset) {
-            state.offset = 0
-            return tail(url, state)
-        }
-        return false
-    }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const bytes = new Uint8Array(await res.arrayBuffer())
-    // Une dernière ligne en cours d'écriture est relue au tour suivant.
-    const end = bytes.lastIndexOf(10) + 1
-    // 200 : fichier entier (première lecture, ou serveur qui ignore Range).
-    const whole = res.status === 200
-    if (whole ? end === state.offset : end === 0) return false
-    const added = parseJsonl(new TextDecoder().decode(bytes.subarray(0, end))).games
-    state.rows = whole ? added : state.rows.concat(added)
-    state.offset = (whole ? 0 : state.offset) + end
-    return true
-}
-
 const teamUrl = (team) => `${DATA}/teams/${encodeURIComponent(team)}.jsonl`
 const allTeams = () => summary.scopes[GLOBAL].ratings.map((r) => r.team)
 
@@ -175,29 +145,10 @@ const scrollAreas = [document.querySelector('.ranking-scroll'), $('games')]
 for (const node of scrollAreas) node.addEventListener('scroll', () => markOverflow(node), { passive: true })
 addEventListener('resize', () => scrollAreas.forEach(markOverflow))
 
-function pulse() {
-    const live = $('live')
-    live.classList.remove('pulse')
-    void live.offsetWidth
-    live.classList.add('pulse')
-}
-
-function fillSelect(select, values, wanted = select.value) {
-    select.replaceChildren(el('option', { value: GLOBAL }, 'Toutes'), ...values.map((v) => el('option', { value: v }, v)))
-    select.value = values.includes(wanted) ? wanted : GLOBAL
-}
-
 function renderSessions(first) {
     fillSelect($('session'), summary.sessions, first ? (SESSION ?? summary.sessions[0]) : $('session').value)
     $('teams').replaceChildren(...allTeams().sort().map((t) => el('option', { value: t })))
     if (first) $('team').value = TEAM
-}
-
-function setParam(key, value, keepEmpty = false) {
-    const url = new URL(location.href)
-    if (value || (keepEmpty && value === '')) url.searchParams.set(key, value)
-    else url.searchParams.delete(key)
-    history.replaceState(null, '', url)
 }
 
 // Recherche d'équipe : sous-chaîne, sans tenir compte de la casse.
@@ -371,9 +322,6 @@ function openPoint(i) {
     const g = chart.points[i]?.game
     if (g) showGame(g, true)
 }
-
-const signed = (n) => `${n > 0 ? '+' : '−'}${Math.abs(n).toLocaleString('fr-CA')}`
-const roundDelta = (d) => Math.round(d) || Math.round(d * 10) / 10
 
 function renderGames(list, key) {
     const items = list
@@ -653,3 +601,4 @@ async function setupSubmit() {
 refresh()
 setInterval(refresh, REFRESH_MS)
 setupSubmit()
+linkPages()

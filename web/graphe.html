@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Graphe du ladder Isolation</title>
+    <!-- Vide : données sur le site qui sert la page. -->
+    <meta name="scoreboard-server" content="" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="graphe.js"></script>
+</head>
+
+<body>
+    <header class="masthead">
+        <h1 class="title">Ladder Isolation <span class="title-course">LOG200</span></h1>
+        <nav class="pages" aria-label="Pages">
+            <a href="./">Classement</a>
+            <a href="graphe.html" aria-current="page">Graphe</a>
+        </nav>
+        <div class="controls">
+            <label class="session">
+                <span>Session</span>
+                <select id="session"></select>
+            </label>
+            <p class="status" role="status">
+                <span id="live" class="live" aria-hidden="true"></span>
+                <span id="status">Chargement des parties…</span>
+            </p>
+        </div>
+    </header>
+
+    <main class="layout graph-layout">
+        <section class="panel bump" aria-labelledby="bump-title">
+            <div class="bump-head">
+                <h2 id="bump-title">Rangs au fil des parties</h2>
+                <div id="bump-window" class="elo-window" role="radiogroup" aria-label="Fenêtre du graphe">
+                    <label><input type="radio" name="window" value="1h" />1 h</label>
+                    <label><input type="radio" name="window" value="24h" />24 h</label>
+                    <label><input type="radio" name="window" value="7j" />7 j</label>
+                    <label><input type="radio" name="window" value="" checked />Tout</label>
+                </div>
+            </div>
+            <div class="bump-pick">
+                <!-- Combobox à puces : saisir filtre la liste des équipes non suivies. -->
+                <div id="picker" class="picker">
+                    <ul id="chips" class="chips" aria-label="Équipes suivies"></ul>
+                    <input id="picker-input" class="picker-input" type="text" role="combobox"
+                        aria-label="Ajouter une équipe" aria-expanded="false" aria-controls="picker-list"
+                        aria-autocomplete="list" placeholder="Ajouter une équipe" autocomplete="off"
+                        spellcheck="false" />
+                    <button id="picker-clear" class="picker-icon" type="button"
+                        aria-label="Retirer toutes les équipes">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6 6l12 12M18 6L6 18" />
+                        </svg>
+                    </button>
+                    <button id="picker-toggle" class="picker-icon" type="button" tabindex="-1"
+                        aria-label="Afficher les équipes">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6 9l6 6 6-6" />
+                        </svg>
+                    </button>
+                    <ul id="picker-list" class="picker-list" role="listbox" aria-label="Équipes" hidden></ul>
+                </div>
+                <button id="picker-top" class="picker-top" type="button">Top 10</button>
+            </div>
+            <figure class="bump-figure">
+                <div id="bump-plot" class="bump-plot" role="slider" tabindex="0" aria-valuemin="0"
+                    aria-describedby="bump-summary"
+                    aria-label="Parties : flèches gauche et droite pour parcourir, haut et bas pour changer d'équipe, Entrée pour rejouer">
+                    <svg id="bump-svg" aria-hidden="true"></svg>
+                    <div id="bump-cursor" class="bump-cursor" hidden></div>
+                    <div id="bump-tip" class="bump-tip" aria-hidden="true" hidden></div>
+                </div>
+                <figcaption id="bump-summary" class="bump-summary"></figcaption>
+            </figure>
+        </section>
+    </main>
+</body>
+
+</html>

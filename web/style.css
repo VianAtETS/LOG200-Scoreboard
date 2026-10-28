@@ -16,6 +16,17 @@
     --hole: #171b22;
     --hover: #e3e8ee;
     --ok: #1f7a4d;
+    /* Équipes du graphe, dans cet ordre : voisines distinctes aussi pour les daltoniens. */
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --series-5: #e87ba4;
+    --series-6: #008300;
+    --series-7: #6250d6;
+    --series-8: #e34948;
+    --series-9: #0f95b0;
+    --series-10: #a86a00;
 
     --radius: 10px;
     --gap: clamp(10px, 1.2vw, 16px);
@@ -39,6 +50,16 @@
         --hole: #07080a;
         --hover: #222730;
         --ok: #4cc38a;
+        --series-1: #3987e5;
+        --series-2: #d95926;
+        --series-3: #199e70;
+        --series-4: #c98500;
+        --series-5: #d55181;
+        --series-6: #008300;
+        --series-7: #9085e9;
+        --series-8: #e66767;
+        --series-9: #1fa3bf;
+        --series-10: #b8790a;
     }
 }
 
@@ -117,6 +138,31 @@ abbr[title] {
     font-stretch: 100%;
     letter-spacing: 0;
     color: var(--muted);
+}
+
+/* Pages du ladder : la page courante est marquée comme les fenêtres choisies. */
+.pages {
+    display: flex;
+    gap: 4px;
+    margin-right: auto;
+}
+
+.pages a {
+    padding: 4px 12px;
+    border-radius: 999px;
+    color: var(--muted);
+    text-decoration: none;
+}
+
+.pages a:hover {
+    background: var(--hover);
+    color: var(--ink);
+}
+
+.pages a[aria-current='page'] {
+    background: color-mix(in srgb, var(--red) 14%, transparent);
+    color: var(--ink);
+    font-weight: 600;
 }
 
 .controls {
@@ -949,6 +995,379 @@ input[type='range'] {
 
 .side:not(.winner) {
     color: var(--muted);
+}
+
+/* --- Graphe des rangs ------------------------------------------------------------------------- */
+
+/* Une seule zone, quelle que soit la largeur : l'emporte sur les grilles de .layout. */
+.layout.graph-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: none;
+}
+
+.bump {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.bump-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 10px;
+}
+
+.bump-head .elo-window {
+    margin-top: 0;
+}
+
+/* Champ à puces : les équipes suivies, puis la saisie qui filtre la liste. */
+.bump-pick {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.picker {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-height: 2.25rem;
+    padding: 3px 64px 3px 4px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    cursor: text;
+}
+
+.picker:focus-within {
+    border-color: var(--muted);
+}
+
+.chips {
+    display: contents;
+    list-style: none;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 1.75rem;
+    padding: 0 2px 0 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    font-size: 0.8125rem;
+    cursor: default;
+}
+
+.chip.idle {
+    color: var(--muted);
+}
+
+.chip.idle .chip-dot {
+    opacity: 0.4;
+}
+
+.chip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+}
+
+.chip-remove {
+    width: 1.375rem;
+    height: 1.375rem;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    color: var(--muted);
+    line-height: 1;
+    cursor: pointer;
+}
+
+.chip-remove:hover {
+    background: var(--hover);
+    color: var(--ink);
+}
+
+.picker-input {
+    flex: 1 0 9rem;
+    min-width: 0;
+    height: 1.75rem;
+    padding: 0 6px;
+    background: none;
+    border: 0;
+}
+
+.picker-input:focus-visible {
+    outline: none;
+}
+
+.picker-icon {
+    position: absolute;
+    top: 50%;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-top: -0.875rem;
+    padding: 5px;
+    background: none;
+    border: 0;
+    border-radius: 4px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.picker-icon:hover {
+    background: var(--hover);
+    color: var(--ink);
+}
+
+#picker-clear {
+    right: 32px;
+}
+
+#picker-toggle {
+    right: 4px;
+}
+
+.picker-icon svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.picker-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: -1px;
+    right: -1px;
+    z-index: 10;
+    max-height: 18rem;
+    margin: 0;
+    padding: 4px;
+    overflow-y: auto;
+    list-style: none;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+
+.picker-option {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.picker-option:hover,
+.picker-option[aria-selected='true'] {
+    background: var(--hover);
+}
+
+.option-rank,
+.option-elo {
+    color: var(--muted);
+}
+
+.option-rank {
+    text-align: right;
+}
+
+.picker-empty {
+    padding: 6px 8px;
+    color: var(--muted);
+}
+
+.picker-top {
+    flex: none;
+    height: 2.25rem;
+    padding: 0 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.picker-top:hover {
+    background: var(--hover);
+}
+
+.bump-figure {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0;
+}
+
+.bump-plot {
+    position: relative;
+    flex: 1;
+    min-height: 320px;
+    cursor: crosshair;
+    touch-action: pan-y;
+}
+
+.bump-plot svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    font-size: 0.75rem;
+}
+
+.bump-grid line {
+    stroke: var(--line);
+    stroke-width: 1;
+}
+
+.bump-grid text {
+    fill: var(--muted);
+}
+
+.bump-grid .rank {
+    text-anchor: end;
+    dominant-baseline: middle;
+}
+
+.bump-lines path {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+}
+
+.bump-lines path.bot {
+    stroke-dasharray: 4 3;
+}
+
+/* Anneau de la couleur du fond : un nœud se détache des lignes qu'il recouvre. */
+.bump-nodes circle {
+    stroke: var(--surface);
+    stroke-width: 2;
+}
+
+.bump-nodes .version-label {
+    fill: var(--muted);
+    font-size: 0.6875rem;
+    text-anchor: middle;
+    paint-order: stroke;
+    stroke: var(--surface);
+    stroke-width: 3px;
+}
+
+.bump-labels text {
+    fill: var(--ink);
+    dominant-baseline: middle;
+}
+
+/* Lecture au curseur : la ligne visée passe devant, les autres s'estompent. */
+.bump-plot:focus-visible {
+    outline-offset: 4px;
+}
+
+#bump-svg [data-team] {
+    transition: opacity 0.15s;
+}
+
+#bump-svg.focusing [data-team]:not(.on) {
+    opacity: 0.2;
+}
+
+#bump-svg.focusing path.on {
+    stroke-width: 3;
+}
+
+.bump-cursor {
+    position: absolute;
+    width: 1px;
+    background: var(--muted);
+    pointer-events: none;
+}
+
+.bump-tip {
+    position: absolute;
+    top: 0;
+    z-index: 5;
+    width: max-content;
+    max-width: min(20rem, 100%);
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+    font-size: 0.8125rem;
+    pointer-events: none;
+}
+
+.tip-when,
+.tip-hint {
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.tip-game {
+    margin: 2px 0 6px;
+}
+
+.tip-rows {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    margin: 0 0 6px;
+    padding: 0;
+    list-style: none;
+}
+
+.tip-rows li {
+    display: contents;
+    color: var(--muted);
+}
+
+.tip-rows li.on {
+    color: var(--ink);
+    font-weight: 700;
+}
+
+.tip-rows li.played .tip-team::after {
+    content: ' ●';
+    font-size: 0.625rem;
+    vertical-align: middle;
+}
+
+.tip-rows .chip-dot {
+    align-self: center;
+}
+
+.tip-rank,
+.tip-elo {
+    text-align: right;
+}
+
+.bump-summary {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 0.8125rem;
 }
 
 /* --- Petits écrans ---------------------------------------------------------------------------- */

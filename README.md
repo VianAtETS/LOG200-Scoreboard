@@ -8,6 +8,10 @@ Search for a team above the recent games to see only its games and, once a singl
 
 ![Leaderboard filtered on one team: Elo curve over the last 7 days with a mark at each new version (v2, v3, v4) above its recent games, and the first game of v4 in the replay](docs/images/leaderboard-team.png)
 
+The Graphe page (link in the header) follows the rank of several teams game after game, like a CTFd scoreboard: one line per team, and a node at each new jar version, as on a git graph. It shows the top 10 by default; teams are added from the field above the chart (type to filter) and removed with their ×. Over long windows the rank is averaged so the lines stay readable. Hover the chart or use the arrow keys to read the exact rank, Elo and version of every followed team at any game, then click or press Enter to open that game in the replay. The address keeps the choices (`?teams=eq03,eq07`, `?window=7j`).
+
+![Graphe page: rank of the top 10 teams over the last 7 days, the line of eq04 highlighted with a node at each of its versions (v2 to v6), and a tooltip listing the rank, version and Elo of each team after one game](docs/images/graph.png)
+
 Each team submits its jar; the ladder makes the teams play each other around the clock and the page shows the result:
 
 ```mermaid
@@ -53,10 +57,10 @@ The referee checks every move and prints the result at the end (`winner`, and `r
 | `src/rules.rs` | Game rules as applied by the official server (see `docs/rules.md`) |
 | `isolation-referee` | Headless referee for one game; speaks the official protocol, prints one JSON result |
 | `isolation-bot` | Protocol client used for tests and conformance checks; its strategies `aleatoire` and `niveau-1` to `niveau-3` replicate the official server's CPU levels (`src/cpu.rs`) |
-| `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, publishes the Elo ranking the page reads (`data/summary.json`, `data/teams/`), and receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`) |
+| `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), and receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`) |
 | `isolation-check` | Replays and validates a JSONL file or an official save (`BOARDGAME 1`) |
 | `sandbox/` | gVisor sandboxes for the referee and each player (see `docs/formats.md`) |
-| `web/` | Static page (vanilla JS): Elo ranking, recent games, replay |
+| `web/` | Static pages (vanilla JS): Elo ranking, recent games, replay; rank graph of the chosen teams (`graphe.html`) |
 | `templates/ladder.yml` | GitHub Actions workflow for the team repositories: builds the jar and submits it on every push to `main` |
 
 The referee contract and the JSONL format are described in `docs/formats.md`. Any referee that follows it, such as the official C++ CLI, can replace ours.

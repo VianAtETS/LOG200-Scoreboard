@@ -1,5 +1,5 @@
-//! Classement Elo tenu à jour partie par partie, publié pour la page dans `summary.json` et
-//! `teams/<équipe>.jsonl` (format dans docs/formats.md).
+//! Classement Elo tenu à jour partie par partie, publié pour la page dans `summary.json`,
+//! `teams/<équipe>.jsonl` et `timeline.jsonl` (format dans docs/formats.md).
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -247,6 +247,30 @@ struct Row {
     at: [u64; 2],
 }
 
+/// Ligne de `timeline.jsonl` : le strict nécessaire pour rejouer les ratings de toutes les équipes.
+#[derive(Serialize)]
+struct Tick<'a> {
+    v: u32,
+    id: &'a str,
+    ts: &'a str,
+    session: &'a str,
+    red: &'a Side,
+    black: &'a Side,
+}
+
+impl Row {
+    fn tick(&self) -> Tick<'_> {
+        Tick {
+            v: self.v,
+            id: &self.id,
+            ts: &self.ts,
+            session: &self.session,
+            red: &self.red,
+            black: &self.black,
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct PaceView {
     p50: u64,
@@ -295,7 +319,7 @@ pub struct Standings {
 }
 
 impl Standings {
-    /// Rejoue l'historique, dans l'ordre du fichier, et réécrit les fichiers d'équipe et le résumé.
+    /// Rejoue l'historique, dans l'ordre du fichier, et réécrit les fichiers d'équipe, la timeline et le résumé.
     pub fn from_history(dir: &Path, games: &[GameRecord], at: &[Range<u64>]) -> io::Result<Self> {
         let mut standings = Self {
             dir: dir.to_path_buf(),
@@ -309,8 +333,11 @@ impl Standings {
             _ => fs::create_dir_all(&teams)?,
         }
         let mut files: HashMap<String, BufWriter<File>> = HashMap::new();
+        let mut timeline = BufWriter::new(File::create(dir.join("timeline.jsonl"))?);
         for (game, at) in games.iter().zip(at) {
             let row = standings.play(game, at.clone());
+            serde_json::to_writer(&mut timeline, &row.tick())?;
+            timeline.write_all(b"\n")?;
             for team in [&game.red.team, &game.black.team] {
                 let Some(path) = standings.team_path(team) else {
                     continue;
@@ -326,6 +353,7 @@ impl Standings {
         for file in files.values_mut() {
             file.flush()?;
         }
+        timeline.flush()?;
         standings.write_summary()?;
         Ok(standings)
     }
@@ -343,6 +371,7 @@ impl Standings {
                 append_jsonl(&path, &row)?;
             }
         }
+        append_jsonl(&self.dir.join("timeline.jsonl"), &row.tick())?;
         self.write_summary()
     }
 
@@ -536,7 +565,8 @@ mod tests {
 
         let mut g1 = game("a", "b", Color::Red);
         g1.red.build = Some("h1".into());
-        let mut standings = Standings::from_history(&dir, &[g1], std::slice::from_ref(&(0..10))).unwrap();
+        let mut standings =
+            Standings::from_history(&dir, std::slice::from_ref(&g1), std::slice::from_ref(&(0..10))).unwrap();
         assert!(!dir.join("teams/stale.jsonl").exists());
 
         let mut g2 = game("b", "a", Color::Red);
@@ -563,6 +593,15 @@ mod tests {
         assert_eq!(summary["scopes"]["s2"]["recent"].as_array().unwrap().len(), 1);
         assert_eq!(summary["scopes"]["s1"]["ratings"][0]["team"], "a");
         assert!(!dir.join("summary.json.tmp").exists());
+
+        let timeline = fs::read_to_string(dir.join("timeline.jsonl")).unwrap();
+        let ticks: Vec<serde_json::Value> = timeline.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        assert_eq!(ticks.len(), 2);
+        assert_eq!(ticks[1]["session"], "s2");
+        assert_eq!(ticks[1]["black"], rows[1]["black"]);
+        assert!(ticks[1].get("at").is_none());
+        Standings::from_history(&dir, &[g1, g2], &[0..10, 10..25]).unwrap();
+        assert_eq!(fs::read_to_string(dir.join("timeline.jsonl")).unwrap(), timeline);
         let _ = fs::remove_dir_all(&dir);
     }
 

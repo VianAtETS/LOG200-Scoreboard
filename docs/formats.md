@@ -132,7 +132,7 @@ Une ligne JSON par partie terminée, en ajout seul. Chaque ligne reprend l'objet
 - `anchor` (absent par défaut) : joueur de référence dont le rating reste à 1500. Sans ancre, le classement est relatif entre les équipes.
 - Chaque ligne part en une seule écriture suivie d'un flush. Un lecteur peut donc tomber sur une dernière ligne incomplète ; la page et `isolation-check` l'ignorent, comme les versions inconnues.
 
-## Fichiers de la page (`data/summary.json`, `data/teams/`)
+## Fichiers de la page (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`)
 
 La page ne lit jamais `games.jsonl` en entier : en fin de session, il pèse des centaines de Mo. Le ladder calcule le classement Elo et les temps par coup, et publie à côté de `games.jsonl` :
 
@@ -141,6 +141,7 @@ La page ne lit jamais `games.jsonl` en entier : en fin de session, il pèse des 
   - `builds` : builds de chaque équipe dans l'ordre d'apparition, pour le badge vN ;
   - `scopes` : `""` pour toutes les sessions, puis une clé par session. Chacune donne `games` (nombre), `time_ms` (temps alloués), `ratings` (classement, meilleur d'abord) et `recent` (50 dernières parties).
 - `teams/<équipe>.jsonl` : une ligne par partie de l'équipe, en ajout seul comme `games.jsonl`. La page le suit quand la recherche désigne une seule équipe : courbe Elo et liste de ses parties.
+- `timeline.jsonl` : une ligne par partie, toutes équipes, en ajout seul. Elle ne garde que `v`, `id`, `ts`, `session`, `red` et `black` d'une ligne de partie : assez pour rejouer les ratings de toutes les équipes, ce que fait la page graphe pour calculer les rangs.
 
 Une ligne de partie (dans `recent` et `teams/`) reprend la partie sans les coups :
 
@@ -158,7 +159,7 @@ Une ligne de partie (dans `recent` et `teams/`) reprend la partie sans les coups
 - `all` et `session` : rating après la partie et variation, toutes sessions confondues puis dans la session de la partie.
 - `at` : position et longueur de la ligne complète dans `games.jsonl`. Le replay la lit avec `Range: bytes=<début>-<fin>`.
 - Une ligne de `ratings` : `team`, `rating`, `games`, `wins`, `losses`, `anchor`, `provisional`, `build`, `last` (dernière partie), et `pace` (absent sans temps mesurés) : `p50`, `p95`, `p99`, `max` et `count` des temps par coup du build courant, `limit` le plus petit temps alloué.
-- Au démarrage, le ladder réécrit `teams/` et `summary.json` à partir de `games.jsonl`. Une équipe dont le nom n'est pas fait de lettres, chiffres, `-` et `_` (64 au plus) n'a pas de fichier d'équipe.
+- Au démarrage, le ladder réécrit `teams/`, `timeline.jsonl` et `summary.json` à partir de `games.jsonl`. Une équipe dont le nom n'est pas fait de lettres, chiffres, `-` et `_` (64 au plus) n'a pas de fichier d'équipe.
 
 ## Protocole des clients
 

@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Test
-        run: node --test web/elo.test.mjs
+        run: node --test web/*.test.mjs
 
       - name: Point the page at the server
         env:
@@ -45,8 +45,10 @@ jobs:
             echo "::error::Variable de depot SCOREBOARD_URL absente ou invalide (attendu : https://domaine, sans / final)"
             exit 1
           fi
-          sed -i "s|<meta name=\"scoreboard-server\" content=\"\"|<meta name=\"scoreboard-server\" content=\"$SERVER\"|" web/index.html
-          grep -q "content=\"$SERVER\"" web/index.html
+          for page in web/index.html web/graphe.html; do
+            sed -i "s|<meta name=\"scoreboard-server\" content=\"\"|<meta name=\"scoreboard-server\" content=\"$SERVER\"|" "$page"
+            grep -q "content=\"$SERVER\"" "$page"
+          done
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
