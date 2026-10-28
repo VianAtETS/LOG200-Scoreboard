@@ -29,14 +29,15 @@ impl PairKey {
 pub struct Scheduler {
     played: HashMap<PairKey, u32>,
     base: HashMap<String, u32>,
+    bots: HashSet<String>,
 }
 
 impl Scheduler {
     pub fn from_history(games: &[GameRecord], session: &str) -> Self {
         let mut scheduler = Self::default();
         for game in games.iter().filter(|g| g.session == session) {
-            scheduler.join(&game.red.team);
-            scheduler.join(&game.black.team);
+            scheduler.join(&game.red.team, game.red.build.is_none());
+            scheduler.join(&game.black.team, game.black.build.is_none());
             scheduler.record(&game.red.team, &game.black.team, 1);
         }
         scheduler
@@ -50,12 +51,16 @@ impl Scheduler {
         self.played.get(&PairKey::new(a, b)).copied().unwrap_or(0)
     }
 
-    fn effective(&self, a: &str, b: &str) -> u32 {
-        let base = |id: &str| self.base.get(id).copied().unwrap_or(0);
-        self.played(a, b) + base(a).max(base(b))
+    fn weight(&self, a: &str, b: &str) -> u32 {
+        1 << (u32::from(self.bots.contains(a)) + u32::from(self.bots.contains(b)))
     }
 
-    fn join(&mut self, id: &str) {
+    fn effective(&self, a: &str, b: &str) -> u32 {
+        let base = |id: &str| self.base.get(id).copied().unwrap_or(0);
+        self.played(a, b) * self.weight(a, b) + base(a).max(base(b))
+    }
+
+    fn join(&mut self, id: &str, bot: bool) {
         if self.base.contains_key(id) {
             return;
         }
@@ -63,10 +68,13 @@ impl Scheduler {
             .played
             .keys()
             .filter(|PairKey(a, b)| self.base.contains_key(a) && self.base.contains_key(b))
-            .map(|PairKey(a, b)| self.effective(a, b))
+            .map(|PairKey(a, b)| (self.effective(a, b) + 2).saturating_sub(2 * self.weight(a, b)))
             .max()
             .unwrap_or(0);
         self.base.insert(id.to_string(), level.saturating_sub(CATCH_UP));
+        if bot {
+            self.bots.insert(id.to_string());
+        }
     }
 
     pub fn next_pair<'t>(
@@ -77,7 +85,7 @@ impl Scheduler {
         rng: &mut impl Rng,
     ) -> Option<(&'t Team, &'t Team)> {
         for team in teams {
-            self.join(&team.id);
+            self.join(&team.id, team.build_file().is_none());
         }
         let ratings: Vec<f64> = teams.iter().map(|t| rating(&t.id)).collect();
         let gap = |i: usize, j: usize| (ratings[i] - ratings[j]).abs();
@@ -119,9 +127,53 @@ mod tests {
         Team {
             id: id.into(),
             cmd: CommandTemplate::default(),
-            build: None,
+            build: Some(format!("{id}.jar").into()),
             anchor: false,
         }
+    }
+
+    fn bot(id: &str) -> Team {
+        Team {
+            build: None,
+            ..team(id)
+        }
+    }
+
+    fn play_rounds(scheduler: &mut Scheduler, teams: &[Team], rounds: usize, rng: &mut StdRng) -> Vec<[String; 2]> {
+        (0..rounds)
+            .map(|_| {
+                let (x, y) = scheduler.next_pair(teams, &HashSet::new(), |_| 1500.0, rng).unwrap();
+                let pair = [x.id.clone(), y.id.clone()];
+                scheduler.record(&pair[0], &pair[1], 2);
+                pair
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pvp_plays_twice_as_often_as_pve_and_four_times_eve() {
+        let teams = [team("s1"), team("s2"), bot("e1"), bot("e2")];
+        let mut scheduler = Scheduler::default();
+        let mut rng = StdRng::seed_from_u64(3);
+        play_rounds(&mut scheduler, &teams, 5 * 13, &mut rng);
+        assert_eq!(scheduler.played("s1", "s2"), 40);
+        for e in ["e1", "e2"] {
+            assert_eq!(scheduler.played("s1", e), 20);
+            assert_eq!(scheduler.played("s2", e), 20);
+        }
+        assert_eq!(scheduler.played("e1", "e2"), 10);
+    }
+
+    #[test]
+    fn late_student_after_bots_only_catches_up_briefly() {
+        let mut teams = vec![bot("e1"), bot("e2"), bot("e3")];
+        let mut scheduler = Scheduler::default();
+        let mut rng = StdRng::seed_from_u64(3);
+        play_rounds(&mut scheduler, &teams, 30, &mut rng);
+        teams.push(team("s"));
+        let pairs = play_rounds(&mut scheduler, &teams, 30, &mut rng);
+        let first_eve = pairs.iter().position(|p| !p.contains(&"s".to_string())).unwrap();
+        assert!((6..=9).contains(&first_eve), "{first_eve}");
     }
 
     #[test]
