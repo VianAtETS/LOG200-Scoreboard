@@ -11,6 +11,8 @@ use isolation::record::GameRecord;
 use crate::config::Team;
 
 const MAX_GAP: f64 = 600.0;
+const CATCH_UP: u32 = 4;
+const SLACK: u32 = CATCH_UP;
 
 /// Paire d'équipes, sans ordre.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -26,12 +28,15 @@ impl PairKey {
 #[derive(Default)]
 pub struct Scheduler {
     played: HashMap<PairKey, u32>,
+    base: HashMap<String, u32>,
 }
 
 impl Scheduler {
     pub fn from_history(games: &[GameRecord], session: &str) -> Self {
         let mut scheduler = Self::default();
         for game in games.iter().filter(|g| g.session == session) {
+            scheduler.join(&game.red.team);
+            scheduler.join(&game.black.team);
             scheduler.record(&game.red.team, &game.black.team, 1);
         }
         scheduler
@@ -45,13 +50,35 @@ impl Scheduler {
         self.played.get(&PairKey::new(a, b)).copied().unwrap_or(0)
     }
 
+    fn effective(&self, a: &str, b: &str) -> u32 {
+        let base = |id: &str| self.base.get(id).copied().unwrap_or(0);
+        self.played(a, b) + base(a).max(base(b))
+    }
+
+    fn join(&mut self, id: &str) {
+        if self.base.contains_key(id) {
+            return;
+        }
+        let level = self
+            .played
+            .keys()
+            .filter(|PairKey(a, b)| self.base.contains_key(a) && self.base.contains_key(b))
+            .map(|PairKey(a, b)| self.effective(a, b))
+            .max()
+            .unwrap_or(0);
+        self.base.insert(id.to_string(), level.saturating_sub(CATCH_UP));
+    }
+
     pub fn next_pair<'t>(
-        &self,
+        &mut self,
         teams: &'t [Team],
         busy: &HashSet<String>,
         rating: impl Fn(&str) -> f64,
         rng: &mut impl Rng,
     ) -> Option<(&'t Team, &'t Team)> {
+        for team in teams {
+            self.join(&team.id);
+        }
         let ratings: Vec<f64> = teams.iter().map(|t| rating(&t.id)).collect();
         let gap = |i: usize, j: usize| (ratings[i] - ratings[j]).abs();
         let nearest: Vec<Option<usize>> = (0..teams.len())
@@ -64,13 +91,15 @@ impl Scheduler {
         let pairs: Vec<(&Team, &Team, u32)> = (0..teams.len())
             .flat_map(|i| (i + 1..teams.len()).map(move |j| (i, j)))
             .filter(|&(i, j)| gap(i, j) <= MAX_GAP || nearest[i] == Some(j) || nearest[j] == Some(i))
-            .map(|(i, j)| (&teams[i], &teams[j], self.played(&teams[i].id, &teams[j].id)))
+            .map(|(i, j)| (&teams[i], &teams[j], self.effective(&teams[i].id, &teams[j].id)))
             .collect();
         let fewest = pairs.iter().map(|&(.., n)| n).min()?;
-        let least_played: Vec<_> = pairs
+        let free: Vec<_> = pairs
             .into_iter()
-            .filter(|&(a, b, n)| n == fewest && !busy.contains(&a.id) && !busy.contains(&b.id))
+            .filter(|&(a, b, n)| n <= fewest + SLACK && !busy.contains(&a.id) && !busy.contains(&b.id))
             .collect();
+        let lowest = free.iter().map(|&(.., n)| n).min()?;
+        let least_played: Vec<_> = free.into_iter().filter(|&(.., n)| n == lowest).collect();
         let &(a, b, _) = least_played.choose(rng)?;
         Some(if rng.random() { (a, b) } else { (b, a) })
     }
@@ -113,6 +142,47 @@ mod tests {
     }
 
     #[test]
+    fn late_team_catches_up_only_briefly() {
+        let mut teams = vec![team("a"), team("b"), team("c")];
+        let mut scheduler = Scheduler::default();
+        let mut rng = StdRng::seed_from_u64(3);
+        scheduler.next_pair(&teams, &HashSet::new(), |_| 1500.0, &mut rng);
+        for (x, y) in [("a", "b"), ("a", "c"), ("b", "c")] {
+            scheduler.record(x, y, 20);
+        }
+        teams.push(team("d"));
+        let mut play = || {
+            let (x, y) = scheduler
+                .next_pair(&teams, &HashSet::new(), |_| 1500.0, &mut rng)
+                .unwrap();
+            let pair = [x.id.clone(), y.id.clone()];
+            scheduler.record(&pair[0], &pair[1], 2);
+            pair.contains(&"d".to_string())
+        };
+        let head_start = 3 * CATCH_UP as usize / 2;
+        assert!((0..head_start).all(|_| play()));
+        let next: Vec<bool> = (0..6).map(|_| play()).collect();
+        assert_eq!(next.iter().filter(|&&with_d| with_d).count(), 3);
+    }
+
+    #[test]
+    fn teams_present_from_start_get_no_head_start() {
+        let teams = [team("a"), team("b"), team("c")];
+        let mut scheduler = Scheduler::default();
+        let mut rng = StdRng::seed_from_u64(3);
+        for _ in 0..30 {
+            let (x, y) = scheduler
+                .next_pair(&teams, &HashSet::new(), |_| 1500.0, &mut rng)
+                .unwrap();
+            let (x, y) = (x.id.clone(), y.id.clone());
+            scheduler.record(&x, &y, 2);
+        }
+        for (x, y) in [("a", "b"), ("a", "c"), ("b", "c")] {
+            assert_eq!(scheduler.effective(x, y), 20);
+        }
+    }
+
+    #[test]
     fn needs_two_teams() {
         let mut rng = StdRng::seed_from_u64(3);
         assert!(
@@ -123,7 +193,7 @@ mod tests {
     }
 
     /// Paires tirées sur 50 essais, triées.
-    fn drawn(scheduler: &Scheduler, teams: &[Team], rating: impl Fn(&str) -> f64) -> BTreeSet<[String; 2]> {
+    fn drawn(scheduler: &mut Scheduler, teams: &[Team], rating: impl Fn(&str) -> f64) -> BTreeSet<[String; 2]> {
         let mut rng = StdRng::seed_from_u64(3);
         (0..50)
             .map(|_| {
@@ -151,7 +221,7 @@ mod tests {
         scheduler.record("a", "b", 4);
         scheduler.record("b", "c", 4);
         assert_eq!(
-            drawn(&scheduler, &teams, rating),
+            drawn(&mut scheduler, &teams, rating),
             [pair("a", "b"), pair("b", "c")].into()
         );
     }
@@ -166,7 +236,7 @@ mod tests {
         };
         let mut scheduler = Scheduler::default();
         scheduler.record("a", "b", 4);
-        assert_eq!(drawn(&scheduler, &teams, rating), [pair("b", "c")].into());
+        assert_eq!(drawn(&mut scheduler, &teams, rating), [pair("b", "c")].into());
     }
 
     #[test]
@@ -185,14 +255,59 @@ mod tests {
     }
 
     #[test]
-    fn free_teams_wait_rather_than_replay() {
+    fn free_teams_replay_only_within_slack() {
         let teams = [team("a"), team("b"), team("c"), team("d")];
-        let mut scheduler = Scheduler::default();
-        scheduler.record("a", "b", 2);
-        scheduler.record("c", "d", 2);
-        // a-b vient de finir, c-d joue encore : a-c, a-d, b-c et b-d attendent c et d.
         let busy = HashSet::from(["c".to_string(), "d".to_string()]);
         let mut rng = StdRng::seed_from_u64(3);
+        let mut scheduler = Scheduler::default();
+        scheduler.record("a", "b", SLACK);
+        assert!(scheduler.next_pair(&teams, &busy, |_| 1500.0, &mut rng).is_some());
+        scheduler.record("a", "b", 2);
+        // a-c, a-d, b-c et b-d sont restées à 0 : a et b attendent c et d.
         assert!(scheduler.next_pair(&teams, &busy, |_| 1500.0, &mut rng).is_none());
+    }
+
+    #[test]
+    fn slots_stay_busy_while_a_late_team_catches_up() {
+        let mut teams = vec![team("a"), team("b"), team("c")];
+        let mut scheduler = Scheduler::default();
+        let mut rng = StdRng::seed_from_u64(3);
+        scheduler.next_pair(&teams, &HashSet::new(), |_| 1500.0, &mut rng);
+        for (x, y) in [("a", "b"), ("a", "c"), ("b", "c")] {
+            scheduler.record(x, y, 20);
+        }
+        teams.push(team("d"));
+        let busy = HashSet::from(["d".to_string()]);
+        let (x, y) = scheduler.next_pair(&teams, &busy, |_| 1500.0, &mut rng).unwrap();
+        assert!(x.id != "d" && y.id != "d");
+    }
+
+    /// Deux slots, quatre équipes : sans borne, a-b et c-d se rejoueraient en boucle.
+    #[test]
+    fn no_pair_starves_with_two_slots() {
+        let teams = [team("a"), team("b"), team("c"), team("d")];
+        let mut scheduler = Scheduler::default();
+        let mut rng = StdRng::seed_from_u64(3);
+        let mut running = std::collections::VecDeque::new();
+        for _ in 0..60 {
+            let busy: HashSet<String> = running.iter().flat_map(|p: &[String; 2]| p.clone()).collect();
+            match scheduler.next_pair(&teams, &busy, |_| 1500.0, &mut rng) {
+                Some((x, y)) if running.len() < 2 => {
+                    let pair = [x.id.clone(), y.id.clone()];
+                    scheduler.record(&pair[0], &pair[1], 2);
+                    running.push_back(pair);
+                }
+                _ => {
+                    running.pop_front();
+                }
+            }
+        }
+        let counts: Vec<u32> = ["a", "b", "c", "d"]
+            .iter()
+            .enumerate()
+            .flat_map(|(i, x)| ["a", "b", "c", "d"][i + 1..].iter().map(|y| scheduler.played(x, y)))
+            .collect();
+        let spread = counts.iter().max().unwrap() - counts.iter().min().unwrap();
+        assert!(spread <= SLACK + 2, "{counts:?}");
     }
 }
