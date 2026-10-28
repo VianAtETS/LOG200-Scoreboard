@@ -1,5 +1,5 @@
 // Rangs de la page graphe, rejoués partie par partie depuis timeline.jsonl (format dans docs/formats.md).
-// Un côté sans build est un bot de référence : il ne prend pas de rang aux équipes.
+// Un côté sans build est un bot de référence : il ne compte dans le classement que s'il est choisi.
 
 export const TOP = 10
 
@@ -8,11 +8,12 @@ export function topTeams(ratings, n = TOP) {
 }
 
 // Une colonne par partie jouée à `cutoff` (ms) ou après, et pour chaque équipe de `selected` un point à
-// chaque changement de rang, de rating ou de build. Rang : 1 + équipes devant (rating plus haut, puis
-// nom) ; les bots se répartissent entre les deux équipes qui les encadrent, dans l'ordre de leur rating.
+// chaque changement de rang, de rating ou de build. Rang : 1 + équipes et bots choisis devant (rating
+// plus haut, puis nom).
 export function rankSeries(rows, { key = 'all', session = '', selected = [], cutoff = -Infinity } = {}) {
     const ratings = new Map()
     const bots = new Set()
+    const counted = (team) => !bots.has(team) || series.has(team)
     const builds = new Map()
     const series = new Map(selected.map((team) => [team, []]))
     const columns = []
@@ -33,7 +34,7 @@ export function rankSeries(rows, { key = 'all', session = '', selected = [], cut
         for (const [team, points] of series) {
             const rating = ratings.get(team)
             if (rating === undefined) continue
-            const rank = rankOf(team, rating, ratings, bots)
+            const rank = rankOf(team, rating, ratings, counted)
             const last = points.at(-1)
             const version = changed.has(team)
             if (last && last.rank === rank && last.rating === rating && !version) continue
@@ -43,29 +44,13 @@ export function rankSeries(rows, { key = 'all', session = '', selected = [], cut
     return { columns, series }
 }
 
-const before = (r, name, rating, team) => r > rating || (r === rating && name < team)
-
-function teamsAhead(team, rating, ratings, bots) {
+function rankOf(team, rating, ratings, counted) {
     let ahead = 0
     for (const [other, r] of ratings) {
-        if (other !== team && !bots.has(other) && before(r, other, rating, team)) ahead++
+        if (other === team || !counted(other)) continue
+        if (r > rating || (r === rating && other < team)) ahead++
     }
-    return ahead
-}
-
-// Avec m bots entre les mêmes deux équipes, le k-ième (1 = meilleur) est à ahead + k / (m + 1).
-function rankOf(team, rating, ratings, bots) {
-    const ahead = teamsAhead(team, rating, ratings, bots)
-    if (!bots.has(team)) return ahead + 1
-    let k = 1
-    let m = 1
-    for (const bot of bots) {
-        const r = ratings.get(bot)
-        if (bot === team || teamsAhead(bot, r, ratings, bots) !== ahead) continue
-        m++
-        if (before(r, bot, rating, team)) k++
-    }
-    return ahead + k / (m + 1)
+    return ahead + 1
 }
 
 // Dernier point à `x` ou avant, `undefined` avant le départ de la branche.

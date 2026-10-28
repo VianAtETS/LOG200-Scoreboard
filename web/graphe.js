@@ -293,8 +293,8 @@ function showAt(col, team = hover.team) {
                     'li',
                     { class: `${t === team ? 'on' : ''}${played ? ' played' : ''}` },
                     dot,
-                    el('span', { class: 'tip-rank' }, p.bot ? 'bot' : `${ordinal(p.rank)}${move}`),
-                    el('span', { class: 'tip-team' }, [t, version(t, p.build)].filter(Boolean).join(' ')),
+                    el('span', { class: 'tip-rank' }, `${ordinal(p.rank)}${move}`),
+                    el('span', { class: 'tip-team' }, [t, p.bot ? 'bot' : version(t, p.build)].filter(Boolean).join(' ')),
                     el('span', { class: 'tip-elo' }, `${Math.round(p.rating)} Elo`)
                 )
             })
@@ -306,7 +306,7 @@ function showAt(col, team = hover.team) {
     tip.style.left = `${left + 14 + width <= geom.width ? left + 14 : Math.max(0, left - 14 - width)}px`
 
     const focus = rows.find((r) => r.team === team)
-    const reading = focus ? `${team} ${focus.p.bot ? 'bot' : ordinal(focus.p.rank)}, ${Math.round(focus.p.rating)} Elo, ` : ''
+    const reading = focus ? `${team} ${ordinal(focus.p.rank)}, ${Math.round(focus.p.rating)} Elo, ` : ''
     plot.setAttribute('aria-valuenow', String(col))
     plot.setAttribute('aria-valuetext', `${reading}${fullFormat.format(new Date(g.ts))}, ${winner} bat ${loser}`)
 }

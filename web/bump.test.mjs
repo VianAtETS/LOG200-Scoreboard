@@ -53,29 +53,19 @@ test('unchanged ranks add no point', () => {
     assert.deepEqual(series.get('a').map((p) => p.x), [0])
 })
 
-test('bots take no rank and sit between two teams', () => {
-    const rows = [
-        tick(['a', 1520, 'a1'], ['bot', 1500]),
-        tick(['b', 1480, 'b1'], ['bot', 1500]),
-    ]
-    const { series } = rankSeries(rows, { selected: ['a', 'b', 'bot'] })
-    assert.equal(series.get('b').at(-1).rank, 2)
-    assert.equal(series.get('bot').at(-1).rank, 1.5)
-    assert.equal(series.get('bot').at(-1).bot, true)
-})
-
-test('bots between the same two teams spread out by rating', () => {
+test('only chosen bots count in the ranking', () => {
     const rows = [
         tick(['a', 1520, 'a1'], ['n3', 1510]),
         tick(['b', 1480, 'b1'], ['n2', 1490]),
-        tick(['n1', 1470], ['n4', 1530]),
     ]
-    const { series } = rankSeries(rows, { selected: ['a', 'b', 'n1', 'n2', 'n3', 'n4'] })
-    const rank = (team) => series.get(team).at(-1).rank
-    assert.deepEqual([rank('a'), rank('b')], [1, 2])
-    assert.equal(rank('n4'), 0.5)
-    assert.deepEqual([rank('n3'), rank('n2')], [1 + 1 / 3, 1 + 2 / 3])
-    assert.equal(rank('n1'), 2.5)
+    const ranks = (selected) => {
+        const { series } = rankSeries(rows, { selected })
+        return selected.map((team) => series.get(team).at(-1).rank)
+    }
+    assert.deepEqual(ranks(['a', 'b']), [1, 2])
+    assert.deepEqual(ranks(['a', 'b', 'n2']), [1, 3, 2])
+    assert.deepEqual(ranks(['a', 'b', 'n2', 'n3']), [1, 4, 3, 2])
+    assert.equal(rankSeries(rows, { selected: ['n3'] }).series.get('n3').at(-1).bot, true)
 })
 
 test('a new build is a version point, even without a rank change', () => {
