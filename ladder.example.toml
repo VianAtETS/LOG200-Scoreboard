@@ -128,6 +128,17 @@ cmd = [
     "niveau-3",
 ]
 
+[[team]]
+id = "niveau-4"
+cmd = [
+    "sandbox/run-player.sh",
+    "{game}",
+    "{side}",
+    "{port}",
+    "--bot",
+    "niveau-4",
+]
+
 # [[team]]
 # id = "eq01"
 # cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "jars/eq01/current.jar"]

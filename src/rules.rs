@@ -33,7 +33,7 @@ pub fn mobility(board: &Board, color: Color) -> i32 {
 
 /// Distances au pion adverse où détruire, par ordre de repli. Le repli s'applique à l'ensemble
 /// des coups : on garde le premier anneau qui en donne au moins un.
-fn destroy_rings(destroyed: u32) -> &'static [RangeInclusive<i8>] {
+pub(crate) fn destroy_rings(destroyed: u32) -> &'static [RangeInclusive<i8>] {
     const EARLY: &[RangeInclusive<i8>] = &[3..=3, 2..=2, 1..=1];
     const MIDDLE: &[RangeInclusive<i8>] = &[2..=2, 1..=1];
     #[expect(clippy::single_range_in_vec_init, reason = "un seul anneau, de 1 à 2")]

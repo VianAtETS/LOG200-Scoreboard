@@ -9,7 +9,7 @@ flowchart LR
     red[client rouge]
     black[client noir]
     jsonl[(data/games.jsonl)]
-    page[("data/summary.json<br/>data/teams/")]
+    page[("data/summary.json<br/>data/teams/<br/>data/live.json")]
     web[web/index.html]
 
     ladder -- lance --> referee
@@ -132,7 +132,7 @@ Une ligne JSON par partie terminée, en ajout seul. Chaque ligne reprend l'objet
 - `anchor` (absent par défaut) : joueur de référence dont le rating reste à 1500. Sans ancre, le classement est relatif entre les équipes.
 - Chaque ligne part en une seule écriture suivie d'un flush. Un lecteur peut donc tomber sur une dernière ligne incomplète ; la page et `isolation-check` l'ignorent, comme les versions inconnues.
 
-## Fichiers de la page (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`)
+## Fichiers de la page (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`, `data/live.json`)
 
 La page ne lit jamais `games.jsonl` en entier : en fin de session, il pèse des centaines de Mo. Le ladder calcule le classement Elo et les temps par coup, et publie à côté de `games.jsonl` :
 
@@ -142,6 +142,7 @@ La page ne lit jamais `games.jsonl` en entier : en fin de session, il pèse des 
   - `scopes` : `""` pour toutes les sessions, puis une clé par session. Chacune donne `games` (nombre), `time_ms` (temps alloués), `ratings` (classement, meilleur d'abord) et `recent` (50 dernières parties).
 - `teams/<équipe>.jsonl` : une ligne par partie de l'équipe, en ajout seul comme `games.jsonl`. La page le suit quand la recherche désigne une seule équipe : courbe Elo et liste de ses parties.
 - `timeline.jsonl` : une ligne par partie, toutes équipes, en ajout seul. Elle ne garde que `v`, `id`, `ts`, `session`, `red` et `black` d'une ligne de partie : assez pour rejouer les ratings de toutes les équipes, ce que fait la page graphe pour calculer les rangs.
+- `live.json`, réécrit au lancement et à la fin de chaque partie (fichier temporaire puis renommage) : `{"v": 1, "games": [{"red": "eq07", "black": "eq12", "since": "2026-10-24T14:20:48.103Z"}]}`, une entrée par partie en cours, la plus ancienne d'abord. `since` compte l'attente d'un slot, qu'un smoke test peut occuper. Le ladder le vide au démarrage.
 
 Une ligne de partie (dans `recent` et `teams/`) reprend la partie sans les coups :
 
