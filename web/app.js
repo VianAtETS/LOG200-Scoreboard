@@ -54,6 +54,8 @@ const ENDINGS = {
 
 let summary = null
 let summaryText = null
+// Parties en cours, d'après live.json.
+let running = []
 // Aucune équipe choisie : les dernières parties de toutes les équipes.
 let chosen = (params.get('teams') ?? params.get('team') ?? '').split(',').filter(Boolean)
 // Équipe choisie vers l'état de `tail` de teams/<équipe>.jsonl.
@@ -99,6 +101,7 @@ async function refresh() {
             renderSessions(first)
         }
         changed = (await follow()) || changed
+        running = await fetchRunning().catch(() => [])
         if (first && GAME) openLinked().catch(() => (replay.pinned = false))
         render()
         if (changed && !first) pulse()
@@ -107,6 +110,12 @@ async function refresh() {
         $('live').className = 'live error'
         $('status').textContent = `Données indisponibles : ${e.message}`
     }
+}
+
+// Absent avec un ladder qui ne publie pas encore live.json : rien n'est affiché.
+async function fetchRunning() {
+    const res = await fetch(`${DATA}/live.json`, { cache: 'no-store' })
+    return res.ok ? (await res.json()).games : []
 }
 
 const teamUrl = (team) => `${DATA}/teams/${encodeURIComponent(team)}.jsonl`
@@ -171,6 +180,7 @@ function render() {
     const teams = selectedTeams()
     const rows = new Map([...followed].map(([team, state]) => [team, state.rows]))
     const list = teams.length ? gamesOf(rows, teams, { mode: matchMode(), session }) : scope.recent
+    renderRunning()
     renderRanking(scope.ratings)
     picker.render(teams)
     $('match').hidden = teams.length < 2
@@ -189,6 +199,24 @@ function render() {
 
     const latest = list.at(-1)
     if (latest && !replay.pinned && replay.game?.id !== latest.id) showGame(latest)
+}
+
+function renderRunning() {
+    $('running').hidden = running.length === 0
+    $('running').replaceChildren(
+        ...running.map((g) => {
+            const started = `lancée ${ago(g.since)}`
+            return el(
+                'li',
+                { 'aria-label': `${g.red} (rouge) contre ${g.black} (noir), ${started}` },
+                el('span', { class: 'running-label' }, 'En cours'),
+                el('span', { class: 'side red' }, el('span', {}, g.red)),
+                el('span', { class: 'versus' }, 'contre'),
+                el('span', { class: 'side black' }, el('span', {}, g.black)),
+                el('time', { datetime: g.since, title: fullFormat.format(new Date(g.since)) }, started)
+            )
+        })
+    )
 }
 
 // « v3 » pour le build de `player`, vide sans build.

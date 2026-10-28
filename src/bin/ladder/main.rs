@@ -6,6 +6,7 @@ mod arena;
 mod config;
 mod digest;
 mod journal;
+mod live;
 mod schedule;
 mod standings;
 mod submit;
@@ -30,6 +31,7 @@ use isolation::rules::random_opening;
 use arena::{Arena, GameError};
 use config::{Config, Team};
 use journal::append_jsonl;
+use live::Live;
 use schedule::Scheduler;
 use standings::Standings;
 use submit::TeamId;
@@ -49,17 +51,14 @@ const LOG_RETENTION: Duration = Duration::from_hours(90 * 24);
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
-    /// Configuration (voir ladder.example.toml).
     #[arg(required = true)]
     config: Option<PathBuf>,
-    /// Nombre de paires à jouer ; sans fin par défaut.
     #[arg(long)]
     rounds: Option<u64>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Inscrit une équipe et affiche son token, une seule fois.
     AddTeam {
         id: TeamId,
         #[arg(long, default_value = submit::DEFAULT_TEAMS)]
@@ -99,6 +98,7 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut standings = Standings::from_history(cfg.data_dir(), &history.games, &history.at)
         .with_context(|| cfg.data_dir().display().to_string())?;
     drop(history);
+    let mut live = Live::new(cfg.data_dir().to_path_buf()).with_context(|| cfg.data_dir().display().to_string())?;
 
     let arena = Arc::new(Arena::new(cfg));
     arena.sweep();
@@ -144,28 +144,32 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
             continue;
         };
         match report {
-            Report::Played {
-                red,
-                black,
-                outcome: Ok(record),
-            } => {
-                let at = append_jsonl(&cfg.out, &record).with_context(|| cfg.out.display().to_string())?;
-                if let Err(e) = standings.record(&record, at) {
-                    eprintln!("   classement non publié : {e}");
+            Report::Started { red, black } => {
+                if let Err(e) = live.start(&red, &black) {
+                    eprintln!("   parties en cours non publiées : {e}");
                 }
-                let result = &record.result;
-                eprintln!(
-                    "   {red} (rouge) contre {black} (noir) : {} gagne ({:?}, {} coups)",
-                    result.winner,
-                    result.reason,
-                    result.moves.len()
-                );
             }
-            Report::Played {
-                red,
-                black,
-                outcome: Err(e),
-            } => eprintln!("   partie {red} contre {black} annulée : {e}"),
+            Report::Played { red, black, outcome } => {
+                if let Err(e) = live.end(&red, &black) {
+                    eprintln!("   parties en cours non publiées : {e}");
+                }
+                match outcome {
+                    Ok(record) => {
+                        let at = append_jsonl(&cfg.out, &record).with_context(|| cfg.out.display().to_string())?;
+                        if let Err(e) = standings.record(&record, at) {
+                            eprintln!("   classement non publié : {e}");
+                        }
+                        let result = &record.result;
+                        eprintln!(
+                            "   {red} (rouge) contre {black} (noir) : {} gagne ({:?}, {} coups)",
+                            result.winner,
+                            result.reason,
+                            result.moves.len()
+                        );
+                    }
+                    Err(e) => eprintln!("   partie {red} contre {black} annulée : {e}"),
+                }
+            }
             Report::Done(pair) => {
                 running -= 1;
                 for id in &pair {
@@ -179,14 +183,17 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
 }
 
 /// Compte rendu d'un thread de paire.
-#[expect(clippy::large_enum_variant, reason = "trois messages par paire")]
+#[expect(clippy::large_enum_variant, reason = "cinq messages par paire")]
 enum Report {
+    Started {
+        red: String,
+        black: String,
+    },
     Played {
         red: String,
         black: String,
         outcome: Result<GameRecord, GameError>,
     },
-    /// Les deux parties et la pause sont finies : les équipes sont libres.
     Done([String; 2]),
 }
 
@@ -194,6 +201,10 @@ enum Report {
 fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: Sender<Report>) {
     thread::spawn(move || {
         for (red, black) in [(&a, &b), (&b, &a)] {
+            let _ = reports.send(Report::Started {
+                red: red.id.clone(),
+                black: black.id.clone(),
+            });
             let outcome = arena.play(red, black, &opening);
             let failed = outcome.is_err();
             let _ = reports.send(Report::Played {

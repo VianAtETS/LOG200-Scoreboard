@@ -418,6 +418,33 @@ tbody tr:first-child .elo {
     color: var(--ink);
 }
 
+.running {
+    display: grid;
+    gap: 4px;
+    margin: 0 0 10px;
+    padding: 0;
+    list-style: none;
+}
+
+.running li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    min-width: 0;
+    font-size: 0.875rem;
+}
+
+.running-label {
+    color: var(--red);
+    font-weight: 700;
+}
+
+.running .versus,
+.running time {
+    color: var(--muted);
+}
+
 .empty {
     padding: 16px 8px;
     color: var(--muted);
