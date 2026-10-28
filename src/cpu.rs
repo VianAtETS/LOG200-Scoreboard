@@ -1,6 +1,7 @@
-//! Réplique du joueur CPU du serveur officiel (`BoardGame.exe`), niveaux 1 à 3. Ses bizarreries
-//! sont gardées exprès : une victoire lointaine vaut plus qu'une proche, et un joueur bloqué termine
-//! la recherche même quand ce n'est pas à lui de jouer.
+//! Réplique à l'identique du joueur CPU du serveur officiel (`BoardGame.exe`), niveaux 1 à 3.
+//!
+//! Une victoire lointaine y vaut plus qu'une proche, et un joueur bloqué termine la recherche même
+//! quand ce n'est pas à lui de jouer.
 
 use std::time::Instant;
 
@@ -129,9 +130,6 @@ struct Search {
 
 impl Search {
     fn new(board: &Board, own: Color, level: Level, deadline: Option<Instant>) -> Self {
-        let hash = (0..CELLS)
-            .filter_map(Square::from_index)
-            .fold(0, |hash, square| hash ^ zobrist(board.get(square), square));
         Self {
             own,
             level,
@@ -139,7 +137,7 @@ impl Search {
             nodes: 0,
             timed_out: false,
             buffers: vec![Vec::new(); usize::from(level.max_depth()) + 1],
-            hash,
+            hash: hash(board),
             table: if level == Level::Three {
                 vec![Entry::default(); TABLE_SIZE]
             } else {
@@ -292,17 +290,34 @@ fn eval(board: &Board, own: Color, depth: u8, level: Level) -> i32 {
         depth - WIN
     } else if theirs == 0 {
         WIN - depth
-    } else if level == Level::Three && board.destroyed() < 20 {
+    } else {
+        heuristic(board, own, mine, theirs, level)
+    }
+}
+
+pub(crate) fn heuristic(board: &Board, own: Color, mine: i32, theirs: i32, level: Level) -> i32 {
+    if level == Level::Three && board.destroyed() < 20 {
         let (me, them) = (board.pawn(own), board.pawn(own.other()));
-        3 * (edge_distance(me) - edge_distance(them))
-            + 2 * (mine - theirs)
-            + 4 * (free_neighbours(board, me) - free_neighbours(board, them))
+        level_three(
+            board.destroyed(),
+            edge_distance(me) - edge_distance(them),
+            mine - theirs,
+            free_neighbours(board, me) - free_neighbours(board, them),
+        )
     } else {
         5 * (mine - theirs)
     }
 }
 
-fn edge_distance(square: Square) -> i32 {
+pub(crate) const fn level_three(destroyed: u32, edges: i32, mobility: i32, free: i32) -> i32 {
+    if destroyed < 20 {
+        3 * edges + 2 * mobility + 4 * free
+    } else {
+        5 * mobility
+    }
+}
+
+pub(crate) fn edge_distance(square: Square) -> i32 {
     let last = SIZE - 1;
     i32::from(square.x().min(square.y()).min(last - square.x()).min(last - square.y()))
 }
@@ -313,7 +328,15 @@ fn free_neighbours(board: &Board, square: Square) -> i32 {
         .sum()
 }
 
-fn move_key(board: &Board, mv: Move) -> u64 {
+/// Sans le trait, qui se déduit de la parité des cases détruites.
+pub(crate) fn hash(board: &Board) -> u64 {
+    (0..CELLS)
+        .filter_map(Square::from_index)
+        .fold(0, |hash, square| hash ^ zobrist(board.get(square), square))
+}
+
+/// Avant `apply` ou après `undo`.
+pub(crate) fn move_key(board: &Board, mv: Move) -> u64 {
     let pawn = board.get(mv.from);
     zobrist(pawn, mv.from) ^ zobrist(pawn, mv.to) ^ zobrist(Cell::Destroyed, mv.destroyed)
 }
@@ -351,10 +374,10 @@ mod tests {
 
     use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use rand::seq::IndexedRandom;
 
     use super::*;
     use crate::board::test_support::diagram;
+    use crate::rules::test_support::positions;
 
     fn brute(board: &mut Board, own: Color, own_turn: bool, depth: u8, level: Level) -> i32 {
         let stuck = |board: &Board, color| rules::legal_moves(board, color).is_empty();
@@ -382,25 +405,6 @@ mod tests {
                 (mv, value)
             })
             .collect()
-    }
-
-    fn positions(seed: u64, count: usize, max_moves: usize) -> Vec<(Board, Color)> {
-        let mut rng = StdRng::seed_from_u64(seed);
-        let mut positions = Vec::new();
-        while positions.len() < count {
-            let mut board = Board::initial();
-            let mut turn = Color::Red;
-            while let Some(&mv) = rules::legal_moves(&board, turn).choose(&mut rng) {
-                board.apply(mv);
-                turn = turn.other();
-                let moves = rules::legal_moves(&board, turn).len();
-                if (2..=max_moves).contains(&moves) && rules::has_moves(&board, turn.other()) {
-                    positions.push((board, turn));
-                    break;
-                }
-            }
-        }
-        positions
     }
 
     #[test]

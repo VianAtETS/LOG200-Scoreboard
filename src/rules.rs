@@ -45,21 +45,40 @@ fn destroy_rings(destroyed: u32) -> &'static [RangeInclusive<i8>] {
     }
 }
 
-fn targets(
+pub(crate) fn first_ring(destroyed: u32) -> RangeInclusive<i8> {
+    destroy_rings(destroyed)[0].clone()
+}
+
+pub(crate) fn ring(center: Square, ring: RangeInclusive<i8>) -> impl Iterator<Item = Square> {
+    DIRS.into_iter()
+        .flat_map(move |(dx, dy)| ring.clone().map_while(move |k| center.offset(dx * k, dy * k)))
+}
+
+/// Cibles de l'anneau, sans exclure l'arrivée.
+fn candidates(
     board: &Board,
     from: Square,
-    to: Square,
     opponent: Square,
     ring: RangeInclusive<i8>,
 ) -> impl Iterator<Item = Square> + '_ {
-    DIRS.into_iter()
-        .flat_map(move |(dx, dy)| ring.clone().map_while(move |k| opponent.offset(dx * k, dy * k)))
-        .filter(move |&target| target != to && (target == from || board.is_empty(target)))
+    self::ring(opponent, ring).filter(move |&target| target == from || board.is_empty(target))
 }
 
 fn push_moves(board: &Board, from: Square, opponent: Square, ring: RangeInclusive<i8>, out: &mut Vec<Move>) {
+    let mut targets = [opponent; 16];
+    let mut count = 0;
+    for target in candidates(board, from, opponent, ring) {
+        targets[count] = target;
+        count += 1;
+    }
+    let targets = &targets[..count];
     destinations(board, from, |to| {
-        out.extend(targets(board, from, to, opponent, ring.clone()).map(|destroyed| Move { from, to, destroyed }));
+        out.extend(
+            targets
+                .iter()
+                .filter(|&&target| target != to)
+                .map(|&destroyed| Move { from, to, destroyed }),
+        );
     });
 }
 
@@ -88,15 +107,31 @@ pub fn is_legal(board: &Board, color: Color, mv: Move) -> bool {
 
 /// Comme `!legal_moves(..).is_empty()`, sans construire la liste.
 pub fn has_moves(board: &Board, color: Color) -> bool {
+    playable_mobility(board, color).is_some()
+}
+
+/// La mobilité, ou `None` sans aucun coup complet.
+pub fn playable_mobility(board: &Board, color: Color) -> Option<i32> {
     let from = board.pawn(color);
     let opponent = board.pawn(color.other());
-    destroy_rings(board.destroyed()).iter().any(|ring| {
-        let mut found = false;
-        destinations(board, from, |to| {
-            found = found || targets(board, from, to, opponent, ring.clone()).next().is_some();
-        });
-        found
-    })
+    let mut first = None;
+    let mut count = 0;
+    destinations(board, from, |to| {
+        first.get_or_insert(to);
+        count += 1;
+    });
+    let first = first?;
+    destroy_rings(board.destroyed())
+        .iter()
+        .any(|ring| {
+            let mut targets = candidates(board, from, opponent, ring.clone());
+            match (targets.next(), targets.next()) {
+                (Some(_), Some(_)) => true,
+                (Some(only), None) => count > 1 || only != first,
+                (None, _) => false,
+            }
+        })
+        .then_some(count)
 }
 
 /// Après un coup de `mover`, il gagne si l'adversaire n'a plus aucun coup : pas de nulle.
@@ -191,6 +226,35 @@ impl Replay {
         self.winner = winner_after(&self.board, self.turn);
         self.turn = self.turn.other();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod test_support {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use rand::seq::IndexedRandom;
+
+    use super::{has_moves, legal_moves};
+    use crate::board::{Board, Color};
+
+    pub fn positions(seed: u64, count: usize, max_moves: usize) -> Vec<(Board, Color)> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut positions = Vec::new();
+        while positions.len() < count {
+            let mut board = Board::initial();
+            let mut turn = Color::Red;
+            while let Some(&mv) = legal_moves(&board, turn).choose(&mut rng) {
+                board.apply(mv);
+                turn = turn.other();
+                let moves = legal_moves(&board, turn).len();
+                if (2..=max_moves).contains(&moves) && has_moves(&board, turn.other()) {
+                    positions.push((board, turn));
+                    break;
+                }
+            }
+        }
+        positions
     }
 }
 
@@ -413,6 +477,50 @@ mod tests {
         assert_eq!(board.destroyed(), 20);
         assert!(mobility(&board, Color::Red) > 0);
         assert!(!has_moves(&board, Color::Red));
+    }
+
+    #[test]
+    fn single_target_on_the_only_destination_is_no_move() {
+        // 20 cases détruites : autour de A12, seule B11 reste à détruire, et c'est la seule
+        // destination de rouge (B10).
+        let blocked = diagram(
+            "B##.........
+             #.#.........
+             #R#.........
+             ###.........
+             ............
+             ............
+             ###########.
+             ............
+             ............
+             ............
+             ............
+             ............",
+        );
+        assert_eq!(blocked.destroyed(), 20);
+        assert!(!has_moves(&blocked, Color::Red));
+        // C9 libre : rouge a d'autres destinations, et détruit B11.
+        let free = diagram(
+            "B##.........
+             #.#.........
+             #R#.........
+             ##..........
+             ............
+             ............
+             ###########.
+             ............
+             ............
+             ............
+             ............
+             ............",
+        );
+        assert!(has_moves(&free, Color::Red));
+        for board in [blocked, free] {
+            assert_eq!(
+                has_moves(&board, Color::Red),
+                !legal_moves(&board, Color::Red).is_empty()
+            );
+        }
     }
 
     #[test]

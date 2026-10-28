@@ -3,6 +3,7 @@
 
 pub mod board;
 pub mod cpu;
+pub mod engine;
 pub mod notation;
 pub mod protocol;
 pub mod record;

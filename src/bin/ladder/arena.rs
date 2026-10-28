@@ -43,7 +43,7 @@ pub enum GameError {
     Inconsistent(#[from] ValidationError),
 }
 
-/// Joue au plus une partie par slot, ladder et smoke tests confondus : pas de port ni de cœur partagé.
+/// Joue au plus une partie par slot, ladder et smoke tests confondus : pas de port ni de coeur partagé.
 pub struct Arena {
     cfg: Config,
     free: Mutex<Vec<usize>>,

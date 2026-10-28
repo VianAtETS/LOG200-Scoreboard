@@ -1,4 +1,5 @@
-//! Stratégies des bots : bots de test, et répliques du CPU du serveur officiel (`cpu`).
+//! Stratégies des bots : bots de test, répliques du CPU du serveur officiel (`cpu`) et moteur du
+//! niveau 4 (`engine`).
 
 use std::time::Instant;
 
@@ -7,6 +8,7 @@ use rand::seq::IndexedRandom;
 
 use crate::board::{Board, Color, Move};
 use crate::cpu::{self, Choice, Level};
+use crate::engine;
 use crate::rules::{self, mobility};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
@@ -29,6 +31,10 @@ pub enum Strategy {
     /// le temps le permet ; tient aussi compte du bord et des cases voisines libres.
     #[value(name = "niveau-3")]
     Niveau3,
+    /// L'évaluation du niveau 3 avec un negamax PVS, une table de transposition et des coups
+    /// ordonnés ; pas une réplique du serveur officiel.
+    #[value(name = "niveau-4")]
+    Niveau4,
 }
 
 impl Strategy {
@@ -40,6 +46,7 @@ impl Strategy {
             Self::Niveau1 => cpu::choose(board, color, Level::One, deadline, rng),
             Self::Niveau2 => cpu::choose(board, color, Level::Two, deadline, rng),
             Self::Niveau3 => cpu::choose(board, color, Level::Three, deadline, rng),
+            Self::Niveau4 => engine::choose(board, color, deadline, rng),
         }
     }
 }
