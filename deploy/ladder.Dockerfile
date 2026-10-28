@@ -32,8 +32,8 @@ FROM debian:bookworm-slim AS gvisor
 ARG RUNSC_VERSION=20261019.0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
     && curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/gvisor.gpg] https://storage.googleapis.com/gvisor/releases release main" \
-        > /etc/apt/sources.list.d/gvisor.list \
+    && echo "deb [signed-by=/usr/share/keyrings/gvisor.gpg] https://storage.googleapis.com/gvisor/releases ${RUNSC_VERSION%.*} main" \
+    > /etc/apt/sources.list.d/gvisor.list \
     && apt-get update && apt-get install -y --no-install-recommends "runsc=${RUNSC_VERSION}"
 
 FROM docker:29.9.2-dind-alpine3.24
@@ -43,7 +43,7 @@ COPY --from=gvisor /usr/bin/runsc /usr/local/bin/runsc
 COPY --from=gvisor /usr/bin/gvisor-bin /usr/local/bin/gvisor-bin
 RUN mkdir -p /etc/docker \
     && printf '{"runtimes":{"runsc-host-uds":{"path":"/usr/local/bin/runsc","runtimeArgs":["--host-uds=all"]}}}\n' \
-        > /etc/docker/daemon.json
+    > /etc/docker/daemon.json
 
 COPY --from=binaries /artifacts/isolation-ladder /artifacts/isolation-check /usr/local/bin/
 # Contexte de l'image des bacs a sable, construite par le Docker interne au demarrage.
