@@ -55,6 +55,7 @@ impl Scheduler {
             }
             scheduler.record(&game.red.team, &game.black.team, 1);
         }
+        scheduler.queue.forget_leads();
         scheduler
     }
 
@@ -169,6 +170,9 @@ mod tests {
     use rand::rngs::StdRng;
 
     use super::*;
+    use isolation::board::Color;
+    use isolation::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason};
+
     use crate::config::CommandTemplate;
 
     fn team(id: &str) -> Team {
@@ -256,6 +260,61 @@ mod tests {
             }
         }
         games
+    }
+
+    fn past_game(red: &str, black: &str, bots: &[&str]) -> GameRecord {
+        let player = |team: &str| Player {
+            team: team.into(),
+            build: (!bots.contains(&team)).then(|| format!("{team}-build")),
+            anchor: false,
+        };
+        GameRecord {
+            id: format!("20261024T120000.000Z-{red}-{black}"),
+            session: "s".into(),
+            ts: "2026-10-24T12:00:00.000Z".into(),
+            red: player(red),
+            black: player(black),
+            result: GameResult {
+                v: RECORD_VERSION,
+                time_ms: 500,
+                opening: vec![],
+                moves: vec![],
+                winner: Color::Red,
+                reason: Reason::NoMoves,
+                invalid: InvalidCounts::default(),
+                duration_ms: 0,
+                move_ms: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn replay_forgets_leads_from_another_regime() {
+        let bots = ["n1", "n2", "n3", "n4"];
+        let early = ["s1", "n1", "n2", "n3"];
+        let mut history = Vec::new();
+        for _ in 0..60 {
+            for (i, a) in early.iter().enumerate() {
+                for b in &early[i + 1..] {
+                    history.extend([past_game(a, b, &bots), past_game(b, a, &bots)]);
+                }
+            }
+        }
+        for _ in 0..120 {
+            history.extend(early.map(|b| past_game("s2", b, &bots)));
+        }
+        history.extend((0..100).map(|i| past_game("n4", early[i % 4], &bots)));
+
+        let mut scheduler = Scheduler::from_history(&history, "s");
+        let teams = [team("s1"), team("s2"), bot("n1"), bot("n2"), bot("n3"), bot("n4")];
+        let mut rng = StdRng::seed_from_u64(3);
+        let first = play_rounds(&mut scheduler, &teams, 10, &mut rng);
+        for late in ["s2", "n4"] {
+            assert!(
+                first.iter().any(|p| p.contains(&late.to_string())),
+                "{late} : {first:?}"
+            );
+        }
     }
 
     #[test]

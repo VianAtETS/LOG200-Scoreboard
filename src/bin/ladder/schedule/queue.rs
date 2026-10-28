@@ -46,6 +46,17 @@ impl FairQueue {
         }
     }
 
+    pub fn forget_leads(&mut self) {
+        let leaders: Vec<String> = self
+            .order
+            .range((self.clock.saturating_add(1), String::new())..)
+            .map(|(_, id)| id.clone())
+            .collect();
+        for id in leaders {
+            self.set(&id, self.clock);
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (u32, &str)> {
         self.order.iter().map(|(pass, id)| (*pass, id.as_str()))
     }
@@ -124,6 +135,21 @@ mod tests {
         queue.advance(10);
         queue.join("a");
         assert_eq!(queue.pass("a"), 20);
+    }
+
+    #[test]
+    fn forget_leads_brings_leaders_back_to_clock() {
+        let mut queue = FairQueue::new(10);
+        queue.charge("ahead", 90);
+        queue.charge("level", 50);
+        queue.advance(50);
+        queue.join("late");
+        queue.forget_leads();
+        assert_eq!(
+            [queue.pass("ahead"), queue.pass("level"), queue.pass("late")],
+            [50, 50, 40]
+        );
+        check(&queue);
     }
 
     #[test]
