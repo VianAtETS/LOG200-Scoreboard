@@ -1,6 +1,5 @@
-// Champ à puces des équipes, partagé par les pages Classement et Graphe : une puce retirable par équipe
-// choisie, une saisie qui filtre la liste des autres équipes du classement (motif ARIA combobox).
-// La page fournit les éléments picker, chips, picker-input, picker-clear, picker-toggle et picker-list.
+// Champ à puces des équipes (motif ARIA combobox). La page fournit les éléments picker, chips,
+// picker-input, picker-clear, picker-toggle et picker-list.
 
 import { $, el } from './common.js'
 
@@ -10,7 +9,6 @@ export function createPicker({ ratings, onChange }) {
     const field = $('picker-input')
     const list = $('picker-list')
     let selected = []
-    // Options affichées et option active (flèches), -1 sans option active.
     let options = []
     let active = -1
 
@@ -28,7 +26,6 @@ export function createPicker({ ratings, onChange }) {
 
     const remove = (team) => change(selected.filter((t) => t !== team))
 
-    // Équipes non choisies dont le nom contient la saisie, dans l'ordre du classement.
     function renderOptions() {
         const query = field.value.trim().toLowerCase()
         const taken = new Set(selected)
@@ -94,7 +91,6 @@ export function createPicker({ ratings, onChange }) {
     $('picker').addEventListener('focusout', (e) => {
         if (!$('picker').contains(e.relatedTarget)) openList(false)
     })
-    // Un clic dans le cadre, hors puces et boutons, place le curseur dans le champ.
     $('picker').addEventListener('click', (e) => {
         if (!e.target.closest('button, li')) field.focus()
     })
@@ -109,8 +105,7 @@ export function createPicker({ ratings, onChange }) {
         field.focus()
     })
 
-    // Puces des équipes `teams`. `color(team)` : pastille de la couleur de sa ligne (sans : pas de
-    // pastille) ; `idle(team)` : puce grisée, l'équipe n'a pas de partie dans la fenêtre.
+    // `color(team)` : pastille colorée, aucune sans ; `idle(team)` : puce grisée.
     function render(teams, { color, idle } = {}) {
         selected = teams
         $('chips').replaceChildren(

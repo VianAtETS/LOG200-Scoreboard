@@ -140,7 +140,6 @@ abbr[title] {
     color: var(--muted);
 }
 
-/* Pages du ladder : la page courante est marquée comme les fenêtres choisies. */
 .pages {
     display: flex;
     gap: 4px;
@@ -858,18 +857,16 @@ input[type='range'] {
     margin: 0 0 10px;
 }
 
-/* Filtre par équipes de la liste : mode avec plusieurs équipes, lien vers leurs rangs. */
 .games-head .match {
     margin-top: 0;
 }
 
-/* Ces deux blocs fixent leur display : sans cette règle, l'attribut hidden resterait sans effet. */
+/* Leur display l'emporterait sur l'attribut hidden. */
 .match[hidden],
 .graph-link[hidden] {
     display: none;
 }
 
-/* Dans le panneau en colonne, le champ garde sa hauteur : la liste des parties prend le reste. */
 .picker.games-picker {
     flex: none;
     margin-bottom: 10px;
@@ -1017,7 +1014,7 @@ input[type='range'] {
 
 /* --- Graphe des rangs ------------------------------------------------------------------------- */
 
-/* Une seule zone, quelle que soit la largeur : l'emporte sur les grilles de .layout. */
+/* Plus précis que les grilles de .layout des media queries. */
 .layout.graph-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
@@ -1043,7 +1040,6 @@ input[type='range'] {
     margin-top: 0;
 }
 
-/* Champ à puces : les équipes suivies, puis la saisie qui filtre la liste. */
 .bump-pick {
     display: flex;
     align-items: flex-start;
@@ -1299,7 +1295,6 @@ input[type='range'] {
     dominant-baseline: middle;
 }
 
-/* Lecture au curseur : la ligne visée passe devant, les autres s'estompent. */
 .bump-plot:focus-visible {
     outline-offset: 4px;
 }

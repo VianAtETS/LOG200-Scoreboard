@@ -25,10 +25,9 @@ import {
 
 const SESSION = params.get('session')
 const WINDOW = params.get('window') ?? GLOBAL
-// Couleurs --series-1 à --series-10 ; au-delà, elles se répètent et le nom en bout de ligne distingue.
+// Couleurs --series-1 à --series-10, répétées au-delà.
 const COLORS = 10
 const SVG = 'http://www.w3.org/2000/svg'
-// Marges du tracé : rangs à gauche, noms d'équipe à droite, dates en bas.
 const MARGIN = { top: 18, right: 96, bottom: 28, left: 36 }
 // Pixels par partie en dessous desquels le rang est lissé, et largeur d'un paquet lissé.
 const EXACT_PX = 4
@@ -37,15 +36,13 @@ const BUCKET_PX = 12
 let summary = null
 let summaryText = null
 let timeline = { offset: null, rows: [] }
-// Équipe vers son emplacement de couleur, gardé tant qu'elle reste sélectionnée.
 const colors = new Map()
 let builds = new Map()
 // Derniers rangs calculés : un redimensionnement redessine sans rejouer la timeline.
 let view = null
-// Équipes choisies dans l'ordre d'ajout ; null : le haut du classement, qui suit le classement.
+// null : le top 10, qui suit le classement.
 let chosen = params.has('teams') ? params.get('teams').split(',').filter(Boolean) : null
-// Colonne sous le curseur (null : infobulle cachée) et équipe mise en avant. `armed` : au doigt, un
-// premier appui montre la partie, un second sur la même colonne l'ouvre.
+// `armed` : au doigt, un premier appui montre la partie, un second sur la même colonne l'ouvre.
 let hover = { col: null, team: null, armed: null, touch: false }
 
 async function refresh() {
@@ -71,7 +68,6 @@ async function refresh() {
     }
 }
 
-// Équipes choisies encore connues dans la session, sinon le haut du classement de la session.
 function selectedTeams(ratings) {
     if (chosen === null) return topTeams(ratings)
     const known = new Set(ratings.map((r) => r.team))
@@ -114,7 +110,7 @@ function render() {
         selected,
         cutoff: Date.now() - (WINDOWS[w] ?? Infinity),
     })
-    // Couleurs dans l'ordre de la sélection ; un bot reste gris et n'en prend pas.
+    // Un bot reste gris et ne prend pas de couleur.
     const bots = new Set(scope.ratings.filter((r) => !r.build).map((r) => r.team))
     const palette = new Map(selected.filter((t) => !bots.has(t)).map((t) => [t, colorOf(t, selected)]))
     view = { columns, series, selected, palette }
@@ -127,7 +123,7 @@ function render() {
     $('status').textContent = `${columns.length} parties dans la fenêtre, à jour à ${timeFormat.format(new Date())}`
 }
 
-// Dessine le graphe et rend sa géométrie (échelles, lignes par équipe) pour l'infobulle ; null si vide.
+// Rend la géométrie du graphe pour l'infobulle, null si vide.
 function draw({ columns, series, selected, palette }) {
     const box = $('bump-plot').getBoundingClientRect()
     const width = Math.max(240, box.width)
@@ -162,7 +158,6 @@ function draw({ columns, series, selected, palette }) {
     const nodes = svg('g', { class: 'bump-nodes' })
     const labels = svg('g', { class: 'bump-labels' })
     const isBot = (team) => series.get(team)[0].bot
-    // Rang exact tant qu'une partie a EXACT_PX pixels, sinon rang moyen par paquet de BUCKET_PX pixels.
     const buckets = columns.length * EXACT_PX <= inner.w ? columns.length : Math.floor(inner.w / BUCKET_PX)
     const paths = new Map()
     // Les lignes du haut du classement sont dessinées en dernier, au-dessus des autres.
@@ -174,7 +169,7 @@ function draw({ columns, series, selected, palette }) {
         const bot = isBot(team)
         const d = path.map(([col, rank], i) => `${i ? 'L' : 'M'}${x(col)},${y(rank)}`).join('')
         lines.append(svg('path', { d, class: bot ? 'bot' : '', style: `stroke: ${color}`, 'data-team': team }))
-        // Départ de branche dans la fenêtre : petit point, comme un commit sur lequel la branche s'ouvre.
+        // Départ de branche dans la fenêtre.
         const branch = { cx: x(path[0][0]), cy: y(path[0][1]), r: 3, style: `fill: ${color}`, 'data-team': team }
         if (points[0].x > 0) nodes.append(svg('circle', branch))
         for (const p of points.filter((p) => p.version)) {
@@ -210,8 +205,7 @@ function draw({ columns, series, selected, palette }) {
     return { x, y, inner, width, drawn, paths }
 }
 
-// Sommets [colonne, rang] de la ligne, du départ de la branche à la dernière colonne. Rang exact :
-// palier tant que le rang tient, puis diagonale sur une partie. Rang lissé : diagonales entre paquets.
+// Sommets [colonne, rang] de la ligne. Rang exact : palier, puis diagonale sur une partie.
 function vertices(points, line, count) {
     const path = []
     if (line === points) {
@@ -226,7 +220,7 @@ function vertices(points, line, count) {
     return path
 }
 
-// Rang de la ligne à la colonne `col`, interpolé entre deux sommets : un nœud se pose sur la ligne.
+// Rang interpolé de la ligne à `col` : un nœud se pose sur la ligne, même lissée.
 function rankAt(path, col) {
     const k = path.findIndex(([c]) => c >= col)
     if (k <= 0) return path[Math.max(k, 0)][1]
@@ -236,7 +230,7 @@ function rankAt(path, col) {
 
 const ordinal = (rank) => (rank === 1 ? '1re' : `${rank}e`)
 
-// Cinq dates au plus, une par 100 px, réparties sur les colonnes : heure si la fenêtre tient dans une journée.
+// Cinq dates au plus, une par 100 px.
 function dateTicks(columns, x, height, width) {
     const span = Date.parse(columns.at(-1).ts) - Date.parse(columns[0].ts)
     const format = span < 864e5 ? timeFormat : dayFormat
@@ -254,11 +248,9 @@ function dateTicks(columns, x, height, width) {
     return ticks
 }
 
-// --- Lecture du graphe : curseur, infobulle, ouverture de la partie -----------------------------
-
 const plot = $('bump-plot')
 
-// Équipes suivies présentes à la colonne, rang exact (pas lissé), meilleure d'abord.
+// Rang exact, pas lissé, meilleure d'abord.
 function standingsAt(col) {
     const { series, geom } = view
     return geom.drawn
@@ -267,7 +259,6 @@ function standingsAt(col) {
         .sort((a, b) => a.p.rank - b.p.rank)
 }
 
-// Curseur et infobulle à la colonne `col` ; `team` est mise en avant (sinon celle déjà choisie, ou la première).
 function showAt(col, team = hover.team) {
     const { columns, palette, geom } = view ?? {}
     if (!geom) return hideTip()
@@ -311,7 +302,6 @@ function showAt(col, team = hover.team) {
         el('p', { class: 'tip-hint' }, hover.touch ? 'Touchez encore pour rejouer la partie' : 'Clic ou Entrée : rejouer la partie')
     )
     tip.hidden = false
-    // À droite du curseur, ou à gauche s'il n'y a pas la place.
     const width = tip.offsetWidth
     tip.style.left = `${left + 14 + width <= geom.width ? left + 14 : Math.max(0, left - 14 - width)}px`
 
@@ -328,7 +318,6 @@ function hideTip() {
     $('bump-svg').classList.remove('focusing')
 }
 
-// Colonne sous le pointeur, et ligne la plus proche verticalement parmi les branches déjà ouvertes.
 function pointed(e) {
     const { geom, columns } = view
     const box = plot.getBoundingClientRect()
@@ -346,8 +335,7 @@ function pointed(e) {
     return { col: at, team }
 }
 
-// Ouvre la partie de la colonne dans le replay de la page classement, filtrée sur l'équipe visée si elle
-// y joue, sinon sur les équipes choisies.
+// Filtré sur l'équipe visée si elle joue la partie, sinon sur les équipes choisies.
 function openGame(col) {
     const g = view.columns[col]
     const team = [g.red.team, g.black.team].includes(hover.team) ? hover.team : ''
@@ -396,8 +384,6 @@ plot.addEventListener('keydown', (e) => {
     else return
     e.preventDefault()
 })
-
-// --- Équipes suivies ------------------------------------------------------------------------
 
 // null : retour au haut du classement (?teams= retiré) ; [] : aucune équipe (?teams= vide).
 function choose(teams) {

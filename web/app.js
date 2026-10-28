@@ -54,9 +54,9 @@ const ENDINGS = {
 
 let summary = null
 let summaryText = null
-// Équipes choisies, dans l'ordre d'ajout ; aucune : les dernières parties de toutes les équipes.
+// Aucune équipe choisie : les dernières parties de toutes les équipes.
 let chosen = (params.get('teams') ?? params.get('team') ?? '').split(',').filter(Boolean)
-// Équipe choisie vers ses parties lues jusqu'ici dans teams/<équipe>.jsonl (état de `tail`).
+// Équipe choisie vers l'état de `tail` de teams/<équipe>.jsonl.
 const followed = new Map()
 let following = Promise.resolve(false)
 // Équipe vers ses builds dans l'ordre, toutes sessions : sert à afficher vN.
@@ -112,15 +112,13 @@ async function refresh() {
 const teamUrl = (team) => `${DATA}/teams/${encodeURIComponent(team)}.jsonl`
 const allTeams = () => summary.scopes[GLOBAL].ratings.map((r) => r.team)
 
-// Équipes choisies qui existent : un nom inconnu (lien ancien, faute de frappe) est ignoré.
 function selectedTeams() {
     if (!summary) return []
     const known = new Set(allTeams())
     return chosen.filter((t) => known.has(t))
 }
 
-// Lectures des fichiers d'équipe à la file : deux lectures en parallèle du même fichier doubleraient
-// des lignes. Les fichiers d'équipes différentes se lisent ensemble. Vrai si des lignes sont arrivées.
+// Lectures à la file : deux lectures en parallèle d'un même fichier doubleraient des lignes.
 function follow() {
     const teams = selectedTeams()
     for (const team of followed.keys()) if (!teams.includes(team)) followed.delete(team)
@@ -132,7 +130,6 @@ function follow() {
     return following
 }
 
-// Mode de la liste avec plusieurs équipes : avec l'une d'elles (défaut) ou entre elles.
 const matchMode = () => document.querySelector('#match input:checked')?.value ?? GLOBAL
 
 // Lien ?game= : l'id finit par `-<rouge>-<noir>`, la partie est dans le fichier de l'équipe rouge.
@@ -158,7 +155,7 @@ addEventListener('resize', () => scrollAreas.forEach(markOverflow))
 
 function renderSessions(first) {
     fillSelect($('session'), summary.sessions, first ? (SESSION ?? summary.sessions[0]) : $('session').value)
-    // Ancien lien ?team= : réécrit en ?teams=, que la page tient désormais.
+    // Ancien lien ?team= : réécrit en ?teams=.
     if (first && params.has('team')) {
         setParam('team', null)
         setParam('teams', selectedTeams().join(','))
@@ -177,7 +174,6 @@ function render() {
     renderRanking(scope.ratings)
     picker.render(teams)
     $('match').hidden = teams.length < 2
-    // Une équipe : sa courbe Elo. Plusieurs : leurs rangs sur la page graphe.
     renderChart(scope.ratings, list, key, teams.length === 1 ? teams[0] : null)
     $('graph-link').hidden = teams.length < 2
     $('graph-link').href = pageUrl('graphe.html', { teams: teams.join(',') })
@@ -243,7 +239,6 @@ function renderRanking(ratings) {
         )
 }
 
-// Courbe Elo de `team` (null : pas de courbe) sur ses parties `rows`.
 function renderChart(ratings, rows, key, team) {
     const r = team && ratings.find((r) => r.team === team)
     $('elo-chart').hidden = !r
@@ -530,7 +525,6 @@ async function share() {
     setTimeout(() => ($('share').textContent = 'Copier le lien'), 2000)
 }
 
-// Nouvelle sélection, session ou mode : la liste change, le replay repart sur sa dernière partie.
 function reselect() {
     replay.pinned = false
     render()

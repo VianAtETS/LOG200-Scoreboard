@@ -3,16 +3,13 @@
 
 export const TOP = 10
 
-// Équipes tracées par défaut : les TOP premières du classement, bots exclus.
 export function topTeams(ratings, n = TOP) {
     return ratings.filter((r) => r.build).slice(0, n).map((r) => r.team)
 }
 
-// Rejoue `rows` (une session si `session` est donné, sinon toutes) et rend, à partir de la première
-// partie jouée à `cutoff` (ms) ou après, une colonne par partie et la série de chaque équipe de `selected`.
-// Un point n'est ajouté que si le rang, le rating ou le build change : la série se lit en escalier.
-// Rang d'une équipe : 1 + équipes devant elle (rating plus haut, puis nom). Un bot se place entre deux
-// équipes : 0,5 + équipes devant lui.
+// Une colonne par partie jouée à `cutoff` (ms) ou après, et pour chaque équipe de `selected` un point à
+// chaque changement de rang, de rating ou de build. Rang : 1 + équipes devant (rating plus haut, puis
+// nom) ; un bot se place entre deux équipes : 0,5 + équipes devant lui.
 export function rankSeries(rows, { key = 'all', session = '', selected = [], cutoff = -Infinity } = {}) {
     const ratings = new Map()
     const bots = new Set()
@@ -55,7 +52,7 @@ function rankOf(team, rating, ratings, bots) {
     return bots.has(team) ? ahead + 0.5 : ahead + 1
 }
 
-// Point de la série affiché à la colonne `x` : le dernier à x ou avant, `undefined` avant la branche.
+// Dernier point à `x` ou avant, `undefined` avant le départ de la branche.
 export function pointAt(points, x) {
     let lo = 0
     let hi = points.length
@@ -67,9 +64,7 @@ export function pointAt(points, x) {
     return points[lo - 1]
 }
 
-// Rang moyen par paquet quand `count` colonnes ne tiennent pas en `buckets` : un point par paquet,
-// au milieu des colonnes qu'il couvre (à partir du départ de la branche), à relier en diagonale.
-// Sinon la série telle quelle.
+// Rang moyen par paquet quand `count` colonnes ne tiennent pas en `buckets`, sinon la série telle quelle.
 export function smooth(points, count, buckets) {
     if (count <= buckets || !points.length) return points
     const out = []

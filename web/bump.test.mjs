@@ -39,7 +39,6 @@ test('ranks follow every game and branches start at the first game', () => {
     assert.deepEqual(series.get('a').map((p) => [p.x, p.rank]), [[0, 1], [1, 2], [2, 2]])
     // Égalité à 1500 : départagée par le nom, a avant b.
     assert.deepEqual(series.get('b').map((p) => [p.x, p.rank]), [[0, 2], [1, 3], [2, 3]])
-    // c n'existe qu'à partir de sa première partie.
     assert.deepEqual(series.get('c').map((p) => [p.x, p.rank]), [[1, 1]])
     assert.equal(pointAt(series.get('c'), 0), undefined)
     assert.equal(pointAt(series.get('c'), 2).rank, 1)
@@ -109,7 +108,6 @@ test('smooth averages the rank over each bucket, from the start of the branch', 
         { x: 12, rank: 1 },
         { x: 17, rank: 2 },
     ])
-    // Échanges de place à chaque partie : la moyenne se tient entre les deux rangs.
     const flips = Array.from({ length: 12 }, (_, x) => ({ x, rank: (x % 2) + 1 }))
     assert.deepEqual(smooth(flips, 12, 3).map((p) => p.rank), [1.5, 1.5, 1.5])
     assert.equal(smooth(points, 20, 40), points)

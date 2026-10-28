@@ -1,5 +1,3 @@
-// Partagé par les pages du ladder (classement et graphe) : adresse des données, lecture des JSONL,
-// adresse de la page, petits utilitaires d'affichage.
 // Serveur : la balise meta scoreboard-server (posée par le workflow GitHub Pages), sinon le site qui
 // sert la page. Données : ?data=URL du dossier, sinon <serveur>/data.
 
@@ -61,13 +59,12 @@ export function setParam(key, value, keepEmpty = false) {
     const url = new URL(location.href)
     if (value || (keepEmpty && value === '')) url.searchParams.set(key, value)
     else url.searchParams.delete(key)
-    // Virgules lisibles dans un lien partagé (?teams=eq07,eq12) : sans ambiguïté dans une requête.
+    // Virgules lisibles dans ?teams=.
     url.search = url.searchParams.toString().replaceAll('%2C', ',')
     history.replaceState(null, '', url)
 }
 
-// Adresse d'une autre page du ladder qui garde ?data=, ?session=, ?window=, les équipes choisies
-// (?teams=) et leur mode (?match=), plus les paramètres non vides de `extra`.
+// Adresse d'une autre page, avec les choix communs aux pages et les paramètres non vides de `extra`.
 export function pageUrl(href, extra = {}) {
     const url = new URL(href, location.href)
     const here = new URLSearchParams(location.search)
@@ -79,7 +76,7 @@ export function pageUrl(href, extra = {}) {
     return url.href
 }
 
-// Navigation entre les pages : l'adresse est complétée au clic, avec les choix du moment.
+// Liens de l'en-tête : complétés au clic, avec les choix du moment.
 export function linkPages() {
     for (const a of document.querySelectorAll('.pages a')) {
         const href = a.getAttribute('href')
@@ -92,7 +89,6 @@ export function fillSelect(select, values, wanted = select.value) {
     select.value = values.includes(wanted) ? wanted : GLOBAL
 }
 
-// Pastille « en direct » : clignote quand de nouvelles données arrivent.
 export function pulse() {
     const live = $('live')
     live.classList.remove('pulse')

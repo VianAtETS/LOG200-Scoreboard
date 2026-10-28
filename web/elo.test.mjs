@@ -65,7 +65,6 @@ test('gamesOf merges team files once each, in game order, with both modes', () =
     assert.deepEqual(ids(gamesOf(files, ['a', 'b'], { mode: BETWEEN })), ids([ab]))
     assert.deepEqual(ids(gamesOf(files, ['a', 'b', 'c'], { mode: BETWEEN })), ids([ab, ac, bc]))
     assert.deepEqual(ids(gamesOf(files, ['b', 'c'], { mode: BETWEEN, session: 's2' })), ids([bc]))
-    // Une seule équipe : toutes ses parties, le mode n'a pas d'objet.
     assert.deepEqual(ids(gamesOf(files, ['c'], { mode: BETWEEN })), ids([ac, bc, cd]))
     assert.deepEqual(gamesOf(files, []), [])
 })
