@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { parseJsonl, since, START, versionStarts } from './elo.js'
+import { BETWEEN, gamesOf, parseJsonl, since, START, versionStarts } from './elo.js'
 import { BLACK, DESTROYED, EMPTY, positions, RED, squareIndex, squareName } from './replay.js'
 
 let clock = 0
@@ -48,6 +48,26 @@ test('since starts from the rating just before the cutoff', () => {
     assert.deepEqual(since(history, -Infinity), { start: START, points: history })
     assert.deepEqual(since(history, at(1)), { start: history[0].rating, points: history.slice(1) })
     assert.deepEqual(since(history, at(2) + 1), { start: history[2].rating, points: [] })
+})
+
+test('gamesOf merges team files once each, in game order, with both modes', () => {
+    const ab = game('a', 'b', 'red')
+    const ac = game('a', 'c', 'black')
+    const bc = game('b', 'c', 'red', { session: 's2' })
+    const cd = game('c', 'd', 'red')
+    const files = new Map([
+        ['a', [ab, ac]],
+        ['b', [ab, bc]],
+        ['c', [ac, bc, cd]],
+    ])
+    const ids = (games) => games.map((g) => g.id)
+    assert.deepEqual(ids(gamesOf(files, ['b', 'a'])), ids([ab, ac, bc]))
+    assert.deepEqual(ids(gamesOf(files, ['a', 'b'], { mode: BETWEEN })), ids([ab]))
+    assert.deepEqual(ids(gamesOf(files, ['a', 'b', 'c'], { mode: BETWEEN })), ids([ab, ac, bc]))
+    assert.deepEqual(ids(gamesOf(files, ['b', 'c'], { mode: BETWEEN, session: 's2' })), ids([bc]))
+    // Une seule équipe : toutes ses parties, le mode n'a pas d'objet.
+    assert.deepEqual(ids(gamesOf(files, ['c'], { mode: BETWEEN })), ids([ac, bc, cd]))
+    assert.deepEqual(gamesOf(files, []), [])
 })
 
 test('versionStarts marks each new build after the first entry', () => {

@@ -3,6 +3,7 @@
 // ?session=, ?teams= et ?window= suivent les choix de la page : l'adresse se partage telle quelle.
 
 import { pointAt, rankSeries, smooth, topTeams } from './bump.js'
+import { createPicker } from './picker.js'
 import {
     $,
     DATA,
@@ -43,8 +44,6 @@ let builds = new Map()
 let view = null
 // Équipes choisies dans l'ordre d'ajout ; null : le haut du classement, qui suit le classement.
 let chosen = params.has('teams') ? params.get('teams').split(',').filter(Boolean) : null
-// Options de la liste affichée et option active (flèches), -1 sans option active.
-let picker = { options: [], active: -1 }
 // Colonne sous le curseur (null : infobulle cachée) et équipe mise en avant. `armed` : au doigt, un
 // premier appui montre la partie, un second sur la même colonne l'ouvre.
 let hover = { col: null, team: null, armed: null, touch: false }
@@ -121,8 +120,10 @@ function render() {
     view = { columns, series, selected, palette }
     view.geom = draw(view)
     if (hover.col !== null) showAt(hover.col)
-    renderChips(selected, series, palette)
-    if (!$('picker-list').hidden) renderOptions()
+    picker.render(selected, {
+        color: (team) => palette.get(team) ?? 'var(--muted)',
+        idle: (team) => !series.get(team)?.length,
+    })
     $('status').textContent = `${columns.length} parties dans la fenêtre, à jour à ${timeFormat.format(new Date())}`
 }
 
@@ -345,11 +346,12 @@ function pointed(e) {
     return { col: at, team }
 }
 
-// Ouvre la partie de la colonne dans le replay de la page classement, filtrée sur l'équipe si elle y joue.
+// Ouvre la partie de la colonne dans le replay de la page classement, filtrée sur l'équipe visée si elle
+// y joue, sinon sur les équipes choisies.
 function openGame(col) {
     const g = view.columns[col]
     const team = [g.red.team, g.black.team].includes(hover.team) ? hover.team : ''
-    location.href = pageUrl('./', { team, game: g.id })
+    location.href = pageUrl('./', { teams: team, game: g.id })
 }
 
 plot.addEventListener('pointermove', (e) => {
@@ -395,10 +397,7 @@ plot.addEventListener('keydown', (e) => {
     e.preventDefault()
 })
 
-// --- Équipes suivies : puces, liste filtrée par la saisie ------------------------------------
-
-const field = $('picker-input')
-const current = () => view?.selected ?? []
+// --- Équipes suivies ------------------------------------------------------------------------
 
 // null : retour au haut du classement (?teams= retiré) ; [] : aucune équipe (?teams= vide).
 function choose(teams) {
@@ -407,111 +406,9 @@ function choose(teams) {
     render()
 }
 
-function addTeam(team) {
-    choose([...current(), team])
-    field.value = ''
-    picker.active = -1
-    renderOptions()
-}
-
-const removeTeam = (team) => choose(current().filter((t) => t !== team))
-
-// Puce de la couleur de la ligne ; grisée si l'équipe n'a pas de partie dans la fenêtre.
-function renderChips(selected, series, palette) {
-    $('chips').replaceChildren(
-        ...selected.map((team) => {
-            const idle = !series.get(team)?.length
-            const dot = el('span', { class: 'chip-dot', 'aria-hidden': 'true' })
-            dot.style.background = palette.get(team) ?? 'var(--muted)'
-            const remove = el('button', { type: 'button', class: 'chip-remove', 'aria-label': `Retirer ${team}` }, '×')
-            remove.addEventListener('click', () => removeTeam(team))
-            const title = idle ? `${team} : aucune partie dans cette fenêtre` : team
-            return el('li', { class: `chip${idle ? ' idle' : ''}`, title }, dot, el('span', {}, team), remove)
-        })
-    )
-    $('picker-clear').hidden = !selected.length
-}
-
-// Équipes non suivies dont le nom contient la saisie, dans l'ordre du classement.
-function renderOptions() {
-    if (!summary) return
-    const query = field.value.trim().toLowerCase()
-    const taken = new Set(current())
-    let rank = 0
-    const rows = summary.scopes[$('session').value].ratings.map((r) => ({ ...r, rank: r.build ? ++rank : 0 }))
-    picker.options = rows.filter((r) => !taken.has(r.team) && r.team.toLowerCase().includes(query))
-    picker.active = Math.min(picker.active, picker.options.length - 1)
-    const empty = query ? 'Aucune équipe ne correspond.' : 'Toutes les équipes sont suivies.'
-    $('picker-list').replaceChildren(
-        ...(picker.options.length
-            ? picker.options.map((r, i) => {
-                const option = el(
-                    'li',
-                    { id: `pick-${i}`, role: 'option', class: 'picker-option', 'aria-selected': String(i === picker.active) },
-                    el('span', { class: 'option-rank' }, r.rank ? String(r.rank) : 'bot'),
-                    el('span', { class: 'option-team' }, r.team),
-                    el('span', { class: 'option-elo' }, `${Math.round(r.rating)} Elo`)
-                )
-                // Garde le focus dans le champ : la liste reste ouverte pour en ajouter d'autres.
-                option.addEventListener('pointerdown', (e) => e.preventDefault())
-                option.addEventListener('click', () => addTeam(r.team))
-                return option
-            })
-            : [el('li', { class: 'picker-empty' }, empty)])
-    )
-    if (picker.active >= 0) {
-        field.setAttribute('aria-activedescendant', `pick-${picker.active}`)
-        $(`pick-${picker.active}`).scrollIntoView({ block: 'nearest' })
-    } else field.removeAttribute('aria-activedescendant')
-}
-
-function openList(open) {
-    $('picker-list').hidden = !open
-    field.setAttribute('aria-expanded', String(open))
-    if (open) renderOptions()
-    else {
-        picker.active = -1
-        field.removeAttribute('aria-activedescendant')
-    }
-}
-
-field.addEventListener('focus', () => openList(true))
-field.addEventListener('input', () => {
-    // Avec une saisie, Entrée ajoute la première équipe qui correspond.
-    picker.active = field.value.trim() ? 0 : -1
-    openList(true)
-})
-field.addEventListener('keydown', (e) => {
-    const open = !$('picker-list').hidden
-    const last = picker.options.length - 1
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        picker.active = !open ? -1 : e.key === 'ArrowDown' ? Math.min(picker.active + 1, last) : Math.max(picker.active - 1, 0)
-        openList(true)
-    } else if (e.key === 'Enter' && open && picker.active >= 0) addTeam(picker.options[picker.active].team)
-    else if (e.key === 'Escape' && open) openList(false)
-    else if (e.key === 'Escape') field.value = ''
-    else if (e.key === 'Backspace' && !field.value && current().length) {
-        removeTeam(current().at(-1))
-        return
-    } else return
-    e.preventDefault()
-})
-$('picker').addEventListener('focusout', (e) => {
-    if (!$('picker').contains(e.relatedTarget)) openList(false)
-})
-// Un clic dans le cadre, hors puces et boutons, place le curseur dans le champ.
-$('picker').addEventListener('click', (e) => {
-    if (!e.target.closest('button, li')) field.focus()
-})
-// Les boutons du cadre ne prennent pas le focus : la liste ne se ferme pas sous le clic.
-for (const id of ['picker-toggle', 'picker-clear']) $(id).addEventListener('pointerdown', (e) => e.preventDefault())
-$('picker-toggle').addEventListener('click', () => {
-    openList($('picker-list').hidden)
-    field.focus()
-})
-$('picker-clear').addEventListener('click', () => {
-    choose([])
-    field.focus()
+const picker = createPicker({
+    ratings: () => (summary ? summary.scopes[$('session').value].ratings : []),
+    onChange: choose,
 })
 $('picker-top').addEventListener('click', () => choose(null))
 

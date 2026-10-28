@@ -1,6 +1,7 @@
-// Page du ladder : classement et dernières parties de summary.json, historique de l'équipe
-// recherchée dans teams/, replay lu partie par partie dans games.jsonl.
-// ?session=, ?team=, ?window= et ?game= suivent les choix de la page : l'adresse se partage telle quelle.
+// Page du ladder : classement et dernières parties de summary.json, parties des équipes choisies
+// dans teams/, replay lu partie par partie dans games.jsonl.
+// ?session=, ?teams=, ?match=, ?window= et ?game= suivent les choix de la page : l'adresse se partage
+// telle quelle. ?team= des anciens liens vaut ?teams= avec cette seule équipe.
 
 import {
     $,
@@ -11,6 +12,7 @@ import {
     fullFormat,
     GLOBAL,
     linkPages,
+    pageUrl,
     params,
     pulse,
     REFRESH_MS,
@@ -22,7 +24,8 @@ import {
     timeFormat,
     WINDOWS,
 } from './common.js'
-import { since, versionStarts } from './elo.js'
+import { BETWEEN, gamesOf, since, versionStarts } from './elo.js'
+import { createPicker } from './picker.js'
 import { BLACK, DESTROYED, positions, RED, SIZE, squareName } from './replay.js'
 
 const RECENT_GAMES = 50
@@ -30,7 +33,6 @@ const PLAY_MS = 500
 // p99 au-delà de cette part du temps par coup : l'équipe frôle le timeout.
 const PACE_WARN = 0.8
 const SESSION = params.get('session')
-const TEAM = params.get('team') ?? GLOBAL
 const GAME = params.get('game')
 const WINDOW = params.get('window') ?? GLOBAL
 
@@ -52,8 +54,10 @@ const ENDINGS = {
 
 let summary = null
 let summaryText = null
-// Équipe recherchée et ses parties (teams/<équipe>.jsonl).
-let followed = { team: null, offset: null, rows: [] }
+// Équipes choisies, dans l'ordre d'ajout ; aucune : les dernières parties de toutes les équipes.
+let chosen = (params.get('teams') ?? params.get('team') ?? '').split(',').filter(Boolean)
+// Équipe choisie vers ses parties lues jusqu'ici dans teams/<équipe>.jsonl (état de `tail`).
+const followed = new Map()
 let following = Promise.resolve(false)
 // Équipe vers ses builds dans l'ordre, toutes sessions : sert à afficher vN.
 let builds = new Map()
@@ -108,21 +112,28 @@ async function refresh() {
 const teamUrl = (team) => `${DATA}/teams/${encodeURIComponent(team)}.jsonl`
 const allTeams = () => summary.scopes[GLOBAL].ratings.map((r) => r.team)
 
-// Équipe désignée par la recherche : nom exact, sinon seule équipe qui correspond.
-function searchedTeam() {
-    if (!summary || !query()) return null
-    const found = allTeams().filter(matches)
-    return found.find((t) => t.toLowerCase() === query()) ?? (found.length === 1 ? found[0] : null)
+// Équipes choisies qui existent : un nom inconnu (lien ancien, faute de frappe) est ignoré.
+function selectedTeams() {
+    if (!summary) return []
+    const known = new Set(allTeams())
+    return chosen.filter((t) => known.has(t))
 }
 
-// Lectures du fichier d'équipe à la file : deux lectures en parallèle doubleraient des lignes.
+// Lectures des fichiers d'équipe à la file : deux lectures en parallèle du même fichier doubleraient
+// des lignes. Les fichiers d'équipes différentes se lisent ensemble. Vrai si des lignes sont arrivées.
 function follow() {
-    const team = searchedTeam()
-    if (team !== followed.team) followed = { team, offset: null, rows: [] }
-    const state = followed
-    following = following.catch(() => { }).then(() => (state.team ? tail(teamUrl(state.team), state) : false))
+    const teams = selectedTeams()
+    for (const team of followed.keys()) if (!teams.includes(team)) followed.delete(team)
+    for (const team of teams) if (!followed.has(team)) followed.set(team, { offset: null, rows: [] })
+    const states = [...followed]
+    following = following
+        .catch(() => { })
+        .then(async () => (await Promise.all(states.map(([team, state]) => tail(teamUrl(team), state)))).some(Boolean))
     return following
 }
+
+// Mode de la liste avec plusieurs équipes : avec l'une d'elles (défaut) ou entre elles.
+const matchMode = () => document.querySelector('#match input:checked')?.value ?? GLOBAL
 
 // Lien ?game= : l'id finit par `-<rouge>-<noir>`, la partie est dans le fichier de l'équipe rouge.
 async function openLinked() {
@@ -147,13 +158,12 @@ addEventListener('resize', () => scrollAreas.forEach(markOverflow))
 
 function renderSessions(first) {
     fillSelect($('session'), summary.sessions, first ? (SESSION ?? summary.sessions[0]) : $('session').value)
-    $('teams').replaceChildren(...allTeams().sort().map((t) => el('option', { value: t })))
-    if (first) $('team').value = TEAM
+    // Ancien lien ?team= : réécrit en ?teams=, que la page tient désormais.
+    if (first && params.has('team')) {
+        setParam('team', null)
+        setParam('teams', selectedTeams().join(','))
+    }
 }
-
-// Recherche d'équipe : sous-chaîne, sans tenir compte de la casse.
-const query = () => $('team').value.trim().toLowerCase()
-const matches = (team) => team.toLowerCase().includes(query())
 
 function render() {
     if (!summary) return
@@ -161,17 +171,22 @@ function render() {
     const scope = summary.scopes[session]
     // Colonne Elo des lignes : toutes sessions, ou la session choisie.
     const key = session === GLOBAL ? 'all' : 'session'
-    const list = followed.team
-        ? followed.rows.filter((g) => session === GLOBAL || g.session === session)
-        : scope.recent.filter((g) => matches(g.red.team) || matches(g.black.team))
+    const teams = selectedTeams()
+    const rows = new Map([...followed].map(([team, state]) => [team, state.rows]))
+    const list = teams.length ? gamesOf(rows, teams, { mode: matchMode(), session }) : scope.recent
     renderRanking(scope.ratings)
-    renderChart(scope.ratings, list, key)
+    picker.render(teams)
+    $('match').hidden = teams.length < 2
+    // Une équipe : sa courbe Elo. Plusieurs : leurs rangs sur la page graphe.
+    renderChart(scope.ratings, list, key, teams.length === 1 ? teams[0] : null)
+    $('graph-link').hidden = teams.length < 2
+    $('graph-link').href = pageUrl('graphe.html', { teams: teams.join(',') })
     renderGames(list, key)
 
     const time = scope.recent.at(-1)?.time_ms
     $('time-ms').textContent = time ?? '?'
     const pace = time ? `, ${time} ms par coup` : ''
-    const count = followed.team ? list.length : scope.games
+    const count = teams.length ? list.length : scope.games
     $('status').textContent = `${count} parties${pace}, à jour à ${timeFormat.format(new Date())}`
 
     scrollAreas.forEach(markOverflow)
@@ -228,8 +243,9 @@ function renderRanking(ratings) {
         )
 }
 
-function renderChart(ratings, rows, key) {
-    const r = ratings.find((r) => r.team === followed.team)
+// Courbe Elo de `team` (null : pas de courbe) sur ses parties `rows`.
+function renderChart(ratings, rows, key, team) {
+    const r = team && ratings.find((r) => r.team === team)
     $('elo-chart').hidden = !r
     const history = r
         ? rows.map((g) => {
@@ -514,16 +530,30 @@ async function share() {
     setTimeout(() => ($('share').textContent = 'Copier le lien'), 2000)
 }
 
-for (const [id, event] of [
-    ['session', 'change'],
-    ['team', 'input'],
-]) {
-    $(id).addEventListener(event, () => {
-        setParam(id, $(id).value.trim(), id === 'session')
-        replay.pinned = false
-        follow().then(render, render)
-    })
+// Nouvelle sélection, session ou mode : la liste change, le replay repart sur sa dernière partie.
+function reselect() {
+    replay.pinned = false
+    render()
+    follow().then(render, render)
 }
+
+const picker = createPicker({
+    ratings: () => (summary ? summary.scopes[$('session').value].ratings : []),
+    onChange: (teams) => {
+        chosen = teams
+        setParam('teams', teams.join(','))
+        reselect()
+    },
+})
+$('session').addEventListener('change', () => {
+    setParam('session', $('session').value, true)
+    reselect()
+})
+for (const input of document.querySelectorAll('#match input')) input.checked = input.value === (params.get('match') ?? GLOBAL)
+$('match').addEventListener('change', (e) => {
+    setParam('match', e.target.value)
+    reselect()
+})
 $('share').addEventListener('click', share)
 for (const input of document.querySelectorAll('#elo-window input'))
     input.checked = input.value === (WINDOW in WINDOWS ? WINDOW : GLOBAL)

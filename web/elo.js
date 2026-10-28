@@ -26,6 +26,26 @@ export function since(history, cutoff) {
     return { start: history[first - 1]?.rating ?? START, points: history.slice(first) }
 }
 
+// Mode « entre elles » : seulement les parties dont les deux joueurs sont choisis.
+export const BETWEEN = 'entre'
+
+// Parties des équipes `selected`, lues dans leurs fichiers (`rowsByTeam` : équipe vers ses lignes), une
+// seule fois chacune (une partie entre deux équipes choisies est dans les deux fichiers) et dans l'ordre
+// des parties. Le mode BETWEEN ne s'applique qu'à partir de deux équipes ; `session` vide : toutes.
+export function gamesOf(rowsByTeam, selected, { mode = '', session = '' } = {}) {
+    const chosen = new Set(selected)
+    const between = mode === BETWEEN && chosen.size > 1
+    const games = new Map()
+    for (const team of chosen) {
+        for (const g of rowsByTeam.get(team) ?? []) {
+            if (session && g.session !== session) continue
+            if (between && !(chosen.has(g.red.team) && chosen.has(g.black.team))) continue
+            games.set(g.id, g)
+        }
+    }
+    return [...games.values()].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+}
+
 export function versionStarts(history) {
     const starts = []
     for (let k = 1; k < history.length; k++) {

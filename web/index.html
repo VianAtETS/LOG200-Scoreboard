@@ -147,10 +147,32 @@
         <section class="panel games" aria-labelledby="games-title">
             <div class="games-head">
                 <h2 id="games-title">Parties récentes</h2>
-                <input id="team" class="search" type="search" list="teams" placeholder="Rechercher une équipe"
-                    aria-label="Rechercher une équipe" autocomplete="off" spellcheck="false" />
-                <datalist id="teams"></datalist>
+                <div id="match" class="elo-window match" role="radiogroup" aria-label="Parties montrées" hidden>
+                    <label><input type="radio" name="match" value="" checked />Avec l'une</label>
+                    <label><input type="radio" name="match" value="entre" />Entre elles</label>
+                </div>
             </div>
+            <!-- Combobox à puces : saisir filtre la liste des équipes non choisies. -->
+            <div id="picker" class="picker games-picker">
+                <ul id="chips" class="chips" aria-label="Équipes choisies"></ul>
+                <input id="picker-input" class="picker-input" type="text" role="combobox"
+                    aria-label="Ajouter une équipe" aria-expanded="false" aria-controls="picker-list"
+                    aria-autocomplete="list" placeholder="Filtrer par équipe" autocomplete="off"
+                    spellcheck="false" />
+                <button id="picker-clear" class="picker-icon" type="button" aria-label="Retirer toutes les équipes">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                </button>
+                <button id="picker-toggle" class="picker-icon" type="button" tabindex="-1"
+                    aria-label="Afficher les équipes">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 9l6 6 6-6" />
+                    </svg>
+                </button>
+                <ul id="picker-list" class="picker-list" role="listbox" aria-label="Équipes" hidden></ul>
+            </div>
+            <a id="graph-link" class="graph-link" hidden>Voir leurs rangs dans le graphe →</a>
             <figure id="elo-chart" class="elo-chart" hidden>
                 <figcaption id="elo-caption" class="elo-caption"></figcaption>
                 <div id="elo-plot" class="elo-plot" role="slider" tabindex="0" aria-valuemin="0"

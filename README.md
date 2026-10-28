@@ -4,7 +4,7 @@ Live leaderboard (Elo, game history, replays) for the Isolation lab of LOG200.
 
 ![Leaderboard page: Elo ranking, recent games and the replay of one game](docs/images/leaderboard.png)
 
-Search for a team above the recent games to see only its games and, once a single team matches, its Elo over time, over the last hour, day, week or all games, with a dashed mark where each new jar version (v2, v3…) starts. The address follows the choices (`?team=eq08`, `?window=24h`, `?game=<id>`), so a filtered view or a single game can be shared as a link ("Copier le lien" above the replay).
+Pick one or more teams above the recent games (type to filter, × to remove) to see only their games. With several teams, choose between the games of any of them ("Avec l'une") or only the games they played against each other ("Entre elles"). With a single team, its Elo over time is shown, over the last hour, day, week or all games, with a dashed mark where each new jar version (v2, v3…) starts; with several, a link opens their ranks on the Graphe page. The address follows the choices (`?teams=eq03,eq08`, `?match=entre`, `?window=24h`, `?game=<id>`), so a filtered view or a single game can be shared as a link ("Copier le lien" above the replay), and the chosen teams follow you to the Graphe page and back.
 
 ![Leaderboard filtered on one team: Elo curve over the last 7 days with a mark at each new version (v2, v3, v4) above its recent games, and the first game of v4 in the replay](docs/images/leaderboard-team.png)
 

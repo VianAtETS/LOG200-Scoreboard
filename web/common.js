@@ -66,13 +66,16 @@ export function setParam(key, value, keepEmpty = false) {
     history.replaceState(null, '', url)
 }
 
-// Adresse d'une autre page du ladder qui garde ?data=, ?session= et ?window=, plus les paramètres non
-// vides de `extra`.
+// Adresse d'une autre page du ladder qui garde ?data=, ?session=, ?window=, les équipes choisies
+// (?teams=) et leur mode (?match=), plus les paramètres non vides de `extra`.
 export function pageUrl(href, extra = {}) {
     const url = new URL(href, location.href)
     const here = new URLSearchParams(location.search)
-    for (const key of ['data', 'session', 'window']) if (here.has(key)) url.searchParams.set(key, here.get(key))
+    for (const key of ['data', 'session', 'window', 'teams', 'match']) {
+        if (here.has(key)) url.searchParams.set(key, here.get(key))
+    }
     for (const [key, value] of Object.entries(extra)) if (value) url.searchParams.set(key, value)
+    url.search = url.searchParams.toString().replaceAll('%2C', ',')
     return url.href
 }
 
