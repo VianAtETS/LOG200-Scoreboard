@@ -146,11 +146,25 @@ impl Scheduler {
         let only_choice = rivals.len() == 1;
         let last = self.last.get(me);
         let open: Vec<(usize, (u32, u32))> = rivals
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|&j| only_choice || last != Some(&teams[j].id))
             .filter(|&j| !busy.contains(&teams[j].id))
             .map(|j| (j, (self.queue.pass(&teams[j].id), self.played(me, &teams[j].id))))
             .collect();
+        let least_open = open.iter().map(|&(_, (_, played))| played).min();
+        let awaits_student = !self.bots.contains(me)
+            && rivals.iter().any(|&j| {
+                let rival = &teams[j].id;
+                busy.contains(rival)
+                    && !self.bots.contains(rival)
+                    && last != Some(rival)
+                    && self.queue.pass(rival) + 2 >= self.queue.pass(me)
+                    && least_open.is_none_or(|least| self.played(me, rival) < least)
+            });
+        if awaits_student {
+            return None;
+        }
         let best_key = open.iter().map(|&(_, key)| key).min()?;
         let best: Vec<usize> = open
             .into_iter()
@@ -421,6 +435,19 @@ mod tests {
         let mut scheduler = Scheduler::default();
         let mut rng = StdRng::seed_from_u64(3);
         play_rounds(&mut scheduler, &teams, 3, &mut rng);
+    }
+
+    #[test]
+    fn students_meet_whatever_the_slot_count() {
+        let teams = [many("s", 2, team), many("e", 4, bot)].concat();
+        for slots in 1..=3 {
+            let mut scheduler = Scheduler::default();
+            let mut rng = StdRng::seed_from_u64(3);
+            let games = simulate(&mut scheduler, &teams, slots, 300, &mut rng);
+            let pvp = scheduler.played("s000", "s001");
+            let student = games["s000"] + games["s001"];
+            assert!(5 * 2 * pvp >= student, "{slots} slot(s) : {pvp} PvP sur {student}");
+        }
     }
 
     #[test]
