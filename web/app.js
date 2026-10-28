@@ -227,7 +227,14 @@ function renderRanking(ratings) {
                     team,
                     el('td', { class: 'num elo' }, String(Math.round(r.rating))),
                     el('td', { class: 'num record' }, `${r.wins}–${r.losses}`),
-                    el('td', { class: 'num pct' }, `${Math.round((100 * r.wins) / r.games)} %`),
+                    el(
+                        'td',
+                        {
+                            class: 'num pct',
+                            title: `${r.build_wins} victoires sur ${r.build_games} parties${v ? ` de ${v}` : ''}`,
+                        },
+                        `${Math.round((100 * r.build_wins) / r.build_games)} %`
+                    ),
                     paceCell(r.pace),
                     el(
                         'td',

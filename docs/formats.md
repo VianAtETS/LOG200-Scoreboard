@@ -158,7 +158,7 @@ Une ligne de partie (dans `recent` et `teams/`) reprend la partie sans les coups
 
 - `all` et `session` : rating après la partie et variation, toutes sessions confondues puis dans la session de la partie.
 - `at` : position et longueur de la ligne complète dans `games.jsonl`. Le replay la lit avec `Range: bytes=<début>-<fin>`.
-- Une ligne de `ratings` : `team`, `rating`, `games`, `wins`, `losses`, `anchor`, `provisional`, `build`, `last` (dernière partie), et `pace` (absent sans temps mesurés) : `p50`, `p95`, `p99`, `max` et `count` des temps par coup du build courant, `limit` le plus petit temps alloué.
+- Une ligne de `ratings` : `team`, `rating`, `games`, `wins`, `losses`, `build_games` et `build_wins` (parties et victoires du build courant, base du % V), `anchor`, `provisional`, `build`, `last` (dernière partie), et `pace` (absent sans temps mesurés) : `p50`, `p95`, `p99`, `max` et `count` des temps par coup du build courant, `limit` le plus petit temps alloué.
 - Au démarrage, le ladder réécrit `teams/`, `timeline.jsonl` et `summary.json` à partir de `games.jsonl`. Une équipe dont le nom n'est pas fait de lettres, chiffres, `-` et `_` (64 au plus) n'a pas de fichier d'équipe.
 
 ## Protocole des clients

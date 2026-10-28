@@ -82,6 +82,7 @@ struct Standing {
     anchor: bool,
     build: Option<String>,
     games_on_build: u32,
+    wins_on_build: u32,
     last: String,
     paces: HashMap<Option<String>, Pace>,
 }
@@ -108,6 +109,7 @@ impl Scope {
             anchor: false,
             build: None,
             games_on_build: 0,
+            wins_on_build: 0,
             last: String::new(),
             paces: HashMap::new(),
         });
@@ -116,6 +118,7 @@ impl Scope {
         if player.build.is_some() && player.build != s.build {
             s.build.clone_from(&player.build);
             s.games_on_build = 0;
+            s.wins_on_build = 0;
         }
         s
     }
@@ -156,6 +159,7 @@ impl Scope {
             s.games_on_build += 1;
             if won {
                 s.wins += 1;
+                s.wins_on_build += 1;
             } else {
                 s.losses += 1;
             }
@@ -201,6 +205,8 @@ impl Scope {
                 games: s.games,
                 wins: s.wins,
                 losses: s.losses,
+                build_games: s.games_on_build,
+                build_wins: s.wins_on_build,
                 anchor: s.anchor,
                 provisional: !s.anchor && s.games_on_build < PROVISIONAL_GAMES,
                 build: s.build.as_deref(),
@@ -288,6 +294,8 @@ struct RatingRow<'a> {
     games: u32,
     wins: u32,
     losses: u32,
+    build_games: u32,
+    build_wins: u32,
     anchor: bool,
     provisional: bool,
     build: Option<&'a str>,
@@ -529,6 +537,7 @@ mod tests {
         let a = rating(&ratings, "a");
         assert!(a.provisional);
         assert_eq!((a.games, a.build), (PROVISIONAL_GAMES + 1, Some("v2")));
+        assert_eq!((a.build_games, a.build_wins), (1, 1));
     }
 
     #[test]
