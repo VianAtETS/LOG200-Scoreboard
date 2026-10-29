@@ -19,6 +19,7 @@ use isolation::record::{GameRecord, GameResult, Player, ValidationError, now_rfc
 use crate::config::{Config, Team, Vars};
 use crate::digest::short_hash;
 use crate::journal::compact_timestamp;
+use crate::remote::{GameSpec, Seat, Seated};
 
 /// Au-delà, le journal d'un joueur est tronqué : un jar ne doit pas pouvoir remplir le disque.
 const LOG_CAP: usize = 1 << 20;
@@ -100,9 +101,9 @@ impl Arena {
         // Avant la partie : un smoke test peut remplacer le jar pendant qu'elle se joue.
         let entry = |team: &Team| Player {
             team: team.id.clone(),
-            build: build_hash(team),
+            build: team.remote.as_ref().map_or_else(|| build_hash(team), Seat::build),
             anchor: team.anchor,
-            remote: false,
+            remote: team.remote.is_some(),
         };
         let (red_entry, black_entry) = (entry(red), entry(black));
         let vars = Vars {
@@ -118,8 +119,19 @@ impl Arena {
         let startup = Duration::from_millis(cfg.startup_ms);
         let spawn_player = |team: &Team, side: Color| {
             let log = cfg.player_log(&id, &team.id);
+            if let Some(seat) = &team.remote {
+                let connect = cfg.remote.as_ref().map(|r| vars.substitute(&r.connect, Some(side)));
+                return Ok(Contestant::Remote(seat.sit(GameSpec {
+                    id: id.clone(),
+                    side,
+                    time_ms: cfg.time_ms,
+                    connect: connect.unwrap_or_default(),
+                    log,
+                })));
+            }
             vars.command(&team.cmd, Some(side))
                 .and_then(|command| spawn_logged(command, &log))
+                .map(Contestant::Local)
                 .map_err(|error| GameError::Spawn {
                     who: team.id.clone(),
                     error,
@@ -287,6 +299,12 @@ impl Drop for CleanupGuard {
             let _ = command.stdout(Stdio::null()).stderr(Stdio::null()).status();
         }
     }
+}
+
+/// Gardé jusqu'à la fin de la partie, puis libéré : processus local ou relais d'une équipe distante.
+enum Contestant {
+    Local(#[expect(dead_code, reason = "tenu pour son Drop")] LoggedPlayer),
+    Remote(#[expect(dead_code, reason = "tenu pour son Drop")] Seated),
 }
 
 /// Joueur dont la sortie d'erreur va dans un journal.

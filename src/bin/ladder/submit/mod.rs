@@ -13,7 +13,7 @@ use std::thread;
 
 use anyhow::anyhow;
 
-pub use auth::{DEFAULT_TEAMS, RegistryError, TeamId, add_team};
+pub use auth::{DEFAULT_TEAMS, RegistryError, TeamId, add_team, find_team, load_teams};
 use handler::{Request, Submissions};
 pub use smoke::SMOKE_OPPONENT;
 

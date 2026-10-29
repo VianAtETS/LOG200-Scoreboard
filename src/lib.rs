@@ -7,5 +7,6 @@ pub mod engine;
 pub mod notation;
 pub mod protocol;
 pub mod record;
+pub mod remote;
 pub mod rules;
 pub mod strategy;

@@ -98,6 +98,7 @@ pub fn smoke_test(arena: &Arena, submit: &SubmitConfig, id: &TeamId, jar: &Path)
         build: None,
         anchor: false,
         multithread: false,
+        remote: None,
     };
     for (red, black, side) in [
         (&candidate, &opponent, Color::Red),

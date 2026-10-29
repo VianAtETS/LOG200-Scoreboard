@@ -13,6 +13,7 @@ use thiserror::Error;
 
 use isolation::board::Color;
 
+use crate::remote::Seat;
 use crate::submit::TeamId;
 
 /// Une partie détruit au plus une case par coup.
@@ -59,6 +60,8 @@ pub struct Config {
     pub team_cmd: CommandTemplate,
     /// Soumission des jars par HTTP. Absente : seules les équipes de `[[team]]` jouent.
     pub submit: Option<SubmitConfig>,
+    /// Équipes qui jouent depuis leur machine. Demande `[submit]`, qui tient les tokens.
+    pub remote: Option<RemoteConfig>,
     #[serde(default, rename = "team")]
     pub teams: Vec<Team>,
 }
@@ -91,6 +94,10 @@ pub enum ConfigError {
     Toml(#[from] toml::de::Error),
     #[error("opening_plies doit être pair, pas {0}")]
     OddOpening(usize),
+    #[error("[remote] demande [submit], qui tient les tokens des équipes")]
+    RemoteWithoutSubmit,
+    #[error("[remote] connect doit commencer par unix: ou tcp:, pas {0:?}")]
+    BadConnect(String),
 }
 
 impl FromStr for Config {
@@ -100,6 +107,17 @@ impl FromStr for Config {
         let config: Self = toml::from_str(text)?;
         if !config.opening_plies.is_multiple_of(2) {
             return Err(ConfigError::OddOpening(config.opening_plies));
+        }
+        if let Some(remote) = &config.remote {
+            if config.submit.is_none() {
+                return Err(ConfigError::RemoteWithoutSubmit);
+            }
+            if !["unix:", "tcp:"]
+                .iter()
+                .any(|scheme| remote.connect.starts_with(scheme))
+            {
+                return Err(ConfigError::BadConnect(remote.connect.clone()));
+            }
         }
         Ok(config)
     }
@@ -154,6 +172,7 @@ impl Config {
             build: Some(jar.to_path_buf()),
             anchor: false,
             multithread,
+            remote: None,
         }
     }
 }
@@ -180,11 +199,35 @@ pub struct Team {
     /// Ses parties se jouent dans les slots `multithread`, adversaire compris.
     #[serde(default)]
     pub multithread: bool,
+    /// Équipe connectée depuis sa machine : elle joue à la place de `cmd`.
+    #[serde(skip)]
+    pub remote: Option<Seat>,
 }
 
 impl Team {
     pub fn build_file(&self) -> Option<PathBuf> {
         self.build.clone().or_else(|| self.cmd.jar().map(PathBuf::from))
+    }
+
+    /// Adversaire de référence, sans soumission.
+    pub fn is_bot(&self) -> bool {
+        self.remote.is_none() && self.build_file().is_none()
+    }
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct RemoteConfig {
+    pub listen: String,
+    pub connect: String,
+}
+
+impl Default for RemoteConfig {
+    fn default() -> Self {
+        Self {
+            listen: "0.0.0.0:8091".into(),
+            connect: "unix:/tmp/isolation-ladder/{game}/{side}/sock".into(),
+        }
     }
 }
 
@@ -267,17 +310,16 @@ pub struct Vars<'a> {
 
 impl Vars<'_> {
     /// `side` remplace `{side}` ; vide pour l'arbitre et `cleanup`.
+    pub fn substitute(&self, arg: &str, side: Option<Color>) -> String {
+        arg.replace("{port}", &self.cfg.port.to_string())
+            .replace("{time_ms}", &self.cfg.time_ms.to_string())
+            .replace("{opening}", &self.opening)
+            .replace("{game}", self.game)
+            .replace("{side}", side.map_or("", Color::name))
+    }
+
     pub fn command(&self, template: &CommandTemplate, side: Option<Color>) -> io::Result<Command> {
-        let port = self.cfg.port.to_string();
-        let time_ms = self.cfg.time_ms.to_string();
-        let side = side.map_or("", Color::name);
-        let mut args = template.0.iter().map(|arg| {
-            arg.replace("{port}", &port)
-                .replace("{time_ms}", &time_ms)
-                .replace("{opening}", &self.opening)
-                .replace("{game}", self.game)
-                .replace("{side}", side)
-        });
+        let mut args = template.0.iter().map(|arg| self.substitute(arg, side));
         let program = args.next().ok_or_else(|| io::Error::other("commande vide"))?;
         let mut command = Command::new(program);
         command.args(args).stdin(Stdio::null());
@@ -311,6 +353,19 @@ mod tests {
     fn misplaced_key_is_rejected() {
         let text = format!("{MINIMAL}[submit]\nteam_cmd = [\"x\"]\n");
         assert!(matches!(text.parse::<Config>(), Err(ConfigError::Toml(_))));
+    }
+
+    #[test]
+    fn remote_needs_submit_and_a_known_connect_scheme() {
+        let without_submit = format!("{MINIMAL}[remote]\n");
+        assert!(matches!(
+            without_submit.parse::<Config>(),
+            Err(ConfigError::RemoteWithoutSubmit)
+        ));
+        let bad = format!("{MINIMAL}[submit]\n[remote]\nconnect = \"/tmp/sock\"\n");
+        assert!(matches!(bad.parse::<Config>(), Err(ConfigError::BadConnect(_))));
+        let cfg: Config = format!("{MINIMAL}[submit]\n[remote]\n").parse().unwrap();
+        assert!(cfg.remote.unwrap().connect.starts_with("unix:"));
     }
 
     #[test]

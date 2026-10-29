@@ -1,12 +1,13 @@
 //! Enchaîne les parties entre équipes, une paire par slot libre, et ajoute une ligne par partie au
 //! JSONL. Les équipes sont celles de `ladder.toml` plus les équipes inscrites qui ont un jar
-//! accepté ; la liste est relue avant chaque paire.
+//! accepté ou une session distante ouverte ; la liste est relue avant chaque paire.
 
 mod arena;
 mod config;
 mod digest;
 mod journal;
 mod live;
+mod remote;
 mod schedule;
 mod standings;
 mod submit;
@@ -32,6 +33,7 @@ use arena::{Arena, GameError};
 use config::{Config, Team};
 use journal::append_jsonl;
 use live::Live;
+use remote::Registry;
 use schedule::Scheduler;
 use standings::Standings;
 use submit::TeamId;
@@ -104,19 +106,20 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     arena.sweep();
     submit::serve(Arc::clone(&arena))?;
     let cfg = arena.config();
+    let (reports, received) = mpsc::channel();
+    let remote = serve_remote(cfg, &reports)?;
 
     let mut rng = rand::rng();
     let mut round = 0;
     let mut waiting = false;
     let mut warned = HashSet::new();
-    let (reports, received) = mpsc::channel();
     // Paires en cours, par genre de slot (ordinaire, multithread).
     let mut running = [0; 2];
     let mut busy = HashSet::new();
     loop {
         if rounds.is_none_or(|n| round < n) {
             if running.iter().sum::<usize>() < cfg.slots() {
-                let teams = roster(cfg, &mut warned);
+                let teams = roster(cfg, remote.as_ref(), &mut warned);
                 let fits = |a: &Team, b: &Team| {
                     let multithread = cfg.multithread_game(a, b);
                     running[usize::from(multithread)] < cfg.slots_of(multithread)
@@ -149,6 +152,7 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
             continue;
         };
         match report {
+            Report::Wake => {}
             Report::Started { red, black } => {
                 if let Err(e) = live.start(&red, &black) {
                     eprintln!("   parties en cours non publiées : {e}");
@@ -187,9 +191,10 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Compte rendu d'un thread de paire.
+/// Compte rendu d'un thread de paire, ou réveil à l'arrivée d'une équipe distante.
 #[expect(clippy::large_enum_variant, reason = "cinq messages par paire")]
 enum Report {
+    Wake,
     Started {
         red: String,
         black: String,
@@ -203,6 +208,19 @@ enum Report {
         pair: [String; 2],
         multithread: bool,
     },
+}
+
+/// Registre des équipes distantes, si `[remote]` est configuré : il réveille la boucle à chaque arrivée.
+fn serve_remote(cfg: &Config, reports: &Sender<Report>) -> anyhow::Result<Option<Arc<Registry>>> {
+    if cfg.remote.is_none() {
+        return Ok(None);
+    }
+    let wake = reports.clone();
+    let registry = Registry::new(move || {
+        let _ = wake.send(Report::Wake);
+    });
+    remote::serve(&registry, cfg)?;
+    Ok(Some(registry))
 }
 
 /// Joue la paire dans les deux couleurs, avec la même ouverture. L'arène attribue un slot à chaque partie.
@@ -233,13 +251,18 @@ fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: 
     });
 }
 
-/// Équipes de `[[team]]`, puis les équipes inscrites qui n'y figurent pas.
-fn roster(cfg: &Config, warned: &mut HashSet<String>) -> Vec<Team> {
+/// Équipes de `[[team]]`, puis les équipes inscrites qui n'y figurent pas. Une équipe connectée en
+/// distant joue à la place de son jar.
+fn roster(cfg: &Config, remote: Option<&Arc<Registry>>, warned: &mut HashSet<String>) -> Vec<Team> {
     let mut teams = cfg.teams.clone();
-    let registered = submit::active_teams(cfg).unwrap_or_else(|e| {
+    let mut registered = submit::active_teams(cfg).unwrap_or_else(|e| {
         eprintln!("équipes inscrites ignorées : {e}");
         Vec::new()
     });
+    for online in remote.map(Registry::online).unwrap_or_default() {
+        registered.retain(|team| team.id != online.id);
+        registered.push(online);
+    }
     for team in registered {
         let fixed = teams.iter().any(|t| t.id == team.id);
         if (fixed || team.id == submit::SMOKE_OPPONENT) && warned.insert(team.id.clone()) {
@@ -322,7 +345,7 @@ mod tests {
         }
         let mut warned = HashSet::new();
         for _ in 0..2 {
-            let ids: Vec<String> = roster(&cfg, &mut warned).into_iter().map(|t| t.id).collect();
+            let ids: Vec<String> = roster(&cfg, None, &mut warned).into_iter().map(|t| t.id).collect();
             assert_eq!(ids, ["niveau-1", "eq01", submit::SMOKE_OPPONENT]);
         }
         assert_eq!(

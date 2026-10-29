@@ -99,7 +99,7 @@ impl Scheduler {
         rng: &mut impl Rng,
     ) -> Option<(&'t Team, &'t Team)> {
         for team in teams {
-            self.mark_bot(&team.id, team.build_file().is_none());
+            self.mark_bot(&team.id, team.is_bot());
             self.queue.join(&team.id);
         }
         let ratings: Vec<f64> = teams.iter().map(|t| rating(&t.id)).collect();
@@ -198,6 +198,7 @@ mod tests {
             build: Some(format!("{id}.jar").into()),
             anchor: false,
             multithread: false,
+            remote: None,
         }
     }
 
@@ -506,6 +507,22 @@ mod tests {
         let busy = HashSet::from(["d".to_string()]);
         let next = play(&mut scheduler, &teams, &busy, flat, &mut rng).unwrap();
         assert!(!next.contains(&"d".to_string()));
+    }
+
+    #[test]
+    fn team_back_from_absence_catches_up_only_briefly() {
+        let teams = many("t", 30, team);
+        let mut scheduler = Scheduler::default();
+        let mut rng = StdRng::seed_from_u64(5);
+        play_rounds(&mut scheduler, &teams, 300, &mut rng);
+        play_rounds(&mut scheduler, &teams[1..], 300, &mut rng);
+        let next = play_rounds(&mut scheduler, &teams, 60, &mut rng);
+        let back = |p: &[String; 2]| p.contains(&teams[0].id);
+        let head_start = next.iter().take_while(|p| back(p)).count();
+        let half = CATCH_UP as usize / 2;
+        assert!((half..=half + 2).contains(&head_start), "{head_start}");
+        let later = next[head_start..].iter().filter(|p| back(p)).count();
+        assert!(later <= 6, "{later}");
     }
 
     #[test]
