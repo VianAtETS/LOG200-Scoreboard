@@ -178,6 +178,19 @@ abbr[title] {
     color: var(--muted);
 }
 
+.verified {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.verified input {
+    margin: 0;
+    accent-color: var(--red);
+}
+
 select {
     background: var(--surface);
     border: 1px solid var(--line);
@@ -257,7 +270,7 @@ select {
     scrollbar-color: var(--line) transparent;
 }
 
-/* Une ligne coupée par le bas se lit comme « il y en a d'autres ». */
+/* Une ligne coupée par le bas se lit comme "il y en a d'autres". */
 .scroll.more {
     mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
 }
@@ -902,7 +915,8 @@ input[type='range'] {
 
 /* Leur display l'emporterait sur l'attribut hidden. */
 .match[hidden],
-.graph-link[hidden] {
+.graph-link[hidden],
+.verified[hidden] {
     display: none;
 }
 

@@ -69,7 +69,7 @@ Si votre code charge des classes par leur nom (réflexion, `Class.forName`), le 
 
 ## Tester avant de pousser
 
-Un refus 422 se reproduit en local avec l'arbitre et le bot de la [dernière release](https://github.com/VianAtETS/LOG200-Scoreboard/releases/latest) : voir « Test your bot » dans le [README principal](../README.md#test-your-bot).
+Un refus 422 se reproduit en local avec l'arbitre et le bot de la [dernière release](https://github.com/VianAtETS/LOG200-Scoreboard/releases/latest) : voir "Test your bot" dans le [README principal](../README.md#test-your-bot).
 
 ## Sans la CI
 
@@ -79,4 +79,4 @@ Le formulaire de la page du ladder fait la même chose, tout comme `curl` :
 curl -T client.jar -H "Authorization: Bearer $LADDER_TOKEN" "$LADDER_URL/api/submit"
 ```
 
-Détails du protocole de soumission : « Soumission des jars » dans [`docs/formats.md`](../docs/formats.md#soumission-des-jars).
+Détails du protocole de soumission : "Soumission des jars" dans [`docs/formats.md`](../docs/formats.md#soumission-des-jars).

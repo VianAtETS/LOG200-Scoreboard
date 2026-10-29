@@ -1,5 +1,5 @@
 //! Plateau 12×12. `x` est la colonne (A = 0) et `y` la ligne comptée depuis le haut : la ligne
-//! affichée « 12 » a `y = 0`. L'index `y * 12 + x` est l'ordre des cases dans les messages 1 et 2.
+//! affichée "12" a `y = 0`. L'index `y * 12 + x` est l'ordre des cases dans les messages 1 et 2.
 
 use std::fmt;
 use std::ops::{Index, IndexMut};

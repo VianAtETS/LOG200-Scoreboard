@@ -1,7 +1,7 @@
 // Page du ladder : classement et dernières parties de summary.json, parties des équipes choisies
 // dans teams/, replay lu partie par partie dans games.jsonl.
-// ?session=, ?teams=, ?match=, ?window= et ?game= suivent les choix de la page : l'adresse se partage
-// telle quelle. ?team= des anciens liens vaut ?teams= avec cette seule équipe.
+// ?session=, ?teams=, ?match=, ?window=, ?verified= et ?game= suivent les choix de la page : l'adresse
+// se partage telle quelle. ?team= des anciens liens vaut ?teams= avec cette seule équipe.
 
 import {
     $,
@@ -11,12 +11,14 @@ import {
     fillSelect,
     fullFormat,
     GLOBAL,
+    initVerified,
     linkPages,
     pageUrl,
     params,
     pulse,
     REFRESH_MS,
     roundDelta,
+    scopesOf,
     SERVER,
     setParam,
     signed,
@@ -24,7 +26,7 @@ import {
     timeFormat,
     WINDOWS,
 } from './common.js'
-import { BETWEEN, gamesOf, since, versionStarts } from './elo.js'
+import { BETWEEN, gamesOf, isRemote, ratingOf, since, versionStarts } from './elo.js'
 import { createPicker } from './picker.js'
 import { BLACK, DESTROYED, positions, RED, SIZE, squareName } from './replay.js'
 
@@ -176,20 +178,24 @@ function renderSessions(first) {
 function render() {
     if (!summary) return
     const session = $('session').value
-    const scope = summary.scopes[session]
+    const { verified, scopes } = scopesOf(summary)
+    const scope = scopes[session]
     // Colonne Elo des lignes : toutes sessions, ou la session choisie.
     const key = session === GLOBAL ? 'all' : 'session'
+    const rating = (side) => ratingOf(side, key, verified)
     const teams = selectedTeams()
     const rows = new Map([...followed].map(([team, state]) => [team, state.rows]))
-    const list = teams.length ? gamesOf(rows, teams, { mode: matchMode(), session }) : scope.recent
+    const list = teams.length
+        ? gamesOf(rows, teams, { mode: matchMode(), session }).filter((g) => !verified || !isRemote(g))
+        : scope.recent
     renderRunning()
     renderRanking(scope.ratings)
     picker.render(teams)
     $('match').hidden = teams.length < 2
-    renderChart(scope.ratings, list, key, teams.length === 1 ? teams[0] : null)
+    renderChart(scope.ratings, list, rating, teams.length === 1 ? teams[0] : null)
     $('graph-link').hidden = teams.length < 2
     $('graph-link').href = pageUrl('graphe.html', { teams: teams.join(',') })
-    renderGames(list, key)
+    renderGames(list, rating)
 
     const time = scope.recent.at(-1)?.time_ms
     $('time-ms').textContent = time ?? '?'
@@ -221,7 +227,7 @@ function renderRunning() {
     )
 }
 
-// « v3 » pour le build de `player`, vide sans build.
+// "v3" pour le build de `player`, vide sans build.
 function version(player) {
     const n = player.build ? (builds.get(player.team)?.indexOf(player.build) ?? -1) + 1 : 0
     return n ? `v${n}` : ''
@@ -282,14 +288,14 @@ function renderRanking(ratings) {
         )
 }
 
-function renderChart(ratings, rows, key, team) {
+function renderChart(ratings, rows, rating, team) {
     const r = team && ratings.find((r) => r.team === team)
     $('elo-chart').hidden = !r
     const history = r
         ? rows.map((g) => {
             const side = g.red.team === r.team ? g.red : g.black
-            const [rating, delta] = side[key]
-            return { id: g.id, ts: g.ts, rating, delta, game: g, build: side.build, version: version(side) }
+            const [after, delta] = rating(side)
+            return { id: g.id, ts: g.ts, rating: after, delta, game: g, build: side.build, version: version(side) }
         })
         : []
     for (const k of versionStarts(history)) history[k].newVersion = true
@@ -377,12 +383,12 @@ function openPoint(i) {
     if (g) showGame(g, true)
 }
 
-function renderGames(list, key) {
+function renderGames(list, rating) {
     const items = list
         .slice(-RECENT_GAMES)
         .reverse()
         .map((g) => {
-            const change = (color) => roundDelta(g[color][key][1])
+            const change = (color) => roundDelta(rating(g[color])[1])
             const side = (color) => {
                 const node = el(
                     'span',
@@ -392,7 +398,7 @@ function renderGames(list, key) {
                 if (g[color].remote) node.append(remoteBadge())
                 const d = change(color)
                 if (d) {
-                    const title = `Elo après la partie : ${Math.round(g[color][key][0])}`
+                    const title = `Elo après la partie : ${Math.round(rating(g[color])[0])}`
                     node.append(el('span', { class: `delta ${d > 0 ? 'up' : 'down'}`, title }, signed(d)))
                 }
                 return node
@@ -578,7 +584,7 @@ function reselect() {
 }
 
 const picker = createPicker({
-    ratings: () => (summary ? summary.scopes[$('session').value].ratings : []),
+    ratings: () => (summary ? scopesOf(summary).scopes[$('session').value].ratings : []),
     onChange: (teams) => {
         chosen = teams
         setParam('teams', teams.join(','))
@@ -589,6 +595,7 @@ $('session').addEventListener('change', () => {
     setParam('session', $('session').value, true)
     reselect()
 })
+initVerified(reselect)
 for (const input of document.querySelectorAll('#match input')) input.checked = input.value === (params.get('match') ?? GLOBAL)
 $('match').addEventListener('change', (e) => {
     setParam('match', e.target.value)

@@ -241,6 +241,15 @@ struct Side {
     /// Rating après la partie et variation, toutes sessions puis dans la session.
     all: [f64; 2],
     session: [f64; 2],
+    /// Les mêmes sans les parties distantes, s'ils diffèrent. Absent d'une partie distante.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verified: Option<Verified>,
+}
+
+#[derive(Serialize, Clone, PartialEq, Debug)]
+struct Verified {
+    all: [f64; 2],
+    session: [f64; 2],
 }
 
 /// Une partie telle que la page l'affiche, sans les coups : `at` donne ses octets dans `games.jsonl`.
@@ -325,24 +334,66 @@ struct Summary<'a> {
     sessions: Vec<&'a str>,
     builds: &'a BTreeMap<String, Vec<String>>,
     scopes: BTreeMap<&'a str, ScopeView<'a>>,
+    /// Mêmes clés que `scopes`, sans les parties distantes ; absent tant qu'il n'y en a pas eu.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verified: Option<BTreeMap<&'a str, ScopeView<'a>>>,
+}
+
+/// Toutes les sessions, puis une par session.
+#[derive(Default)]
+struct Scopes {
+    all: Scope,
+    sessions: HashMap<String, Scope>,
+}
+
+impl Scopes {
+    fn play(&mut self, game: &GameRecord) -> (ByColor<[f64; 2]>, ByColor<[f64; 2]>) {
+        let all = self.all.play(game);
+        (all, self.session(&game.session).play(game))
+    }
+
+    fn session(&mut self, name: &str) -> &mut Scope {
+        self.sessions.entry(name.to_string()).or_default()
+    }
+
+    fn push_recent(&mut self, row: &Row) {
+        self.all.push_recent(row.clone());
+        self.session(&row.session).push_recent(row.clone());
+    }
+
+    fn views<'a>(&'a self, sessions: &[&'a str]) -> BTreeMap<&'a str, ScopeView<'a>> {
+        let mut views: BTreeMap<_, _> = sessions
+            .iter()
+            .filter_map(|&name| self.sessions.get(name).map(|scope| (name, scope.view())))
+            .collect();
+        views.insert(ALL, self.all.view());
+        views
+    }
 }
 
 pub struct Standings {
     dir: PathBuf,
-    all: Scope,
-    sessions: HashMap<String, Scope>,
+    full: Scopes,
+    /// Sans les parties distantes. Chaque session de `full` y a une entrée, même vide.
+    verified: Scopes,
+    any_remote: bool,
     builds: BTreeMap<String, Vec<String>>,
 }
 
 impl Standings {
+    fn new(dir: &Path) -> Self {
+        Self {
+            dir: dir.to_path_buf(),
+            full: Scopes::default(),
+            verified: Scopes::default(),
+            any_remote: false,
+            builds: BTreeMap::new(),
+        }
+    }
+
     /// Rejoue l'historique, dans l'ordre du fichier, et réécrit les fichiers d'équipe, la timeline et le résumé.
     pub fn from_history(dir: &Path, games: &[GameRecord], at: &[Range<u64>]) -> io::Result<Self> {
-        let mut standings = Self {
-            dir: dir.to_path_buf(),
-            all: Scope::default(),
-            sessions: HashMap::new(),
-            builds: BTreeMap::new(),
-        };
+        let mut standings = Self::new(dir);
         let teams = dir.join("teams");
         match fs::remove_dir_all(&teams) {
             Err(e) if e.kind() != ErrorKind::NotFound => return Err(e),
@@ -376,7 +427,7 @@ impl Standings {
 
     /// Rating toutes sessions, `START` pour une équipe qui n'a pas encore joué.
     pub fn rating(&self, team: &str) -> f64 {
-        self.all.teams.get(team).map_or(START, |s| s.rating)
+        self.full.all.teams.get(team).map_or(START, |s| s.rating)
     }
 
     /// `at` : octets de la partie dans `games.jsonl`.
@@ -400,15 +451,28 @@ impl Standings {
                 }
             }
         }
-        let all = self.all.play(game);
-        let session = self.sessions.entry(game.session.clone()).or_default();
-        let in_session = session.play(game);
+        let (all, in_session) = self.full.play(game);
+        let remote = game.red.remote || game.black.remote;
+        self.any_remote |= remote;
+        self.verified.session(&game.session);
+        let verified = (!remote).then(|| self.verified.play(game));
         let side = |player: &Player, color: Color| Side {
             team: player.team.clone(),
             build: player.build.clone(),
             remote: player.remote,
             all: all[color],
             session: in_session[color],
+            verified: verified
+                .map(|(v_all, v_session)| Verified {
+                    all: v_all[color],
+                    session: v_session[color],
+                })
+                .filter(|v| {
+                    *v != Verified {
+                        all: all[color],
+                        session: in_session[color],
+                    }
+                }),
         };
         let result = &game.result;
         let row = Row {
@@ -425,8 +489,10 @@ impl Standings {
             black: side(&game.black, Color::Black),
             at: [at.start, at.end - at.start],
         };
-        session.push_recent(row.clone());
-        self.all.push_recent(row.clone());
+        self.full.push_recent(&row);
+        if !remote {
+            self.verified.push_recent(&row);
+        }
         row
     }
 
@@ -438,18 +504,15 @@ impl Standings {
     }
 
     fn summary(&self) -> Summary<'_> {
-        let mut sessions: Vec<_> = self.sessions.iter().collect();
+        let mut sessions: Vec<_> = self.full.sessions.iter().collect();
         sessions.sort_by(|(_, a), (_, b)| b.last.cmp(&a.last));
-        let mut scopes: BTreeMap<_, _> = sessions
-            .iter()
-            .map(|(name, scope)| (name.as_str(), scope.view()))
-            .collect();
-        scopes.insert(ALL, self.all.view());
+        let sessions: Vec<&str> = sessions.into_iter().map(|(name, _)| name.as_str()).collect();
         Summary {
             v: 1,
-            sessions: sessions.into_iter().map(|(name, _)| name.as_str()).collect(),
+            scopes: self.full.views(&sessions),
+            verified: self.any_remote.then(|| self.verified.views(&sessions)),
+            sessions,
             builds: &self.builds,
-            scopes,
         }
     }
 
@@ -552,12 +615,7 @@ mod tests {
 
     #[test]
     fn remote_follows_the_current_build_and_the_game_rows() {
-        let mut standings = Standings {
-            dir: PathBuf::from("d"),
-            all: Scope::default(),
-            sessions: HashMap::new(),
-            builds: BTreeMap::new(),
-        };
+        let mut standings = Standings::new(Path::new("d"));
         let mut g = game("a", "b", Color::Red);
         g.red.build = Some("v1".into());
         g.red.remote = true;
@@ -566,13 +624,60 @@ mod tests {
         assert!(row["black"].get("remote").is_none());
         g.red.remote = false;
         standings.play(&g, 1..2);
-        let ratings = standings.all.ratings();
+        let ratings = standings.full.all.ratings();
         assert!(rating(&ratings, "a").remote);
         assert!(!rating(&ratings, "b").remote);
 
         g.red.build = Some("v2".into());
         standings.play(&g, 2..3);
-        assert!(!rating(&standings.all.ratings(), "a").remote);
+        assert!(!rating(&standings.full.all.ratings(), "a").remote);
+    }
+
+    #[test]
+    fn verified_ranking_leaves_out_remote_games() {
+        let mut standings = Standings::new(Path::new("d"));
+        let first = serde_json::to_value(standings.play(&game("a", "b", Color::Red), 0..1)).unwrap();
+        assert!(first["red"].get("verified").is_none());
+        assert!(standings.summary().verified.is_none());
+
+        let mut remote = game("c", "a", Color::Black);
+        remote.red.remote = true;
+        let row = serde_json::to_value(standings.play(&remote, 1..2)).unwrap();
+        assert!(row["black"].get("verified").is_none());
+        // a a gagné contre l'équipe distante : seul le classement complet le compte.
+        let after = serde_json::to_value(standings.play(&game("a", "b", Color::Red), 2..3)).unwrap();
+        let (full, verified) = (&after["red"]["all"][0], &after["red"]["verified"]["all"][0]);
+        assert!(full.as_f64().unwrap() > verified.as_f64().unwrap());
+
+        let mut other = game("x", "y", Color::Red);
+        other.session = "s2".into();
+        let untouched = serde_json::to_value(standings.play(&other, 3..4)).unwrap();
+        assert!(untouched["red"].get("verified").is_none());
+
+        let summary = serde_json::to_value(standings.summary()).unwrap();
+        let verified = &summary["verified"];
+        assert_eq!(verified[""]["games"], 3);
+        assert_eq!(summary["scopes"][""]["games"], 4);
+        assert_eq!(verified["s1"]["recent"].as_array().unwrap().len(), 2);
+        assert!(
+            verified["s1"]["ratings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["team"] != "c")
+        );
+        assert_eq!(verified["s2"]["games"], 1);
+    }
+
+    #[test]
+    fn a_session_of_remote_games_only_still_has_a_verified_entry() {
+        let mut standings = Standings::new(Path::new("d"));
+        let mut remote = game("c", "a", Color::Black);
+        remote.red.remote = true;
+        standings.play(&remote, 0..1);
+        let summary = serde_json::to_value(standings.summary()).unwrap();
+        assert_eq!(summary["verified"]["s1"]["games"], 0);
+        assert_eq!(summary["verified"][""]["ratings"], serde_json::json!([]));
     }
 
     #[test]
@@ -651,12 +756,7 @@ mod tests {
 
     #[test]
     fn unsafe_team_names_get_no_file() {
-        let s = Standings {
-            dir: PathBuf::from("d"),
-            all: Scope::default(),
-            sessions: HashMap::new(),
-            builds: BTreeMap::new(),
-        };
+        let s = Standings::new(Path::new("d"));
         assert!(s.team_path("eq-07_b").is_some());
         for bad in ["", "../x", "a/b", "a.b", &"x".repeat(65)] {
             assert!(s.team_path(bad).is_none(), "{bad}");

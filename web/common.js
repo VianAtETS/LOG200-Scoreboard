@@ -8,7 +8,7 @@ export const SERVER = document.querySelector('meta[name="scoreboard-server"]')?.
 export const DATA = params.get('data') ?? `${SERVER}/data`
 export const REFRESH_MS = 15000
 export const GLOBAL = ''
-// Fenêtres des graphes en ms ; une valeur absente vaut « Tout ».
+// Fenêtres des graphes en ms ; une valeur absente vaut "Tout".
 export const WINDOWS = { '1h': 36e5, '24h': 864e5, '7j': 6048e5 }
 
 export const $ = (id) => document.getElementById(id)
@@ -68,7 +68,7 @@ export function setParam(key, value, keepEmpty = false) {
 export function pageUrl(href, extra = {}) {
     const url = new URL(href, location.href)
     const here = new URLSearchParams(location.search)
-    for (const key of ['data', 'session', 'window', 'teams', 'match']) {
+    for (const key of ['data', 'session', 'window', 'teams', 'match', 'verified']) {
         if (here.has(key)) url.searchParams.set(key, here.get(key))
     }
     for (const [key, value] of Object.entries(extra)) if (value) url.searchParams.set(key, value)
@@ -82,6 +82,23 @@ export function linkPages() {
         const href = a.getAttribute('href')
         a.addEventListener('click', () => (a.href = pageUrl(href)))
     }
+}
+
+// Case "Vérifiées seulement", gardée dans ?verified=1.
+export function initVerified(onChange) {
+    const box = $('verified')
+    box.checked = params.get('verified') === '1'
+    box.addEventListener('change', () => {
+        setParam('verified', box.checked ? '1' : null)
+        onChange()
+    })
+}
+
+// Classements à afficher. La case n'apparaît qu'une fois une partie distante jouée.
+export function scopesOf(summary) {
+    $('verified-filter').hidden = !summary.verified
+    const verified = Boolean(summary.verified) && $('verified').checked
+    return { verified, scopes: verified ? summary.verified : summary.scopes }
 }
 
 export function fillSelect(select, values, wanted = select.value) {

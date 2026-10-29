@@ -1,6 +1,8 @@
 // Rangs de la page graphe, rejoués partie par partie depuis timeline.jsonl (format dans docs/formats.md).
 // Un côté sans build est un bot de référence : il ne compte dans le classement que s'il est choisi.
 
+import { isRemote, ratingOf } from './elo.js'
+
 export const TOP = 10
 
 export function topTeams(ratings, n = TOP) {
@@ -9,8 +11,11 @@ export function topTeams(ratings, n = TOP) {
 
 // Une colonne par partie jouée à `cutoff` (ms) ou après, et pour chaque équipe de `selected` un point à
 // chaque changement de rang, de rating ou de build. Rang : 1 + équipes et bots choisis devant (rating
-// plus haut, puis nom).
-export function rankSeries(rows, { key = 'all', session = '', selected = [], cutoff = -Infinity } = {}) {
+// plus haut, puis nom). `verified` : sans les parties distantes.
+export function rankSeries(
+    rows,
+    { key = 'all', session = '', selected = [], cutoff = -Infinity, verified = false } = {}
+) {
     const ratings = new Map()
     const bots = new Set()
     const counted = (team) => !bots.has(team) || series.has(team)
@@ -18,10 +23,10 @@ export function rankSeries(rows, { key = 'all', session = '', selected = [], cut
     const series = new Map(selected.map((team) => [team, []]))
     const columns = []
     for (const g of rows) {
-        if (session && g.session !== session) continue
+        if ((session && g.session !== session) || (verified && isRemote(g))) continue
         const changed = new Map()
         for (const side of [g.red, g.black]) {
-            ratings.set(side.team, side[key][0])
+            ratings.set(side.team, ratingOf(side, key, verified)[0])
             if (!side.build) bots.add(side.team)
             const before = builds.get(side.team)
             if (side.build && side.build !== before) {

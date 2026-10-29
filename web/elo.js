@@ -28,6 +28,14 @@ export function since(history, cutoff) {
 
 export const BETWEEN = 'entre'
 
+// [rating après la partie, variation] d'un côté, sous `key` (all ou session). `verified` : sans les
+// parties distantes, que le ladder n'écrit que s'ils diffèrent.
+export function ratingOf(side, key, verified = false) {
+    return (verified && side.verified?.[key]) || side[key]
+}
+
+export const isRemote = (g) => Boolean(g.red.remote || g.black.remote)
+
 // Parties des équipes `selected` dans l'ordre, une seule fois chacune : une partie entre deux équipes
 // choisies est dans leurs deux fichiers. BETWEEN : seulement les parties entre équipes choisies.
 export function gamesOf(rowsByTeam, selected, { mode = '', session = '' } = {}) {

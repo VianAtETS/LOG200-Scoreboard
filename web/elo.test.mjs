@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { BETWEEN, gamesOf, parseJsonl, since, START, versionStarts } from './elo.js'
+import { BETWEEN, gamesOf, isRemote, parseJsonl, ratingOf, since, START, versionStarts } from './elo.js'
 import { BLACK, DESTROYED, EMPTY, positions, RED, squareIndex, squareName } from './replay.js'
 
 let clock = 0
@@ -73,4 +73,16 @@ test('versionStarts marks each new build after the first entry', () => {
     const history = ['a', 'a', 'b', 'b', undefined, 'c'].map((build) => ({ build }))
     assert.deepEqual(versionStarts(history), [2, 5])
     assert.deepEqual(versionStarts([{ build: 'a' }]), [])
+})
+
+test('ratingOf reads verified ratings only when asked and present', () => {
+    const side = { all: [1520, 20], session: [1510, 10], verified: { all: [1500, 0], session: [1490, -10] } }
+    assert.deepEqual(ratingOf(side, 'all'), [1520, 20])
+    assert.deepEqual(ratingOf(side, 'session', true), [1490, -10])
+    assert.deepEqual(ratingOf({ all: [1520, 20] }, 'all', true), [1520, 20])
+})
+
+test('isRemote is true when either side played remotely', () => {
+    assert.equal(isRemote(game('a', 'b', 'red')), false)
+    assert.equal(isRemote(game('a', 'b', 'red', { black: { team: 'b', remote: true } })), true)
 })

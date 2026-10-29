@@ -32,7 +32,7 @@ Le ladder lance l'arbitre à partir d'un gabarit configurable (`referee` dans `l
 
 | Paramètre | Sens |
 | --- | --- |
-| `port` | Port TCP d'écoute. Les parties d'un même slot (voir « Isolation des joueurs ») se jouent l'une après l'autre sur ce port. Tous les slots gardent le même : les jars du lab visent 8888 en dur, et le bac à sable donne à chaque partie son propre réseau. |
+| `port` | Port TCP d'écoute. Les parties d'un même slot (voir "Isolation des joueurs") se jouent l'une après l'autre sur ce port. Tous les slots gardent le même : les jars du lab visent 8888 en dur, et le bac à sable donne à chaque partie son propre réseau. |
 | `time_ms` | Temps par coup, annoncé aux clients et appliqué (500 ms au ladder, 5000 ms au tournoi). |
 | `opening` | Optionnel. Demi-coups imposés avant de donner la main aux clients, séparés par des virgules (`G1-G4-F9,F12-F10-G7`). Toujours en nombre pair, pour que le rouge joue le premier coup client. |
 
@@ -141,6 +141,7 @@ La page ne lit jamais `games.jsonl` en entier : en fin de session, il pèse des 
   - `sessions` : la plus récente d'abord ;
   - `builds` : builds de chaque équipe dans l'ordre d'apparition, pour le badge vN ;
   - `scopes` : `""` pour toutes les sessions, puis une clé par session. Chacune donne `games` (nombre), `time_ms` (temps alloués), `ratings` (classement, meilleur d'abord) et `recent` (50 dernières parties).
+  - `verified` : mêmes clés et même forme que `scopes`, mais sans les parties où un côté est `remote` : l'Elo y est recalculé sur les seules parties jouées sur le serveur. Absent tant qu'aucune partie distante n'a été jouée ; la page n'affiche sa case "Vérifiées seulement" qu'à partir de là.
 - `teams/<équipe>.jsonl` : une ligne par partie de l'équipe, en ajout seul comme `games.jsonl`. La page le suit quand la recherche désigne une seule équipe : courbe Elo et liste de ses parties.
 - `timeline.jsonl` : une ligne par partie, toutes équipes, en ajout seul. Elle ne garde que `v`, `id`, `ts`, `session`, `red` et `black` d'une ligne de partie : assez pour rejouer les ratings de toutes les équipes, ce que fait la page graphe pour calculer les rangs.
 - `live.json`, réécrit au lancement et à la fin de chaque partie (fichier temporaire puis renommage) : `{"v": 1, "games": [{"red": "eq07", "black": "eq12", "since": "2026-10-24T14:20:48.103Z"}]}`, une entrée par partie en cours, la plus ancienne d'abord. `since` compte l'attente d'un slot, qu'un smoke test peut occuper. Le ladder le vide au démarrage.
@@ -160,8 +161,9 @@ Une ligne de partie (dans `recent` et `teams/`) reprend la partie sans les coups
 
 - `all` et `session` : rating après la partie et variation, toutes sessions confondues puis dans la session de la partie.
 - `remote` (absent par défaut) : comme dans `games.jsonl`.
+- `verified` (absent par défaut) : `{"all": [...], "session": [...]}`, les ratings du classement sans parties distantes, seulement s'ils diffèrent de `all` et `session`. Absent d'une partie vérifiée, ils leur sont égaux ; une partie distante n'en a jamais, et la page l'écarte quand la case est cochée.
 - `at` : position et longueur de la ligne complète dans `games.jsonl`. Le replay la lit avec `Range: bytes=<début>-<fin>`.
-- Une ligne de `ratings` : `team`, `rating`, `games`, `wins`, `losses`, `build_games` et `build_wins` (parties et victoires du build courant, base du % V), `anchor`, `provisional`, `remote` (le build courant a joué au moins une partie à distance : badge « distant »), `build`, `last` (dernière partie), et `pace` (absent sans temps mesurés) : `p50`, `p95`, `p99`, `max` et `count` des temps par coup du build courant, `limit` le plus petit temps alloué.
+- Une ligne de `ratings` : `team`, `rating`, `games`, `wins`, `losses`, `build_games` et `build_wins` (parties et victoires du build courant, base du % V), `anchor`, `provisional`, `remote` (le build courant a joué au moins une partie à distance : badge "distant"), `build`, `last` (dernière partie), et `pace` (absent sans temps mesurés) : `p50`, `p95`, `p99`, `max` et `count` des temps par coup du build courant, `limit` le plus petit temps alloué.
 - Au démarrage, le ladder réécrit `teams/`, `timeline.jsonl` et `summary.json` à partir de `games.jsonl`. Une équipe dont le nom n'est pas fait de lettres, chiffres, `-` et `_` (64 au plus) n'a pas de fichier d'équipe.
 
 ## Protocole des clients
@@ -266,7 +268,7 @@ Réglages du dépôt, dans Settings > Secrets and variables > Actions :
 | `LADDER_URL` | variable | adresse de la page du ladder, par exemple `http://ladder.example.org:8080` |
 | `LADDER_TOKEN` | secret | token de l'équipe |
 
-Sans `LADDER_URL`, le job est sauté : le workflow peut donc vivre dans le template avant que le ladder existe. Le jar est reproductible (date des entrées fixée à celle du commit) : relancer un run sur le même commit répond « déjà actif » au lieu de créer une nouvelle version. La machine du ladder doit être joignable depuis les runners GitHub ; sinon, les équipes passent par le formulaire de la page.
+Sans `LADDER_URL`, le job est sauté : le workflow peut donc vivre dans le template avant que le ladder existe. Le jar est reproductible (date des entrées fixée à celle du commit) : relancer un run sur le même commit répond "déjà actif" au lieu de créer une nouvelle version. La machine du ladder doit être joignable depuis les runners GitHub ; sinon, les équipes passent par le formulaire de la page.
 
 Pour essayer le workflow en local avec [act](https://github.com/nektos/act), depuis un dépôt d'équipe et avec le ladder lancé sur la même machine :
 

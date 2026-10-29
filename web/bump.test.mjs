@@ -116,3 +116,17 @@ test('smooth averages the rank over each bucket, from the start of the branch', 
     assert.deepEqual(smooth(flips, 12, 3).map((p) => p.rank), [1.5, 1.5, 1.5])
     assert.equal(smooth(points, 20, 40), points)
 })
+
+test('verified skips remote games and uses verified ratings', () => {
+    const remote = tick(['a', 1530, 'a1'], ['r', 1470, 'r1'])
+    remote.black.remote = true
+    const after = tick(['a', 1540, 'a1'], ['b', 1460, 'b1'])
+    after.red.verified = { all: [1510, 10], session: [1410, 10] }
+    const rows = [tick(['a', 1500, 'a1'], ['b', 1500, 'b1']), remote, after]
+    const full = rankSeries(rows, { selected: ['a', 'r'] })
+    assert.equal(full.columns.length, 3)
+    const { columns, series } = rankSeries(rows, { selected: ['a', 'r'], verified: true })
+    assert.deepEqual(columns.map((g) => g.id), [rows[0].id, after.id])
+    assert.equal(series.get('a').at(-1).rating, 1510)
+    assert.deepEqual(series.get('r'), [])
+})

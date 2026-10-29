@@ -1,6 +1,7 @@
 // Page graphe : rang des équipes choisies après chaque partie (bump chart), rejoué depuis
 // timeline.jsonl ; un nœud marque chaque nouvelle version de jar.
-// ?session=, ?teams= et ?window= suivent les choix de la page : l'adresse se partage telle quelle.
+// ?session=, ?teams=, ?window= et ?verified= suivent les choix de la page : l'adresse se partage
+// telle quelle.
 
 import { pointAt, rankSeries, smooth, topTeams } from './bump.js'
 import { createPicker } from './picker.js'
@@ -12,11 +13,13 @@ import {
     fillSelect,
     fullFormat,
     GLOBAL,
+    initVerified,
     linkPages,
     pageUrl,
     params,
     pulse,
     REFRESH_MS,
+    scopesOf,
     setParam,
     tail,
     timeFormat,
@@ -101,7 +104,8 @@ function svg(tag, attrs = {}, text) {
 function render() {
     if (!summary) return
     const session = $('session').value
-    const scope = summary.scopes[session]
+    const { verified, scopes } = scopesOf(summary)
+    const scope = scopes[session]
     const selected = selectedTeams(scope.ratings)
     const w = document.querySelector('#bump-window input:checked')?.value
     const { columns, series } = rankSeries(timeline.rows, {
@@ -109,6 +113,7 @@ function render() {
         session,
         selected,
         cutoff: Date.now() - (WINDOWS[w] ?? Infinity),
+        verified,
     })
     // Un bot reste gris et ne prend pas de couleur.
     const bots = new Set(scope.ratings.filter((r) => !r.build).map((r) => r.team))
@@ -393,7 +398,7 @@ function choose(teams) {
 }
 
 const picker = createPicker({
-    ratings: () => (summary ? summary.scopes[$('session').value].ratings : []),
+    ratings: () => (summary ? scopesOf(summary).scopes[$('session').value].ratings : []),
     onChange: choose,
 })
 $('picker-top').addEventListener('click', () => choose(null))
@@ -408,6 +413,7 @@ $('session').addEventListener('change', () => {
     setParam('session', $('session').value, true)
     render()
 })
+initVerified(render)
 new ResizeObserver(() => {
     if (!view) return
     view.geom = draw(view)
