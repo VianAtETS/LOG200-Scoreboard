@@ -53,6 +53,20 @@ Le smoke test joue deux parties et attend la fin de la partie en cours du ladder
 
 Perdre le smoke test n'est pas un refus : seul compte le fait de jouer jusqu'au bout avec des coups valides.
 
+## Obfusquer le jar (optionnel)
+
+Dans `ladder.yml`, remplacer `OBFUSCATE: false` par `OBFUSCATE: true` (en haut du fichier) : le workflow passe vos classes dans [ProGuard](https://github.com/Guardsquare/proguard) avant de construire le jar : classes, méthodes et champs deviennent `a`, `b`, `c`… Seul `Client.main` garde son nom. Le jar se comporte exactement pareil et ne joue pas plus lentement.
+
+C'est une gêne, pas une protection : un décompilateur ou une IA retrouve quand même la logique du code.
+
+Les stack traces du jar affichent alors les noms obfusqués, par exemple dans la raison d'un refus 422. Chaque run garde l'artefact `proguard-mapping` (le fichier `mapping.txt`), qui les retraduit avec l'outil `retrace` de ProGuard :
+
+```sh
+java -jar proguard-7.10.0/lib/retrace.jar mapping.txt trace.txt
+```
+
+Si votre code charge des classes par leur nom (réflexion, `Class.forName`), le renommage le casse : le smoke test refusera le jar, et l'ancienne version continuera de jouer.
+
 ## Tester avant de pousser
 
 Un refus 422 se reproduit en local avec l'arbitre et le bot de la [dernière release](https://github.com/VianAtETS/LOG200-Scoreboard/releases/latest) : voir « Test your bot » dans le [README principal](../README.md#test-your-bot).

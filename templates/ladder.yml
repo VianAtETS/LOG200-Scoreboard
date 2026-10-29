@@ -19,6 +19,10 @@ concurrency:
   group: ladder
   cancel-in-progress: false
 
+env:
+  # true : obfusque le jar avec ProGuard avant l'envoi (voir l'etape "Obfusquer avec ProGuard").
+  OBFUSCATE: false
+
 jobs:
   submit:
     name: Envoyer le jar au ladder
@@ -36,11 +40,43 @@ jobs:
           java-version: '24'
 
       # Le ladder execute les jars avec Java 24 : --release 24 garde le jar compatible meme avec un JDK plus recent.
-      # --date rend le jar reproductible : relancer le meme commit donne "deja actif" au lieu d'une nouvelle version.
-      - name: Construire le jar
+      - name: Compiler
+        run: javac -encoding UTF-8 --release 24 -d bin src/*.java
+
+      - name: Obfusquer avec ProGuard
+        if: env.OBFUSCATE == 'true'
+        env:
+          PROGUARD: 7.10.0
+          PROGUARD_SHA256: fbff4dfe037d0724ff767ad555c06ebd14063ccf99a657cf05a69e6f2610da21
         run: |
-          javac -encoding UTF-8 --release 24 -d bin src/*.java
-          jar --create --file client.jar --main-class Client --date "$(git log -1 --format=%cI)" -C bin .
+          curl -sSfLo proguard.tar.gz "https://github.com/Guardsquare/proguard/releases/download/v$PROGUARD/proguard-$PROGUARD.tar.gz"
+          echo "$PROGUARD_SHA256  proguard.tar.gz" | sha256sum -c -
+          tar xzf proguard.tar.gz
+          # Java 24 n'a plus de dossier jmods : les classes du JDK, que ProGuard doit connaitre, sortent de lib/modules.
+          "$JAVA_HOME/bin/jimage" extract --dir jdk "$JAVA_HOME/lib/modules"
+          {
+            echo "-injars bin"
+            echo "-outjars obf"
+            for module in jdk/*; do echo "-libraryjars $module(!module-info.class)"; done
+            echo "-keep class Client { public static void main(java.lang.String[]); }"
+            echo "-keepattributes SourceFile,LineNumberTable"
+            echo "-renamesourcefileattribute SourceFile"
+            echo "-dontoptimize"
+            echo "-printmapping mapping.txt"
+          } > proguard.pro
+          java -jar "proguard-$PROGUARD/lib/proguard.jar" @proguard.pro
+          rm -rf bin && mv obf bin
+
+      - name: Garder mapping.txt
+        if: env.OBFUSCATE == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: proguard-mapping
+          path: mapping.txt
+
+      # --date rend le jar reproductible
+      - name: Construire le jar
+        run: jar --create --file client.jar --main-class Client --date "$(git log -1 --format=%cI)" -C bin .
 
       - name: Soumettre au ladder
         env:
