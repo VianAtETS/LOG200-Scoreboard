@@ -33,6 +33,15 @@ jobs:
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Install musl C compiler
+        if: ${{ contains(matrix.target, 'musl') }}
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+
       - name: Test
         if: ${{ !matrix.cross }}
         run: cargo test --release --locked --target ${{ matrix.target }}
