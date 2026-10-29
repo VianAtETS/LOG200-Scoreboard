@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Cursor, Read};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -15,6 +15,7 @@ use tiny_http::Method;
 use isolation::record::now_rfc3339;
 
 use super::auth::{RegistryError, TeamId, find_team, load_teams};
+use super::manifest::{self, BadThreads};
 use super::smoke::{Forfeit, Verdict, smoke_test};
 use crate::arena::{Arena, GameError};
 use crate::config::SubmitConfig;
@@ -32,7 +33,7 @@ pub struct Request<'a, B> {
 pub enum Accepted {
     Health,
     AlreadyActive(String),
-    Installed(String),
+    Installed { hash: String, multithread: bool },
 }
 
 impl fmt::Display for Accepted {
@@ -40,7 +41,13 @@ impl fmt::Display for Accepted {
         match self {
             Self::Health => f.write_str("ok"),
             Self::AlreadyActive(hash) => write!(f, "déjà actif : ce jar ({hash}) est celui qui joue"),
-            Self::Installed(hash) => write!(f, "accepté : version {hash}, en jeu dès la prochaine partie"),
+            Self::Installed { hash, multithread } => {
+                write!(f, "accepté : version {hash}, en jeu dès la prochaine partie")?;
+                if *multithread {
+                    f.write_str(" (Ladder-Threads: 2 : 2 coeurs par couleur, adversaire compris)")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -57,6 +64,8 @@ pub enum SubmitError {
     TooLarge { max_mb: u64 },
     #[error("le corps de la requête n'est pas un jar")]
     NotAJar,
+    #[error(transparent)]
+    BadThreads(#[from] BadThreads),
     #[error("trop tôt : nouvelle soumission possible dans {} s", .0.as_secs() + 1)]
     TooSoon(Duration),
     #[error("registre des équipes : {0}")]
@@ -76,7 +85,7 @@ impl SubmitError {
         match self {
             Self::NotFound => 404,
             Self::Unauthorized => 401,
-            Self::Read(_) | Self::NotAJar => 400,
+            Self::Read(_) | Self::NotAJar | Self::BadThreads(_) => 400,
             Self::TooLarge { .. } => 413,
             Self::TooSoon(_) => 429,
             Self::Rejected(_) => 422,
@@ -137,6 +146,7 @@ impl Submissions {
         }
         let team = self.authenticate(request.authorization)?;
         let jar = read_jar(request.body, self.submit.max_jar_mb)?;
+        let multithread = manifest::multithread(Cursor::new(&jar))?;
         let hash = short_hash(&jar);
         if fs::read(self.submit.current_jar(&team)).is_ok_and(|active| short_hash(&active) == hash) {
             return Ok(Accepted::AlreadyActive(hash));
@@ -144,7 +154,7 @@ impl Submissions {
         self.limiter()
             .acquire(&team, Instant::now())
             .map_err(SubmitError::TooSoon)?;
-        let outcome = self.test_and_install(&team, &hash, &jar);
+        let outcome = self.test_and_install(&team, &hash, &jar, multithread);
         if matches!(outcome, Err(SubmitError::Ladder(_))) {
             self.limiter().release(&team);
         }
@@ -167,7 +177,13 @@ impl Submissions {
             .ok_or(SubmitError::Unauthorized)
     }
 
-    fn test_and_install(&self, team: &TeamId, hash: &str, jar: &[u8]) -> Result<Accepted, SubmitError> {
+    fn test_and_install(
+        &self,
+        team: &TeamId,
+        hash: &str,
+        jar: &[u8],
+        multithread: bool,
+    ) -> Result<Accepted, SubmitError> {
         let dir = self.submit.team_dir(team);
         let staging = dir.join(format!("incoming-{hash}.jar"));
         fs::create_dir_all(&dir)
@@ -176,7 +192,10 @@ impl Submissions {
         eprintln!("soumission {team} {hash} : smoke test...");
         let outcome = match smoke_test(&self.arena, &self.submit, team, &staging) {
             Verdict::Accepted => install(&dir, &staging)
-                .map(|()| Accepted::Installed(hash.to_string()))
+                .map(|()| Accepted::Installed {
+                    hash: hash.to_string(),
+                    multithread,
+                })
                 .map_err(SubmitError::Install),
             Verdict::Rejected(forfeit) => Err(SubmitError::Rejected(forfeit)),
             Verdict::Error(error) => Err(SubmitError::Ladder(error)),
@@ -311,6 +330,16 @@ mod tests {
         );
         let huge = [JAR, &vec![0; 1024 * 1024]].concat();
         assert_eq!(submissions.handle(put(&bearer, &huge)).unwrap_err().status(), 413);
+    }
+
+    #[test]
+    fn unknown_thread_count_is_refused_before_the_smoke_test() {
+        let (submissions, token) = submissions("threads");
+        let jar = manifest::tests::jar_with_manifest("Main-Class: Client\nLadder-Threads: 8\n");
+        let error = submissions.handle(put(&format!("Bearer {token}"), &jar)).unwrap_err();
+        assert!(matches!(error, SubmitError::BadThreads(_)), "{error}");
+        assert_eq!(error.status(), 400);
+        assert!(!submissions.submit.jars.join("submissions.jsonl").exists());
     }
 
     #[test]

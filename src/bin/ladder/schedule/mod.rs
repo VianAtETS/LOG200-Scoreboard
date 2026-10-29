@@ -94,6 +94,7 @@ impl Scheduler {
         &mut self,
         teams: &'t [Team],
         busy: &HashSet<String>,
+        fits: impl Fn(&Team, &Team) -> bool,
         rating: impl Fn(&str) -> f64,
         rng: &mut impl Rng,
     ) -> Option<(&'t Team, &'t Team)> {
@@ -124,7 +125,7 @@ impl Scheduler {
             let mut tied = tied.to_vec();
             tied.shuffle(rng);
             for (_, i) in tied {
-                if let Some(j) = self.opponent(i, teams, busy, eligible, rng) {
+                if let Some(j) = self.opponent(i, teams, busy, eligible, &fits, rng) {
                     let (a, b) = (&teams[i], &teams[j]);
                     return Some(if rng.random() { (a, b) } else { (b, a) });
                 }
@@ -139,6 +140,7 @@ impl Scheduler {
         teams: &[Team],
         busy: &HashSet<String>,
         eligible: impl Fn(usize, usize) -> bool,
+        fits: impl Fn(&Team, &Team) -> bool,
         rng: &mut impl Rng,
     ) -> Option<usize> {
         let me = &teams[i].id;
@@ -149,7 +151,7 @@ impl Scheduler {
             .iter()
             .copied()
             .filter(|&j| only_choice || last != Some(&teams[j].id))
-            .filter(|&j| !busy.contains(&teams[j].id))
+            .filter(|&j| !busy.contains(&teams[j].id) && fits(&teams[i], &teams[j]))
             .map(|j| (j, (self.queue.pass(&teams[j].id), self.played(me, &teams[j].id))))
             .collect();
         let least_open = open.iter().map(|&(_, (_, played))| played).min();
@@ -195,6 +197,7 @@ mod tests {
             cmd: CommandTemplate::default(),
             build: Some(format!("{id}.jar").into()),
             anchor: false,
+            multithread: false,
         }
     }
 
@@ -230,7 +233,7 @@ mod tests {
         rating: impl Fn(&str) -> f64,
         rng: &mut StdRng,
     ) -> Option<[String; 2]> {
-        let (x, y) = scheduler.next_pair(teams, busy, rating, rng)?;
+        let (x, y) = scheduler.next_pair(teams, busy, |_, _| true, rating, rng)?;
         let pair = [x.id.clone(), y.id.clone()];
         scheduler.record(&pair[0], &pair[1], 2);
         Some(pair)
@@ -350,7 +353,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(3);
         assert!(
             Scheduler::default()
-                .next_pair(&[team("a")], &HashSet::new(), flat, &mut rng)
+                .next_pair(&[team("a")], &HashSet::new(), |_, _| true, flat, &mut rng)
                 .is_none()
         );
     }
@@ -417,6 +420,20 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(3);
         let next = play(&mut scheduler, &teams, &busy, flat, &mut rng).unwrap();
         assert_eq!(sorted(&next), pair("c", "d"));
+    }
+
+    #[test]
+    fn pairs_without_a_free_slot_are_left_out() {
+        let teams = [team("mt"), team("b"), team("c")];
+        let ordinary = |x: &Team, y: &Team| x.id != "mt" && y.id != "mt";
+        let mut scheduler = Scheduler::default();
+        for seed in 0..20 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (x, y) = scheduler
+                .next_pair(&teams, &HashSet::new(), ordinary, flat, &mut rng)
+                .unwrap();
+            assert_eq!(sorted(&[x.id.clone(), y.id.clone()]), pair("b", "c"));
+        }
     }
 
     #[test]

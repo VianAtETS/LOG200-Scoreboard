@@ -44,6 +44,7 @@ Le smoke test joue deux parties et attend la fin de la partie en cours du ladder
 | --- | --- | --- |
 | `HTTP 200` accepté | Nouvelle version en jeu dès la prochaine partie | Rien |
 | `HTTP 200` déjà actif | Ce jar est déjà celui qui joue (même commit relancé) | Rien |
+| `HTTP 400` | `Ladder-Threads` du manifeste ne vaut ni 1 ni 2 (jar construit à la main) | Le corriger, ou passer par `MULTITHREAD` dans `ladder.yml` |
 | `HTTP 401` | Token absent ou faux | Vérifier le secret `LADDER_TOKEN` |
 | `HTTP 413` | Jar trop gros | Retirer les fichiers inutiles de `src/` |
 | `HTTP 422` | Refusé par le smoke test : dépassement de temps, déconnexion, absence ou coup invalide. L'ancienne version continue de jouer | Lire la raison, tester en local (voir plus bas), corriger |
@@ -66,6 +67,20 @@ java -jar proguard-7.10.0/lib/retrace.jar mapping.txt trace.txt
 ```
 
 Si votre code charge des classes par leur nom (réflexion, `Class.forName`), le renommage le casse : le smoke test refusera le jar, et l'ancienne version continuera de jouer.
+
+## Bot multithread (optionnel)
+
+Par défaut, votre bot a **1 cœur**. Des threads en plus se le partagent et ne font rien gagner.
+
+Dans `ladder.yml`, remplacer `MULTITHREAD: false` par `MULTITHREAD: true` : le jar déclare `Ladder-Threads: 2` dans son manifeste, et toutes vos parties se jouent sur **2 cœurs par couleur**. Votre adversaire a les mêmes 2 cœurs, pour que la partie reste équitable. En échange, ces parties se jouent sur un emplacement réservé, partagé avec les autres équipes multithread : vous jouez **moins souvent**, et votre classement se stabilise plus lentement. N'activez l'option que si votre bot calcule vraiment en parallèle.
+
+Le smoke test, lui, se joue toujours sur 1 cœur. Calibrez donc le nombre de threads sur ce que la JVM voit, plutôt que de le coder en dur :
+
+```java
+int threads = Runtime.getRuntime().availableProcessors(); // 1 au smoke test, 2 sur les parties multithread
+```
+
+La déclaration suit le jar : si la version suivante est construite avec `MULTITHREAD: false`, elle rejoue sur 1 cœur. Sans la CI, ajoutez la ligne `Ladder-Threads: 2` au manifeste vous-même (`jar --create --manifest ...`).
 
 ## Tester avant de pousser
 

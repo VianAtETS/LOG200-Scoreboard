@@ -22,6 +22,8 @@ concurrency:
 env:
   # true : obfusque le jar avec ProGuard avant l'envoi (voir l'etape "Obfusquer avec ProGuard").
   OBFUSCATE: false
+  # true : vos parties se jouent sur 2 coeurs par couleur (adversaire compris), mais moins souvent.
+  MULTITHREAD: false
 
 jobs:
   submit:
@@ -74,9 +76,14 @@ jobs:
           name: proguard-mapping
           path: mapping.txt
 
-      # --date rend le jar reproductible
+      # --date rend le jar reproductible. Ladder-Threads, dans le manifeste, declare le jar multithread.
       - name: Construire le jar
-        run: jar --create --file client.jar --main-class Client --date "$(git log -1 --format=%cI)" -C bin .
+        run: |
+          threads=1
+          if [ "$MULTITHREAD" = true ]; then threads=2; fi
+          echo "Ladder-Threads: $threads" > ladder.mf
+          jar --create --file client.jar --main-class Client --manifest ladder.mf \
+            --date "$(git log -1 --format=%cI)" -C bin .
 
       - name: Soumettre au ladder
         env:

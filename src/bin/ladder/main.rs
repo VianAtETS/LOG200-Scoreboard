@@ -110,16 +110,21 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut waiting = false;
     let mut warned = HashSet::new();
     let (reports, received) = mpsc::channel();
-    let mut running = 0;
+    // Paires en cours, par genre de slot (ordinaire, multithread).
+    let mut running = [0; 2];
     let mut busy = HashSet::new();
     loop {
         if rounds.is_none_or(|n| round < n) {
-            if running < cfg.slots() {
+            if running.iter().sum::<usize>() < cfg.slots() {
                 let teams = roster(cfg, &mut warned);
-                if let Some((a, b)) = scheduler.next_pair(&teams, &busy, |id| standings.rating(id), &mut rng) {
+                let fits = |a: &Team, b: &Team| {
+                    let multithread = cfg.multithread_game(a, b);
+                    running[usize::from(multithread)] < cfg.slots_of(multithread)
+                };
+                if let Some((a, b)) = scheduler.next_pair(&teams, &busy, fits, |id| standings.rating(id), &mut rng) {
                     waiting = false;
                     round += 1;
-                    running += 1;
+                    running[usize::from(cfg.multithread_game(a, b))] += 1;
                     scheduler.record(&a.id, &b.id, 2);
                     busy.extend([a.id.clone(), b.id.clone()]);
                     let opening = random_opening(cfg.opening_plies, &mut rng);
@@ -132,12 +137,12 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
                     spawn_pair(Arc::clone(&arena), a.clone(), b.clone(), opening, reports.clone());
                     continue;
                 }
-                if running == 0 && !waiting {
+                if running == [0; 2] && !waiting {
                     eprintln!("en attente d'au moins deux équipes ({} pour l'instant)", teams.len());
                     waiting = true;
                 }
             }
-        } else if running == 0 {
+        } else if running == [0; 2] {
             break;
         }
         let Ok(report) = received.recv_timeout(IDLE_DELAY) else {
@@ -170,8 +175,8 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
                     Err(e) => eprintln!("   partie {red} contre {black} annulée : {e}"),
                 }
             }
-            Report::Done(pair) => {
-                running -= 1;
+            Report::Done { pair, multithread } => {
+                running[usize::from(multithread)] -= 1;
                 for id in &pair {
                     busy.remove(id);
                 }
@@ -194,7 +199,10 @@ enum Report {
         black: String,
         outcome: Result<GameRecord, GameError>,
     },
-    Done([String; 2]),
+    Done {
+        pair: [String; 2],
+        multithread: bool,
+    },
 }
 
 /// Joue la paire dans les deux couleurs, avec la même ouverture. L'arène attribue un slot à chaque partie.
@@ -217,7 +225,11 @@ fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: 
             }
         }
         thread::sleep(Duration::from_secs(arena.config().pause_s));
-        let _ = reports.send(Report::Done([a.id, b.id]));
+        let multithread = arena.config().multithread_game(&a, &b);
+        let _ = reports.send(Report::Done {
+            pair: [a.id, b.id],
+            multithread,
+        });
     });
 }
 

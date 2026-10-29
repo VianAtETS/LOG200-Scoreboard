@@ -91,12 +91,13 @@ pub const SMOKE_OPPONENT: &str = "test-aleatoire";
 
 pub fn smoke_test(arena: &Arena, submit: &SubmitConfig, id: &TeamId, jar: &Path) -> Verdict {
     let cfg = arena.config();
-    let candidate = cfg.team_with_jar(id, jar);
+    let candidate = cfg.team_with_jar(id, jar, false);
     let opponent = Team {
         id: SMOKE_OPPONENT.into(),
         cmd: submit.opponent.clone(),
         build: None,
         anchor: false,
+        multithread: false,
     };
     for (red, black, side) in [
         (&candidate, &opponent, Color::Red),

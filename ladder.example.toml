@@ -70,6 +70,13 @@ cpuset_black = "3"
 # [[slot]]
 # cpuset_red = "4"
 # cpuset_black = "5"
+# Slot reserve aux parties des equipes multithread (jar `Ladder-Threads: 2`, ou `multithread = true`
+# dans [[team]]), adversaire compris. Les autres parties ne le prennent jamais.
+# [[slot]]
+# multithread = true
+# cpus = "2"
+# cpuset_red = "6,7"
+# cpuset_black = "8,9"
 
 # Soumission des jars par HTTP (PUT /api/submit). Une equipe s'inscrit avec
 #   isolation-ladder add-team eq01        (dans le compose : docker compose exec ladder isolation-ladder add-team eq01)

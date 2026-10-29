@@ -5,6 +5,7 @@
 
 mod auth;
 mod handler;
+mod manifest;
 mod smoke;
 
 use std::sync::Arc;
@@ -28,7 +29,8 @@ pub fn active_teams(cfg: &Config) -> Result<Vec<Team>, RegistryError> {
         .into_iter()
         .filter_map(|registered| {
             let jar = submit.current_jar(&registered.id);
-            jar.exists().then(|| cfg.team_with_jar(&registered.id, &jar))
+            jar.exists()
+                .then(|| cfg.team_with_jar(&registered.id, &jar, manifest::multithread_file(&jar)))
         })
         .collect())
 }

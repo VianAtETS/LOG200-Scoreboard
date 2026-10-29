@@ -64,17 +64,21 @@ impl Arena {
         &self.cfg
     }
 
-    /// Attend un slot libre.
-    fn take_slot(&self) -> Slot<'_> {
+    /// Attend un slot libre de ce genre, celui de plus petit index.
+    fn take_slot(&self, multithread: bool) -> Slot<'_> {
+        let fits = |&index: &usize| self.cfg.multithread_slot(index) == multithread;
         let free = self.free.lock().unwrap_or_else(PoisonError::into_inner);
         let mut free = self
             .freed
-            .wait_while(free, |free| free.is_empty())
+            .wait_while(free, |free| !free.iter().any(fits))
             .unwrap_or_else(PoisonError::into_inner);
-        let Some(index) = free.pop() else {
-            unreachable!("attendu tant qu'aucun slot n'est libre");
+        let Some(position) = free.iter().rposition(fits) else {
+            unreachable!("attendu tant qu'aucun slot de ce genre n'est libre");
         };
-        Slot { arena: self, index }
+        Slot {
+            arena: self,
+            index: free.remove(position),
+        }
     }
 
     /// Ramasse les restes d'un arrêt brutal : `cleanup` avec `{game}` vide.
@@ -89,8 +93,8 @@ impl Arena {
     }
 
     pub fn play(&self, red: &Team, black: &Team, opening: &[Move]) -> Result<GameRecord, GameError> {
-        let slot = self.take_slot();
         let cfg = &self.cfg;
+        let slot = self.take_slot(cfg.multithread_game(red, black));
         let ts = now_rfc3339();
         let id = format!("{}-{}-{}", compact_timestamp(&ts), red.id, black.id);
         // Avant la partie : un smoke test peut remplacer le jar pendant qu'elle se joue.
@@ -154,7 +158,7 @@ impl Drop for Slot<'_> {
         let mut free = self.arena.free.lock().unwrap_or_else(PoisonError::into_inner);
         free.push(self.index);
         free.sort_unstable_by(|a, b| b.cmp(a));
-        self.arena.freed.notify_one();
+        self.arena.freed.notify_all();
     }
 }
 
@@ -338,18 +342,38 @@ mod tests {
             .parse()
             .unwrap();
         let arena = Arena::new(cfg);
-        let first = arena.take_slot();
-        let second = arena.take_slot();
+        let first = arena.take_slot(false);
+        let second = arena.take_slot(false);
         assert_eq!((first.index, second.index), (0, 1));
         thread::scope(|scope| {
             let (tx, rx) = mpsc::channel();
             let arena = &arena;
-            scope.spawn(move || tx.send(arena.take_slot().index).unwrap());
+            scope.spawn(move || tx.send(arena.take_slot(false).index).unwrap());
             assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
             drop(second);
             assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(1));
         });
         drop(first);
-        assert_eq!(arena.take_slot().index, 0);
+        assert_eq!(arena.take_slot(false).index, 0);
+    }
+
+    #[test]
+    fn a_multithread_game_waits_for_a_multithread_slot() {
+        let cfg: Config = "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\n\
+                           [[slot]]\n[[slot]]\nmultithread = true\n[[slot]]\n"
+            .parse()
+            .unwrap();
+        let arena = Arena::new(cfg);
+        let multithread = arena.take_slot(true);
+        assert_eq!(multithread.index, 1);
+        assert_eq!(arena.take_slot(false).index, 0);
+        thread::scope(|scope| {
+            let (tx, rx) = mpsc::channel();
+            let arena = &arena;
+            scope.spawn(move || tx.send(arena.take_slot(true).index).unwrap());
+            assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
+            drop(multithread);
+            assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(1));
+        });
     }
 }

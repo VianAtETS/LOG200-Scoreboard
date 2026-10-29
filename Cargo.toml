@@ -1,6 +1,6 @@
 [package]
 name = "isolation"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2024"
 description = "Arbitre, bot et ladder pour le lab Isolation (LOG200)"
 publish = false
@@ -15,6 +15,7 @@ sha2 = "0.11.1"
 thiserror = "2"
 tiny_http = "0.12"
 toml = "1.1.8+spec-1.1.0"
+zip = { version = "9.1.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

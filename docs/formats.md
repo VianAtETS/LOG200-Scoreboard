@@ -210,6 +210,7 @@ Ce que ça garantit, vérifié avec des jars hostiles :
 - Les jars tournent dans une image sans nos binaires (`isolation-sandbox-jar`), et `/tmp` est `noexec`. Un jar ne peut donc lancer ni `isolation-bot --strategy niveau-4` à sa place, ni un binaire natif qu'il embarquerait.
 - Mémoire, processus et CPU sont plafonnés, avec un cœur dédié par couleur. Un dépassement de mémoire tue le conteneur du joueur, pas la machine. Les threads Java ne comptent pas dans le plafond de processus.
 - Plusieurs parties peuvent se jouer en même temps, une par `[[slot]]` de `ladder.toml`. Chaque slot remplace les clés de `[sandbox]` qu'il redéfinit, en pratique `cpuset_red` et `cpuset_black` : deux parties ne partagent jamais un cœur. Une équipe ne joue qu'une paire à la fois, et une paire n'est lancée que si elle fait partie des moins jouées. Sans `[[slot]]`, une seule partie à la fois. Les smoke tests prennent eux aussi un slot libre.
+- Un slot `multithread = true` est réservé aux parties d'une équipe multithread : jar actif déclarant `Ladder-Threads: 2` (voir "Soumission des jars"), ou `multithread = true` dans son `[[team]]`. Son adversaire y joue aussi, pour que les deux couleurs aient les mêmes cœurs : on lui donne en général un cœur physique entier par couleur, par exemple `cpuset_red = "4,5"`, `cpuset_black = "6,7"` et `cpus = "2"`. Les autres parties ne prennent jamais ce slot. Sans slot `multithread`, le drapeau est sans effet ; sans slot ordinaire, tout se joue dans les slots `multithread`. Les smoke tests prennent un slot ordinaire.
 - Les conteneurs et les sockets sont supprimés après chaque partie, et au démarrage du ladder après un arrêt brutal.
 
 Le coût : environ 60 ms de plus au démarrage, et 20 à 30 % de calcul en moins sur un test qui alloue beaucoup. C'est pareil pour les deux joueurs, mais un bot va un peu moins loin qu'au tournoi.
@@ -240,15 +241,17 @@ Le formulaire de la page fait la même chose. Le token identifie l'équipe : `is
 
 À la réception :
 
-1. Le jar est comparé au jar actif de l'équipe. S'il est identique, rien ne se passe.
+1. Le jar est comparé au jar actif de l'équipe. S'il est identique, rien ne se passe. Son manifeste peut déclarer `Ladder-Threads: 1` (par défaut) ou `2` ; toute autre valeur le fait refuser.
 2. Une équipe ne peut soumettre qu'une fois par `min_interval_s` (5 minutes par défaut), et le jar ne doit pas dépasser `max_jar_mb`.
 3. Smoke test : le jar joue une partie dans chaque couleur, dans le bac à sable, contre le bot aléatoire. Il peut perdre, mais pas par dépassement de temps, déconnexion, absence ou coups invalides. Il attend la fin de la partie en cours du ladder : compter jusqu'à une ou deux minutes.
 4. S'il passe, il remplace atomiquement `jars/<équipe>/current.jar` (l'ancien est supprimé) et joue dès la partie suivante. Une équipe inscrite entre au classement avec son premier jar accepté.
 
+Un jar `Ladder-Threads: 2` joue toutes ses parties dans un slot `multithread`, avec 2 cœurs par couleur, adversaire compris. Ces slots étant moins nombreux, ses parties sont moins fréquentes. Le smoke test, lui, se joue sur 1 cœur. La déclaration suit le jar : la version suivante, sans l'attribut, rejoue sur 1 cœur.
+
 | Code | Sens |
 | --- | --- |
 | 200 | Accepté, ou identique au jar actif. |
-| 400 | Le corps n'est pas un jar. |
+| 400 | Le corps n'est pas un jar, ou `Ladder-Threads` ne vaut ni 1 ni 2. |
 | 401 | Token absent ou inconnu. |
 | 413 | Jar trop gros. |
 | 422 | Refusé par le smoke test ; la raison est dans la réponse et le jar actif reste en jeu. |

@@ -53,7 +53,7 @@ pub struct Config {
     pub sandbox: BTreeMap<String, toml::Value>,
     /// Une partie simultanée par slot, chacun avec ses remplacements de `[sandbox]`
     #[serde(default, rename = "slot")]
-    pub slots: Vec<BTreeMap<String, toml::Value>>,
+    pub slots: Vec<Slot>,
     /// Commande des équipes inscrites ; `{jar}` devient le chemin de leur jar actif.
     #[serde(default = "default_team_cmd")]
     pub team_cmd: CommandTemplate,
@@ -125,18 +125,46 @@ impl Config {
         self.slots.len().max(1)
     }
 
+    pub fn multithread_slot(&self, slot: usize) -> bool {
+        self.slots.get(slot).is_some_and(|s| s.multithread)
+    }
+
+    /// Slots de ce genre ; sans `[[slot]]`, le slot implicite est ordinaire.
+    pub fn slots_of(&self, multithread: bool) -> usize {
+        (0..self.slots())
+            .filter(|&i| self.multithread_slot(i) == multithread)
+            .count()
+    }
+
+    /// Genre de slot où se joue la partie : multithread dès qu'une des équipes l'est. Faute de slot
+    /// de ce genre, l'autre, pour qu'aucune partie n'attende un slot qui n'existe pas.
+    pub fn multithread_game(&self, a: &Team, b: &Team) -> bool {
+        let wanted = a.multithread || b.multithread;
+        if self.slots_of(wanted) > 0 { wanted } else { !wanted }
+    }
+
     pub fn game_timeout(&self) -> Duration {
         Duration::from_secs(self.game_timeout_s.unwrap_or(MAX_PLIES * self.time_ms / 1000 + 120))
     }
 
-    pub fn team_with_jar(&self, id: &TeamId, jar: &Path) -> Team {
+    pub fn team_with_jar(&self, id: &TeamId, jar: &Path, multithread: bool) -> Team {
         Team {
             id: id.to_string(),
             cmd: self.team_cmd.with_jar(&jar.to_string_lossy()),
             build: Some(jar.to_path_buf()),
             anchor: false,
+            multithread,
         }
     }
+}
+
+#[derive(Deserialize, Default)]
+pub struct Slot {
+    /// Réservé aux parties d'une équipe `multithread`, qui seules y jouent.
+    #[serde(default)]
+    pub multithread: bool,
+    #[serde(flatten)]
+    pub sandbox: BTreeMap<String, toml::Value>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -149,6 +177,9 @@ pub struct Team {
     pub build: Option<PathBuf>,
     #[serde(default)]
     pub anchor: bool,
+    /// Ses parties se jouent dans les slots `multithread`, adversaire compris.
+    #[serde(default)]
+    pub multithread: bool,
 }
 
 impl Team {
@@ -250,7 +281,7 @@ impl Vars<'_> {
         let program = args.next().ok_or_else(|| io::Error::other("commande vide"))?;
         let mut command = Command::new(program);
         command.args(args).stdin(Stdio::null());
-        let overrides = self.cfg.slots.get(self.slot).into_iter().flatten();
+        let overrides = self.cfg.slots.get(self.slot).into_iter().flat_map(|s| &s.sandbox);
         for (key, value) in self.cfg.sandbox.iter().chain(overrides) {
             let value = match value {
                 toml::Value::String(s) => s.clone(),
@@ -293,7 +324,7 @@ mod tests {
         let cfg: Config = MINIMAL.parse().unwrap();
         assert_eq!(cfg.game_timeout(), Duration::from_secs(264));
         let id: TeamId = "eq07".parse().unwrap();
-        let team = cfg.team_with_jar(&id, Path::new("jars/eq07/current.jar"));
+        let team = cfg.team_with_jar(&id, Path::new("jars/eq07/current.jar"), false);
         assert_eq!(team.build_file(), Some(PathBuf::from("jars/eq07/current.jar")));
         let vars = Vars {
             cfg: &cfg,
@@ -338,5 +369,35 @@ mod tests {
         };
         assert_eq!(env(0), ("8888".into(), Some("2".into()), Some("512m".into())));
         assert_eq!(env(1), ("8888".into(), Some("4".into()), Some("512m".into())));
+    }
+
+    #[test]
+    fn multithread_slots_host_every_game_of_a_multithread_team() {
+        let text = format!("{MINIMAL}[[slot]]\ncpus = \"1\"\n[[slot]]\nmultithread = true\ncpus = \"2\"\n");
+        let cfg: Config = text.parse().unwrap();
+        assert_eq!((cfg.slots_of(false), cfg.slots_of(true)), (1, 1));
+        let id: TeamId = "eq07".parse().unwrap();
+        let jar = Path::new("current.jar");
+        let (single, multi) = (cfg.team_with_jar(&id, jar, false), cfg.team_with_jar(&id, jar, true));
+        assert!(!cfg.multithread_game(&single, &single));
+        assert!(cfg.multithread_game(&single, &multi));
+        assert!(cfg.multithread_game(&multi, &single));
+        let vars = Vars {
+            cfg: &cfg,
+            slot: 1,
+            opening: String::new(),
+            game: "g1",
+        };
+        let command = vars.command(&cfg.referee, None).unwrap();
+        let keys: Vec<_> = command
+            .get_envs()
+            .map(|(k, _)| k.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(keys, ["SANDBOX_CPUS"]);
+
+        let ordinary_only: Config = MINIMAL.parse().unwrap();
+        assert!(!ordinary_only.multithread_game(&multi, &single));
+        let multithread_only: Config = format!("{MINIMAL}[[slot]]\nmultithread = true\n").parse().unwrap();
+        assert!(multithread_only.multithread_game(&single, &single));
     }
 }
