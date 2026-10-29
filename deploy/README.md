@@ -50,6 +50,18 @@ Pour un pic de visiteurs (des centaines à la fois), un CDN comme Cloudflare abs
 
 Attention à `/api/submit` : Cloudflare coupe une requête sans réponse après 100 s (erreur 524), alors qu'un smoke test attend la partie en cours et les soumissions précédentes, ce qui peut prendre plusieurs minutes. Le ladder poursuit quand même : un 524 veut dire "verdict inconnu", pas "refusé" (voir `jars/submissions.jsonl` ou la version affichée sur la page). Pour que la CI reçoive toujours le verdict, faire pointer son `LADDER_URL` vers un nom d'hôte non proxifié (nuage gris dans Cloudflare) qui mène au même serveur.
 
+## Équipes distantes (optionnel)
+
+Une équipe peut jouer sans téléverser son jar : il tourne sur sa machine, et `isolation-remote` relaie ses coups par une WebSocket sur `/api/remote` (voir "Jouer à distance" dans `docs/formats.md`). Pour l'ouvrir, décommenter la section `[remote]` de `ladder.toml`, puis `docker compose restart ladder`. Le `Caddyfile` relaie déjà `/api/remote` ; rien n'est exposé de plus que le port de la page.
+
+L'équipe utilise son token habituel et l'adresse de la page : `isolation-remote --url https://ladder.example.com -- java -jar Client-eq07.jar`. Ses parties portent le badge "distant", et la case "Vérifiées seulement" de la page les retire du classement.
+
+- Le mode distant demande HTTPS (section précédente) : le token passe dans l'en-tête de la WebSocket. `isolation-remote` avertit l'équipe si l'adresse est en `http://`.
+- Avec Nginx Proxy Manager, cocher "Websockets Support" sur l'hôte proxy du ladder : sans elle, l'upgrade de `/api/remote` n'est pas relayé et le client voit une erreur 400 ou 502.
+- Cloudflare relaie les WebSockets, mais coupe une connexion inactive après 100 s. Le ladder envoie un ping toutes les 10 s : la connexion reste ouverte.
+- La latence compte dans le temps par coup de l'équipe. Comme pour `LADDER_URL`, un nom d'hôte non proxifié évite le détour par Cloudflare.
+- `docker compose logs ladder | grep distant` montre les connexions. Le diagnostic du relais de chaque partie est dans `data/logs/`.
+
 ## Page sur GitHub Pages (optionnel)
 
 La page reste servie par ce compose, mais elle peut aussi être publiée sur GitHub Pages : une modification de `web/` est alors en ligne à chaque push sur `main`, sans tag ni redémarrage du ladder. Elle lit toujours les parties et l'API sur ce serveur, qui doit donc être en HTTPS (section précédente).

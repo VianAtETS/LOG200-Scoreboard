@@ -1,4 +1,4 @@
-//! Mode distant (docs/formats.md, « Jouer à distance ») : `isolation-remote` relaie le jar d'une
+//! Mode distant (docs/formats.md, "Jouer à distance") : `isolation-remote` relaie le jar d'une
 //! équipe, qui tourne sur sa machine, par une WebSocket vers le ladder. Une trame texte JSON par
 //! message, dans les deux sens.
 

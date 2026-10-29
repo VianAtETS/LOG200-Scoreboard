@@ -15,7 +15,7 @@ flowchart LR
 
 - Le code Java dans `src/`, sans package, avec une classe `Client` qui contient le `main`.
 - Le **token** de votre équipe, donné en privé par l'enseignant.
-- L'**adresse** de la page du ladder, par exemple `http://ladder.example.org:8080`.
+- L'**adresse** de la page du ladder, par exemple `https://ladder.example.org`.
 
 ## Installation
 
@@ -81,6 +81,22 @@ int threads = Runtime.getRuntime().availableProcessors(); // 1 au smoke test, 2 
 ```
 
 La déclaration suit le jar : si la version suivante est construite avec `MULTITHREAD: false`, elle rejoue sur 1 cœur. Sans la CI, ajoutez la ligne `Ladder-Threads: 2` au manifeste vous-même (`jar --create --manifest ...`).
+
+## Jouer sans téléverser son jar (optionnel)
+
+Votre jar peut aussi jouer depuis votre ordinateur : il n'est jamais envoyé au serveur, seuls ses coups le sont. Téléchargez l'archive de votre système depuis la [dernière release](https://github.com/VianAtETS/LOG200-Scoreboard/releases/latest), puis :
+
+```sh
+LADDER_TOKEN=<token> ./isolation-remote --url <adresse de la page> -- java -jar Client-eqXX.jar
+```
+
+Sous Windows (PowerShell) : `$env:LADDER_TOKEN="<token>"`, puis `.\isolation-remote.exe --url ... -- java -jar Client-eqXX.jar`.
+
+Tant que la commande tourne, votre équipe est au tirage : le relais lance votre jar pour chaque partie, et il se connecte à `localhost:8888` comme d'habitude. Fermez-la (Ctrl+C) pour arrêter ; si vous avez aussi soumis un jar, c'est lui qui reprend.
+
+- **La latence compte dans votre temps par coup.** Le relais annonce à votre jar un temps réduit d'autant dans le message `0` : lisez-le plutôt que de coder 500 ms en dur.
+- **Vos parties portent le badge "distant".** Le serveur ne vérifie ni votre code ni votre machine : la page permet de les retirer du classement ("Vérifiées seulement").
+- **Une partie commencée se joue.** Couper le relais pendant une partie la fait perdre (`disconnect`), et la suivante de la paire aussi (`no_show`).
 
 ## Tester avant de pousser
 

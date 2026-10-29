@@ -89,6 +89,14 @@ max_jar_mb = 20
 # Delai minimal entre deux soumissions d'une meme equipe.
 min_interval_s = 300
 
+# Equipes distantes : elles jouent depuis leur machine avec isolation-remote, sans televerser leur
+# jar (docs/formats.md, "Jouer a distance"), avec le meme token que les soumissions. La page relaie
+# /api/remote vers listen. connect : ou relier le joueur distant, la socket de sa couleur chez
+# l'arbitre (meme dossier que rundir) ; sans Docker, "tcp:127.0.0.1:{port}".
+# [remote]
+# listen = "0.0.0.0:8091"
+# connect = "unix:/tmp/isolation-ladder/{game}/{side}/sock"
+
 # Equipes fixes, en plus des equipes inscrites. Dans cmd, {port}, {game} et {side} (red ou black)
 # sont remplaces. `anchor = true` fige le rating a 1500.
 [[team]]

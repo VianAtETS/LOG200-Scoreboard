@@ -1,4 +1,4 @@
-//! Relais d'une équipe qui joue au ladder depuis sa machine (docs/formats.md, « Jouer à distance ») :
+//! Relais d'une équipe qui joue au ladder depuis sa machine (docs/formats.md, "Jouer à distance") :
 //! le jar tourne ici et se connecte à ce relais comme au serveur officiel. Seules les lignes du
 //! protocole transitent, par une WebSocket vers le ladder ; le jar n'est jamais envoyé.
 
@@ -66,6 +66,9 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if cleartext(&url) {
+        say("attention : adresse en http, le token de l'équipe passera en clair sur le réseau (https:// attendu)");
+    }
     let build = build_of(&cli.command);
     say(&format!("build {build} : {}", cli.command.join(" ")));
     let mut backoff = MIN_BACKOFF;
@@ -112,6 +115,20 @@ fn endpoint(url: &str) -> Result<String, String> {
     } else {
         format!("{base}{PATH}")
     })
+}
+
+/// `ws://` vers une autre machine que celle-ci.
+fn cleartext(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("ws://") else {
+        return false;
+    };
+    let authority = rest.split('/').next().unwrap_or_default();
+    // `[::1]:8080` : le port suit le crochet fermant.
+    let host = match authority.find(']') {
+        Some(end) => &authority[..=end],
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    !matches!(host, "localhost" | "127.0.0.1" | "[::1]")
 }
 
 /// Comme le ladder : sha256 du jar de la commande, à défaut de la commande elle-même.
@@ -222,6 +239,7 @@ struct Link {
     ws: Ws,
     since: Instant,
     pinged: Option<Instant>,
+    awaiting: Option<[u8; 8]>,
     wait: Option<Duration>,
     rtt: Vec<Duration>,
 }
@@ -233,6 +251,7 @@ impl Link {
             ws,
             since: Instant::now(),
             pinged: None,
+            awaiting: None,
             wait: None,
             rtt: Vec::new(),
         })
@@ -240,15 +259,18 @@ impl Link {
 
     /// Le plus long des derniers allers-retours : la marge que la latence prend au jar.
     fn rtt(&self) -> Option<Duration> {
-        self.rtt.iter().rev().take(RTT_SAMPLES).max().copied()
+        self.rtt.iter().max().copied()
     }
 
     fn poll(&mut self, wait: Duration) -> Result<Option<Message>, End> {
         if self.pinged.is_none_or(|at| at.elapsed() >= PING_EVERY) {
             self.pinged = Some(Instant::now());
-            let sent = u64::try_from(self.since.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            let sent = u64::try_from(self.since.elapsed().as_nanos())
+                .unwrap_or(u64::MAX)
+                .to_be_bytes();
+            self.awaiting = Some(sent);
             self.ws
-                .send(Frame::Ping(Bytes::copy_from_slice(&sent.to_be_bytes())))
+                .send(Frame::Ping(Bytes::copy_from_slice(&sent)))
                 .map_err(|e| lost(&e))?;
         }
         if self.wait != Some(wait) {
@@ -258,8 +280,12 @@ impl Link {
         match self.ws.read() {
             Ok(Frame::Text(text)) => Ok(Message::from_json(text.as_str()).ok()),
             Ok(Frame::Pong(payload)) => {
-                if let Ok(bytes) = <[u8; 8]>::try_from(payload.as_ref()) {
-                    let sent = Duration::from_nanos(u64::from_be_bytes(bytes));
+                if let Some(sent) = self.awaiting.filter(|sent| payload.as_ref() == sent) {
+                    self.awaiting = None;
+                    if self.rtt.len() == RTT_SAMPLES {
+                        self.rtt.remove(0);
+                    }
+                    let sent = Duration::from_nanos(u64::from_be_bytes(sent));
                     self.rtt.push(self.since.elapsed().saturating_sub(sent));
                 }
                 Ok(None)
@@ -474,6 +500,20 @@ mod tests {
         );
         assert_eq!(endpoint("ws://h:8091/api/remote").unwrap(), "ws://h:8091/api/remote");
         assert!(endpoint("ladder.example.org").is_err());
+    }
+
+    #[test]
+    fn only_remote_plain_http_is_flagged() {
+        assert!(cleartext("ws://ladder.example.org:8080/api/remote"));
+        assert!(cleartext("ws://192.168.1.10/api/remote"));
+        for local in [
+            "ws://localhost:8080/api/remote",
+            "ws://127.0.0.1:18091/api/remote",
+            "ws://[::1]:8080/x",
+        ] {
+            assert!(!cleartext(local), "{local}");
+        }
+        assert!(!cleartext("wss://ladder.example.org/api/remote"));
     }
 
     #[test]

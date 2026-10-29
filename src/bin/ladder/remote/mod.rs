@@ -9,11 +9,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 
@@ -25,20 +25,29 @@ use session::{Session, Start};
 
 /// Le relais écrit encore son diagnostic quand l'arène le libère.
 const FINISH_WAIT: Duration = Duration::from_secs(2);
+/// Connexions simultanées, poignées de main comprises : au-delà, fermées aussitôt. Une session par
+/// équipe suffit, la marge absorbe les reconnexions.
+const MAX_CONNECTIONS: usize = 256;
+const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 
 pub struct Registry {
     sessions: Mutex<HashMap<String, Arc<Session>>>,
-    /// Dernier build déclaré par chaque équipe, gardé après sa déconnexion.
-    builds: Mutex<HashMap<String, String>>,
+    /// Dernier build déclaré par chaque équipe, gardé après sa déconnexion, et le moment où il a
+    /// changé.
+    builds: Mutex<HashMap<String, (String, Instant)>>,
+    /// Délai minimal entre deux builds d'une équipe, comme entre deux soumissions de jar : sans lui,
+    /// un build par connexion garderait son K provisoire et allongerait `builds` de summary.json.
+    build_interval: Duration,
     /// Réveille la boucle du ladder quand une équipe arrive.
     wake: Box<dyn Fn() + Send + Sync>,
 }
 
 impl Registry {
-    pub fn new(wake: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
+    pub fn new(build_interval: Duration, wake: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
         Arc::new(Self {
             sessions: Mutex::new(HashMap::new()),
             builds: Mutex::new(HashMap::new()),
+            build_interval,
             wake: Box::new(wake),
         })
     }
@@ -64,17 +73,31 @@ impl Registry {
         teams
     }
 
-    /// Remplace une session au repos de la même équipe ; refusée pendant une partie.
-    fn open(&self, session: &Arc<Session>, build: &str) -> Result<(), &'static str> {
+    /// Remplace une session au repos de la même équipe ; refusée pendant une partie, ou pour un
+    /// nouveau build trop tôt après le précédent.
+    fn open(&self, session: &Arc<Session>, build: &str) -> Result<(), String> {
         let mut sessions = lock(&self.sessions);
+        let mut builds = lock(&self.builds);
+        let changed = match builds.get(&session.team) {
+            Some((last, _)) if last == build => false,
+            Some((_, since)) if since.elapsed() < self.build_interval => {
+                let wait = self.build_interval.saturating_sub(since.elapsed()).as_secs() + 1;
+                return Err(format!(
+                    "nouveau build trop tôt : réessayer dans {wait} s, ou relancer l'ancien jar"
+                ));
+            }
+            _ => true,
+        };
         if let Some(old) = sessions.get(&session.team) {
             if old.playing() {
-                return Err("une partie de l'équipe est en cours : se reconnecter à la fin");
+                return Err("une partie de l'équipe est en cours : se reconnecter à la fin".into());
             }
             old.close("remplacée par une nouvelle connexion de l'équipe");
         }
         sessions.insert(session.team.clone(), Arc::clone(session));
-        lock(&self.builds).insert(session.team.clone(), build.to_string());
+        if changed {
+            builds.insert(session.team.clone(), (build.to_string(), Instant::now()));
+        }
         Ok(())
     }
 
@@ -108,7 +131,9 @@ pub struct GameSpec {
 
 impl Seat {
     pub fn build(&self) -> Option<String> {
-        lock(&self.registry.builds).get(&self.team).cloned()
+        lock(&self.registry.builds)
+            .get(&self.team)
+            .map(|(build, _)| build.clone())
     }
 
     /// Jamais d'erreur : sans session, personne ne se connecte et l'arbitre conclut `no_show`. Une
@@ -157,19 +182,48 @@ pub fn serve(registry: &Arc<Registry>, cfg: &Config) -> anyhow::Result<()> {
 }
 
 fn listen(registry: Arc<Registry>, listener: TcpListener, teams: PathBuf, time_ms: u64) {
+    let open = Arc::new(AtomicUsize::new(0));
     thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else {
+                // Plus de descripteurs, par exemple : l'erreur reviendrait aussitôt.
+                thread::sleep(ACCEPT_RETRY);
+                continue;
+            };
+            let counted = Counted::enter(&open);
+            if counted.0.load(Ordering::Relaxed) > MAX_CONNECTIONS {
+                continue;
+            }
             let (registry, teams) = (Arc::clone(&registry), teams.clone());
-            thread::spawn(move || session::run(stream, &registry, &teams, time_ms));
+            // Sans thread disponible, la connexion est fermée ; la boucle continue.
+            let _ = thread::Builder::new().spawn(move || {
+                let _counted = counted;
+                session::run(stream, &registry, &teams, time_ms);
+            });
         }
     });
+}
+
+/// Compte une connexion tant qu'il vit.
+struct Counted(Arc<AtomicUsize>);
+
+impl Counted {
+    fn enter(open: &Arc<AtomicUsize>) -> Self {
+        open.fetch_add(1, Ordering::Relaxed);
+        Self(Arc::clone(open))
+    }
+}
+
+impl Drop for Counted {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpStream;
-    use std::time::Instant;
 
     use tungstenite::client::IntoClientRequest;
     use tungstenite::http::HeaderValue;
@@ -190,10 +244,15 @@ mod tests {
     }
 
     fn fixture(name: &str) -> Fixture {
+        fixture_every(name, Duration::ZERO)
+    }
+
+    /// `build_interval` : délai minimal entre deux builds de l'équipe.
+    fn fixture_every(name: &str, build_interval: Duration) -> Fixture {
         let dir = temp_dir(&format!("remote-{name}"));
         let teams = dir.join("teams.toml");
         let token = add_team(&teams, "eq07".parse::<TeamId>().unwrap()).unwrap();
-        let registry = Registry::new(|| {});
+        let registry = Registry::new(build_interval, || {});
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         listen(Arc::clone(&registry), listener, teams, 500);
@@ -375,5 +434,40 @@ mod tests {
         eventually("une seule session", || f.registry.online().len() == 1);
         let seat = f.registry.online().remove(0).remote.unwrap();
         assert_eq!(seat.build().as_deref(), Some("0000000000000000"));
+    }
+
+    #[test]
+    fn a_new_build_waits_like_a_new_jar() {
+        let f = fixture_every("interval", Duration::from_secs(300));
+        drop(joined(&f, BUILD));
+        eventually("session retirée", || lock(&f.registry.sessions).is_empty());
+        let mut ws = connect(&f, &f.token).unwrap();
+        let hello = Message::Hello {
+            v: PROTOCOL_VERSION,
+            build: "0000000000000000".into(),
+            client: "test".into(),
+        };
+        send(&mut ws, &hello);
+        assert!(recv(&mut ws).unwrap_err().contains("trop tôt"));
+        let _same = joined(&f, BUILD);
+        assert_eq!(
+            f.registry.online()[0].remote.as_ref().unwrap().build().as_deref(),
+            Some(BUILD)
+        );
+    }
+
+    #[test]
+    fn connections_beyond_the_cap_are_closed_at_once() {
+        use std::io::Read;
+
+        let f = fixture("cap");
+        let idle: Vec<TcpStream> = (0..MAX_CONNECTIONS)
+            .map(|_| TcpStream::connect(&f.addr).unwrap())
+            .collect();
+        let mut extra = TcpStream::connect(&f.addr).unwrap();
+        extra.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        assert_eq!(extra.read(&mut [0; 1]).unwrap(), 0, "fermée sans réponse");
+        drop(idle);
+        eventually("place libérée", || connect(&f, &f.token).is_ok());
     }
 }

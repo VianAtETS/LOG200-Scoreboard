@@ -38,7 +38,7 @@ jobs:
         run: cargo test --release --locked --target ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-referee --bin isolation-check
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-referee --bin isolation-check --bin isolation-remote
 
       - name: Build bot
         run: cargo build --profile bot --locked --target ${{ matrix.target }} --bin isolation-bot
@@ -68,7 +68,7 @@ jobs:
           ext=""
           [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
           mkdir "$name"
-          for bin in isolation-referee isolation-check; do
+          for bin in isolation-referee isolation-check isolation-remote; do
             cp "target/${{ matrix.target }}/release/$bin$ext" "$name/"
           done
           cp "target/${{ matrix.target }}/bot/isolation-bot$ext" "$name/"

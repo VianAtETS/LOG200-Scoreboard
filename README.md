@@ -39,6 +39,16 @@ The strategies `aleatoire`, `niveau-1`, `niveau-2` and `niveau-3` play like the 
 
 The referee checks every move and prints the result at the end (`winner`, and `reason`: `no_moves`, `timeout`, `disconnect` or `no_show`). An illegal move is answered with `4`, like on the official server. To play black, start the bot before your jar. On Windows, run `.\isolation-referee.exe` and `.\isolation-bot.exe`. On macOS, first run `xattr -d com.apple.quarantine isolation-*` so the unsigned binaries can start.
 
+## Play remotely
+
+A team can play on the ladder without uploading its jar: the jar runs on its own machine, and `isolation-remote` (in the same archive) relays its moves to the ladder over HTTPS. Run it with the team token and the command that starts the jar:
+
+```sh
+LADDER_TOKEN=<token> ./isolation-remote --url https://<ladder> -- java -jar Client-eqXX.jar
+```
+
+The relay starts the jar for every game and keeps reconnecting until stopped. The jar connects to `localhost:8888` as usual. Network latency counts against its time per move, and the page marks these games "distant": the server checks neither the code nor the hardware. See "Jouer à distance" in `docs/formats.md`.
+
 ## Deploy the leaderboard
 
 `docker compose up -d` with the files of the release's `isolation-scoreboard-deploy.zip`: see [`deploy/README.md`](deploy/README.md) (in French).
@@ -59,6 +69,7 @@ The referee checks every move and prints the result at the end (`winner`, and `r
 | `isolation-bot` | Protocol client used for tests and conformance checks; its strategies `aleatoire` and `niveau-1` to `niveau-3` replicate the official server's CPU levels (`src/cpu.rs`); `niveau-4` is our own stronger engine (`src/engine.rs`) |
 | `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), and receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`) |
 | `isolation-check` | Replays and validates a JSONL file or an official save (`BOARDGAME 1`) |
+| `isolation-remote` | Relay for a team that plays from its own machine: starts the jar for each game and forwards its lines to the ladder (`/api/remote`, see `docs/formats.md`) |
 | `sandbox/` | gVisor sandboxes for the referee and each player (see `docs/formats.md`) |
 | `web/` | Static pages (vanilla JS): Elo ranking, recent games, replay; rank graph of the chosen teams (`graphe.html`) |
 | `templates/ladder.yml` | GitHub Actions workflow for the team repositories: builds the jar and submits it on every push to `main` |

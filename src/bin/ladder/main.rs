@@ -215,7 +215,8 @@ fn serve_remote(cfg: &Config, reports: &Sender<Report>) -> anyhow::Result<Option
         return Ok(None);
     }
     let wake = reports.clone();
-    let registry = Registry::new(move || {
+    let interval = cfg.submit.as_ref().map_or(0, |submit| submit.min_interval_s);
+    let registry = Registry::new(Duration::from_secs(interval), move || {
         let _ = wake.send(Report::Wake);
     });
     remote::serve(&registry, cfg)?;

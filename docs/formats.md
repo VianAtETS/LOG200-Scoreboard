@@ -268,7 +268,7 @@ Réglages du dépôt, dans Settings > Secrets and variables > Actions :
 
 | Nom | Type | Valeur |
 | --- | --- | --- |
-| `LADDER_URL` | variable | adresse de la page du ladder, par exemple `http://ladder.example.org:8080` |
+| `LADDER_URL` | variable | adresse de la page du ladder, par exemple `https://ladder.example.org` |
 | `LADDER_TOKEN` | secret | token de l'équipe |
 
 Sans `LADDER_URL`, le job est sauté : le workflow peut donc vivre dans le template avant que le ladder existe. Le jar est reproductible (date des entrées fixée à celle du commit) : relancer un run sur le même commit répond "déjà actif" au lieu de créer une nouvelle version. La machine du ladder doit être joignable depuis les runners GitHub ; sinon, les équipes passent par le formulaire de la page.
@@ -279,6 +279,55 @@ Pour essayer le workflow en local avec [act](https://github.com/nektos/act), dep
 act workflow_dispatch -P ubuntu-latest=catthehacker/ubuntu:act-latest --network host \
   --var LADDER_URL=http://localhost:8080 --secret LADDER_TOKEN=<token>
 ```
+
+## Jouer à distance
+
+Une équipe peut jouer au ladder sans téléverser son jar : il tourne sur sa machine, et `isolation-remote` (dans l'archive de la release) relaie ses lignes au ladder par une WebSocket. Le ladder garde l'arbitre, l'Elo et la page ; il ne voit jamais le jar.
+
+```sh
+LADDER_TOKEN=<token> isolation-remote --url https://<ladder> -- java -jar Client-eq07.jar
+```
+
+```mermaid
+flowchart LR
+    subgraph eleve["machine de l'équipe"]
+        jar["jar"] -- "localhost:8888" --> relais["isolation-remote"]
+    end
+    subgraph serveur["ladder"]
+        api["/api/remote"] --> arbitre["arbitre (bac à sable)"]
+        adv["adversaire (bac à sable)"] --> arbitre
+    end
+    relais -- "WebSocket (wss)" --> api
+```
+
+Pour chaque partie, le relais lance la commande ; le jar se connecte à lui comme au serveur officiel, sans changement. Le même token que pour les soumissions identifie l'équipe ; elle doit être inscrite (`add-team`), sans avoir besoin d'un jar accepté. Tant que le relais est connecté, l'équipe entre au tirage et joue à la place de son jar s'il y en a un ; déconnectée, son jar reprend.
+
+Ce qu'il faut savoir :
+
+- **Rien n'est vérifié.** Le serveur ne voit pas le code, ne limite ni les cœurs ni la mémoire, et le `build` est déclaré par le relais (sha256 du jar lancé, comme sur le serveur : un même jar garde sa version vN). Ces parties portent `remote` (voir `games.jsonl`), la page les marque d'un badge "distant", et sa case "Vérifiées seulement" recalcule l'Elo sans elles.
+- **La latence compte dans le temps du jar** : l'arbitre chronomètre au serveur. Le relais mesure l'aller-retour et annonce au jar `T` moins cette marge dans `0 2 12 12 T C` (au moins `T/2`) ; un jar qui ignore `T` n'en profite pas.
+- **Une fois apparié, on joue.** Le message de partie ne nomme pas l'adversaire ; un relais déconnecté ou muet perd par `no_show`, un jar qui plante par `disconnect`. Un relais qui ne lance pas son jar est déconnecté à la fin de la partie.
+
+### Protocole (version 1)
+
+`GET /api/remote` avec `Authorization: Bearer <token>`, puis une trame texte JSON par message, `{"type": …}` :
+
+| Sens | Message | Rôle |
+| --- | --- | --- |
+| relais → ladder | `hello {v, build, client}` | `v` : 1 ; `build` : 16 caractères hexadécimaux |
+| ladder → relais | `welcome {team, time_ms}` | session ouverte |
+| ladder → relais | `game {id, side, time_ms}` | lancer le jar, qui se connecte au relais |
+| relais → ladder | `ready` | jar connecté : le ladder le relie à l'arbitre |
+| relais → ladder | `failed {reason}` | jar pas lancé ; la session se ferme |
+| les deux | `line {text}` | une ligne du protocole des clients, sans fin de ligne |
+| relais → ladder | `hangup` | le jar a fermé sa connexion en cours de partie |
+| ladder → relais | `end {id}` | l'arbitre a raccroché : partie finie |
+
+Un token inconnu reçoit `401` avant l'upgrade. Le ladder ferme la session avec une raison (trame de fermeture, code 1008) : `hello` invalide, session remplacée par une nouvelle connexion de l'équipe, partie de l'équipe en cours, nouveau build déclaré moins de `min_interval_s` après le précédent (le délai entre deux soumissions de jar), jar jamais lancé. La raison d'un `failed` est reprise dans les journaux sur une ligne, sans caractères de contrôle et coupée à 200 caractères. Il envoie un ping toutes les 10 s et lâche un relais muet depuis 30 s ; seule une session entendue depuis 15 s entre au tirage. Au-delà de 256 connexions simultanées, poignées de main comprises, les suivantes sont fermées aussitôt.
+
+### Côté serveur
+
+Section `[remote]` de `ladder.toml` (demande `[submit]`, qui tient les tokens) : `listen`, l'adresse de la WebSocket, relayée par la page sur `/api/remote` ; `connect`, où relier le joueur distant : `unix:<rundir>/{game}/{side}/sock`, la socket de sa couleur chez l'arbitre, ou `tcp:127.0.0.1:{port}` pour un arbitre sans bac à sable. Le journal du joueur (`data/logs/`) reçoit le diagnostic du relais : délai avant `ready`, aller-retour médian.
 
 ## Mise en route
 

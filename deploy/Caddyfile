@@ -1,6 +1,9 @@
 :80 {
 	root * /srv
 	redir / /web/
+	# Equipes distantes (isolation-remote) : WebSocket, relayee telle quelle. Plus precis que /api/*,
+	# donc essaye avant.
+	reverse_proxy /api/remote ladder:8091
 	reverse_proxy /api/* ladder:8090
 	# La page peut aussi etre servie ailleurs (GitHub Pages). Origine libre : aucun cookie, le token
 	# d'equipe passe en en-tete Authorization, que seul l'appelant connait.

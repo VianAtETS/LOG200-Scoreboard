@@ -39,6 +39,10 @@ const END_GRACE: Duration = Duration::from_millis(500);
 const MAX_MESSAGE: usize = 64 << 10;
 /// Limite du protocole WebSocket pour la raison d'une fermeture.
 const MAX_REASON: usize = 123;
+/// Une partie dure quelques minutes, à un ping toutes les 10 s.
+const MAX_RTT_SAMPLES: usize = 64;
+/// Texte du client repris dans les journaux.
+const MAX_CLIENT_TEXT: usize = 200;
 
 pub struct Start {
     pub game: GameSpec,
@@ -123,7 +127,7 @@ pub fn run(stream: TcpStream, registry: &Arc<Registry>, teams: &Path, time_ms: u
     });
     if let Err(reason) = registry.open(&session, &build) {
         eprintln!("distant {team} refusé : {reason}");
-        goodbye(&mut ws, reason);
+        goodbye(&mut ws, &reason);
         return;
     }
     eprintln!("distant : {team} connecté depuis {peer} (build {build})");
@@ -263,6 +267,15 @@ fn goodbye(ws: &mut WebSocket<TcpStream>, reason: &str) {
     }
 }
 
+/// Texte du client sur une ligne, sans caractères de contrôle : il ne peut ni imiter une ligne du
+/// journal du ladder ni piloter le terminal qui le lit.
+fn printable(text: &str) -> String {
+    text.chars()
+        .take(MAX_CLIENT_TEXT)
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
 /// Le client est parti.
 struct Gone;
 
@@ -272,6 +285,8 @@ struct Link {
     session: Arc<Session>,
     since: Instant,
     pinged: Instant,
+    /// Charge du ping sans réponse : un pong qui ne la reprend pas est ignoré.
+    awaiting: Option<[u8; 8]>,
     wait: Option<Duration>,
     /// Allers-retours mesurés pendant la partie en cours.
     rtt: Vec<Duration>,
@@ -285,6 +300,7 @@ impl Link {
             session,
             since: now,
             pinged: now,
+            awaiting: None,
             wait: None,
             rtt: Vec::new(),
         }
@@ -297,9 +313,13 @@ impl Link {
         }
         if self.pinged.elapsed() >= PING_EVERY {
             self.pinged = Instant::now();
-            let sent = u64::try_from(self.since.elapsed().as_nanos()).unwrap_or(u64::MAX);
-            let payload = Bytes::copy_from_slice(&sent.to_be_bytes());
-            self.ws.send(Frame::Ping(payload)).map_err(|_| Gone)?;
+            let sent = u64::try_from(self.since.elapsed().as_nanos())
+                .unwrap_or(u64::MAX)
+                .to_be_bytes();
+            self.awaiting = Some(sent);
+            self.ws
+                .send(Frame::Ping(Bytes::copy_from_slice(&sent)))
+                .map_err(|_| Gone)?;
         }
         if self.wait != Some(wait) {
             self.ws.get_ref().set_read_timeout(Some(wait)).map_err(|_| Gone)?;
@@ -318,10 +338,14 @@ impl Link {
     fn frame(&mut self, frame: Frame) -> Result<Option<Message>, Gone> {
         match frame {
             Frame::Text(text) => Ok(Message::from_json(text.as_str()).ok()),
+            // Seule la réponse au ping en cours compte : un client ne peut pas remplir `rtt`.
             Frame::Pong(payload) => {
-                if let Ok(bytes) = <[u8; 8]>::try_from(payload.as_ref()) {
-                    let sent = Duration::from_nanos(u64::from_be_bytes(bytes));
-                    self.rtt.push(self.since.elapsed().saturating_sub(sent));
+                if let Some(sent) = self.awaiting.filter(|sent| payload.as_ref() == sent) {
+                    self.awaiting = None;
+                    if self.rtt.len() < MAX_RTT_SAMPLES {
+                        let sent = Duration::from_nanos(u64::from_be_bytes(sent));
+                        self.rtt.push(self.since.elapsed().saturating_sub(sent));
+                    }
                 }
                 Ok(None)
             }
@@ -375,6 +399,7 @@ fn play(link: &mut Link, start: Start) -> Outcome {
         match link.poll(GAME_POLL) {
             Ok(Some(Message::Ready)) => break,
             Ok(Some(Message::Failed { reason })) => {
+                let reason = printable(&reason);
                 note(&format!("échec du client : {reason}"));
                 return Outcome::Failed(format!("échec du client : {reason}"));
             }
@@ -465,4 +490,18 @@ fn read_lines(stream: RefereeStream) -> Receiver<String> {
         }
     });
     rx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_text_stays_on_one_line_without_escapes() {
+        let hostile = "\u{1b}[2J\u{1b}[31mFAUX\n== paire 99 : eq07 contre niveau-4\r";
+        let clean = printable(hostile);
+        assert!(!clean.chars().any(char::is_control), "{clean:?}");
+        assert!(clean.contains("FAUX") && clean.contains("paire 99"));
+        assert_eq!(printable(&"é".repeat(500)).chars().count(), MAX_CLIENT_TEXT);
+    }
 }

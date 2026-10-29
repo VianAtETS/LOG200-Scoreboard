@@ -47,7 +47,7 @@ pub fn serve(arena: Arc<Arena>) -> anyhow::Result<()> {
     thread::spawn(move || {
         for request in server.incoming_requests() {
             let submissions = Arc::clone(&submissions);
-            thread::spawn(move || respond(&submissions, request));
+            let _ = thread::Builder::new().spawn(move || respond(&submissions, request));
         }
     });
     Ok(())
