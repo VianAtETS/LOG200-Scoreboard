@@ -238,7 +238,7 @@ Le formulaire de la page fait la même chose. Le token identifie l'équipe : `is
 1. Le jar est comparé au jar actif de l'équipe. S'il est identique, rien ne se passe.
 2. Une équipe ne peut soumettre qu'une fois par `min_interval_s` (5 minutes par défaut), et le jar ne doit pas dépasser `max_jar_mb`.
 3. Smoke test : le jar joue une partie dans chaque couleur, dans le bac à sable, contre le bot aléatoire. Il peut perdre, mais pas par dépassement de temps, déconnexion, absence ou coups invalides. Il attend la fin de la partie en cours du ladder : compter jusqu'à une ou deux minutes.
-4. S'il passe, il remplace atomiquement `jars/<équipe>/current.jar` (l'ancien reste dans `history/`) et joue dès la partie suivante. Une équipe inscrite entre au classement avec son premier jar accepté.
+4. S'il passe, il remplace atomiquement `jars/<équipe>/current.jar` (l'ancien est supprimé) et joue dès la partie suivante. Une équipe inscrite entre au classement avec son premier jar accepté.
 
 | Code | Sens |
 | --- | --- |

@@ -163,7 +163,7 @@ pub struct SubmitConfig {
     pub listen: String,
     /// Équipes inscrites et sha256 de leur token (`isolation-ladder add-team`).
     pub teams: PathBuf,
-    /// Un dossier par équipe : `current.jar`, `history/`. Doit rester privé.
+    /// Un dossier par équipe : `current.jar` seulement. Doit rester privé.
     pub jars: PathBuf,
     pub max_jar_mb: u64,
     /// Délai minimal entre deux soumissions d'une même équipe.

@@ -19,7 +19,7 @@ use super::smoke::{Forfeit, Verdict, smoke_test};
 use crate::arena::{Arena, GameError};
 use crate::config::SubmitConfig;
 use crate::digest::short_hash;
-use crate::journal::{append_jsonl, compact_timestamp};
+use crate::journal::append_jsonl;
 
 pub struct Request<'a, B> {
     pub method: &'a Method,
@@ -175,7 +175,7 @@ impl Submissions {
             .map_err(SubmitError::Stage)?;
         eprintln!("soumission {team} {hash} : smoke test...");
         let outcome = match smoke_test(&self.arena, &self.submit, team, &staging) {
-            Verdict::Accepted => install(&dir, &staging, hash)
+            Verdict::Accepted => install(&dir, &staging)
                 .map(|()| Accepted::Installed(hash.to_string()))
                 .map_err(SubmitError::Install),
             Verdict::Rejected(forfeit) => Err(SubmitError::Rejected(forfeit)),
@@ -247,15 +247,9 @@ fn read_jar(body: impl Read, max_mb: u64) -> Result<Vec<u8>, SubmitError> {
     Ok(jar)
 }
 
-/// Remplace atomiquement le jar actif et garde la version dans `history/`.
-fn install(dir: &Path, staging: &Path, hash: &str) -> io::Result<()> {
-    let history = dir.join("history");
-    fs::create_dir_all(&history)?;
-    let tmp = dir.join("current.jar.tmp");
-    fs::copy(staging, &tmp)?;
-    fs::rename(&tmp, dir.join("current.jar"))?;
-    let stamp = compact_timestamp(&now_rfc3339());
-    fs::rename(staging, history.join(format!("{stamp}-{hash}.jar")))
+/// Remplace atomiquement le jar actif ; l'ancien n'est pas gardé.
+fn install(dir: &Path, staging: &Path) -> io::Result<()> {
+    fs::rename(staging, dir.join("current.jar"))
 }
 
 #[cfg(test)]
@@ -365,14 +359,13 @@ mod tests {
     }
 
     #[test]
-    fn install_replaces_current_and_keeps_history() {
+    fn install_replaces_current_without_keeping_old_versions() {
         let dir = temp_dir("install");
         fs::write(dir.join("current.jar"), b"old").unwrap();
         let staging = dir.join("incoming-abc.jar");
         fs::write(&staging, b"new").unwrap();
-        install(&dir, &staging, "abc").unwrap();
+        install(&dir, &staging).unwrap();
         assert_eq!(fs::read(dir.join("current.jar")).unwrap(), b"new");
-        assert!(!staging.exists());
-        assert_eq!(fs::read_dir(dir.join("history")).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
     }
 }
