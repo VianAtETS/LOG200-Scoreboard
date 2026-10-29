@@ -24,16 +24,15 @@ const PADDED: usize = SIZE as usize + 6;
 const STEPS: [isize; 8] = [-19, -18, -17, -1, 1, 17, 18, 19];
 
 pub fn choose(board: &Board, color: Color, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
-    let mut moves = rules::legal_moves(board, color);
-    moves.shuffle(rng);
-    let &first = moves.first()?;
-    if moves.len() == 1 {
-        return Some(Choice { mv: first, depth: None });
-    }
     let mut board = board.clone();
     let mut search = Search::new(&board, color, deadline);
     let mut ordered = Vec::new();
-    search.order(&board, color, &moves, None, 0, &mut ordered);
+    search.generate(&board, color, None, 0, &mut ordered);
+    ordered.shuffle(rng);
+    let &(_, first) = ordered.first()?;
+    if ordered.len() == 1 {
+        return Some(Choice { mv: first, depth: None });
+    }
     ordered.sort_unstable_by_key(|&(score, _)| Reverse(score));
     let mut moves: Vec<Move> = ordered.into_iter().map(|(_, mv)| mv).collect();
     let mut best = Choice {
@@ -81,7 +80,6 @@ struct Search {
     timed_out: bool,
     hash: u64,
     table: Vec<Entry>,
-    scratch: Vec<Move>,
     buffers: Vec<Vec<(i32, Move)>>,
     killers: [[Option<Move>; 2]; MAX_PLY],
     history: Vec<i32>,
@@ -97,7 +95,6 @@ impl Search {
             timed_out: false,
             hash: cpu::hash(board),
             table: vec![Entry::default(); TABLE_SIZE],
-            scratch: Vec::new(),
             buffers: vec![Vec::new(); MAX_PLY],
             killers: [[None; 2]; MAX_PLY],
             history: vec![0; 2 * CELLS * CELLS],
@@ -105,7 +102,6 @@ impl Search {
         }
     }
 
-    /// Ramène le meilleur coup en tête de `moves`.
     fn root(&mut self, board: &mut Board, moves: &mut [Move], depth: u8) -> Option<(Move, i32)> {
         let other = self.own.other();
         let mut alpha = -INF;
@@ -143,6 +139,9 @@ impl Search {
         if depth == 0 {
             return self.leaf(board, side, ply);
         }
+        if depth == 1 {
+            return self.frontier(board, side, ply, alpha, beta);
+        }
         let slot = self.slot();
         let entry = self.table[slot];
         let mut table_move = None;
@@ -158,19 +157,22 @@ impl Search {
                 return value;
             }
         }
-        if depth == 1 {
-            return self.frontier(board, side, ply, alpha, beta, slot);
-        }
-        rules::generate(board, side, &mut self.scratch);
         let mut moves = std::mem::take(&mut self.buffers[usize::from(ply)]);
-        self.order(board, side, &self.scratch, table_move, ply, &mut moves);
+        let staged = table_move.filter(|&mv| keeps_board_consistent(board, side, mv));
+        if let Some(mv) = staged {
+            moves.clear();
+            moves.push((i32::MAX, mv));
+        } else {
+            self.generate(board, side, table_move, ply, &mut moves);
+        }
         let Some(&(_, mut best_move)) = moves.first() else {
             self.buffers[usize::from(ply)] = moves;
             return loss(ply);
         };
         let original_alpha = alpha;
         let mut best = -INF;
-        for index in 0..moves.len() {
+        let mut index = 0;
+        while index < moves.len() {
             if index < PICKED {
                 pick_best(&mut moves[index..]);
             } else if index == PICKED {
@@ -203,6 +205,14 @@ impl Search {
                     }
                 }
             }
+            index += 1;
+            if index == 1 && staged.is_some() {
+                self.generate(board, side, table_move, ply, &mut moves);
+                pick_best(&mut moves);
+                if Some(moves[0].1) != staged {
+                    index = 0;
+                }
+            }
         }
         self.buffers[usize::from(ply)] = moves;
         if self.timed_out {
@@ -212,44 +222,45 @@ impl Search {
         best
     }
 
-    /// Parcourt les coups dans l'ordre de `rules::generate` sans en dresser la liste
-    fn frontier(&mut self, board: &mut Board, side: Color, ply: u8, alpha: i32, beta: i32, slot: usize) -> i32 {
+    fn frontier(&mut self, board: &mut Board, side: Color, ply: u8, alpha: i32, beta: i32) -> i32 {
         let (from, them) = (board.pawn(side), board.pawn(side.other()));
-        let mut destinations = Squares::new(from);
-        rules::destinations(board, from, |to| destinations.push(to));
-        let destinations = destinations.as_slice();
-        let mut targets = Squares::new(from);
-        let playable = rules::destroy_rings(board.destroyed()).iter().any(|ring| {
-            targets = Squares::new(from);
-            for target in rules::ring(them, ring.clone()).filter(|&target| target == from || board.is_empty(target)) {
-                targets.push(target);
+        let start = padded(from);
+        self.grid.open[start] = true;
+        let mut destinations = self.grid.destinations(from);
+        let destinations = destinations.as_mut_slice();
+        for killer in self.killers[usize::from(ply)].iter().rev().flatten() {
+            if let Some(position) = destinations.iter().position(|&to| to == killer.to) {
+                destinations[..=position].rotate_right(1);
             }
-            match targets.as_slice() {
-                [] => false,
-                &[only] => destinations.iter().any(|&to| to != only),
-                _ => !destinations.is_empty(),
-            }
-        });
-        if !playable {
-            return loss(ply);
         }
+        let destinations = &*destinations;
+        let Some(targets) = targets(&self.grid, board.destroyed(), them, destinations) else {
+            self.grid.open[start] = false;
+            return loss(ply);
+        };
+        let targets = targets.as_slice();
         let destroyed = board.destroyed() + 1;
         let ring = rules::first_ring(destroyed);
-        self.grid.open[padded(from)] = true;
+        let opponent = Pawn::new(&self.grid, them);
+        let gains = Gains::new(&opponent, targets, destroyed);
         let (mut best, mut best_move) = (-INF, None);
+        let mut ceiling = -INF;
         'search: for &to in destinations {
-            let mut moves = targets.as_slice().iter().filter(|&&target| target != to).peekable();
+            let mut moves = targets.iter().filter(|target| target.square != to).peekable();
             if moves.peek().is_none() {
                 continue;
             }
-            self.grid.open[padded(to)] = false;
-            let arrival = Arrival::new(&self.grid, to, them, ring.clone());
-            self.grid.open[padded(to)] = true;
+            let arrival = Arrival::new(&self.grid, to, opponent, ring.clone());
+            let bound = arrival.bound(&gains, destroyed);
+            if bound <= best.max(alpha) {
+                ceiling = ceiling.max(bound);
+                continue;
+            }
             for &target in moves {
                 let mv = Move {
                     from,
                     to,
-                    destroyed: target,
+                    destroyed: target.square,
                 };
                 let value = arrival.value(target, destroyed, ply).unwrap_or_else(|| {
                     board.apply(mv);
@@ -266,14 +277,13 @@ impl Search {
                 }
             }
         }
-        self.grid.open[padded(from)] = false;
-        let Some(best_move) = best_move else {
-            return loss(ply);
-        };
-        if best >= beta {
-            self.reward(side, best_move, 1, ply);
+        self.grid.open[start] = false;
+        let best = best.max(ceiling);
+        if let Some(mv) = best_move
+            && best >= beta
+        {
+            self.reward(side, mv, 1, ply);
         }
-        self.store(slot, best_move, best, 1, ply, bound(best, alpha, beta));
         best
     }
 
@@ -302,46 +312,42 @@ impl Search {
         if side == own { value } else { -value }
     }
 
-    /// Remplace `out` par `moves` notés, sans les trier.
-    fn order(
-        &self,
-        board: &Board,
-        side: Color,
-        moves: &[Move],
-        table_move: Option<Move>,
-        ply: u8,
-        out: &mut Vec<(i32, Move)>,
-    ) {
+    fn generate(&mut self, board: &Board, side: Color, table_move: Option<Move>, ply: u8, out: &mut Vec<(i32, Move)>) {
         out.clear();
-        let grid = &self.grid;
-        let mut threatened = [false; PADDED * PADDED];
-        let them = padded(board.pawn(side.other()));
-        for step in STEPS {
-            let mut current = them;
-            for _ in 0..grid.ray(them, step) {
-                current = current.wrapping_add_signed(step);
-                threatened[current] = true;
-            }
-        }
-        let mut reach = [u8::MAX; CELLS];
+        let (from, them) = (board.pawn(side), board.pawn(side.other()));
+        let opponent = Pawn::new(&self.grid, them);
+        let destinations = self.grid.destinations(from);
+        self.grid.open[padded(from)] = true;
+        let targets = targets(&self.grid, board.destroyed(), them, destinations.as_slice());
+        self.grid.open[padded(from)] = false;
+        let Some(targets) = targets else {
+            return;
+        };
         let killers = self.killers[usize::from(ply)];
-        for &mv in moves {
-            let score = if Some(mv) == table_move {
-                i32::MAX
-            } else if Some(mv) == killers[0] {
-                i32::MAX - 1
-            } else if Some(mv) == killers[1] {
-                i32::MAX - 2
-            } else {
-                let to = mv.to.index();
-                if reach[to] == u8::MAX {
-                    let start = padded(mv.to);
-                    reach[to] = STEPS.into_iter().map(|step| grid.ray(start, step)).sum();
-                }
-                let heuristic = i32::from(reach[to]) + 8 * i32::from(threatened[padded(mv.destroyed)]);
-                self.history[history_index(side, mv)] + STATIC_WEIGHT * heuristic
-            };
-            out.push((score, mv));
+        for &to in destinations.as_slice() {
+            let center = padded(to);
+            let reach: i32 = STEPS
+                .into_iter()
+                .map(|step| i32::from(self.grid.ray(center, step)))
+                .sum();
+            for target in targets.as_slice().iter().filter(|target| target.square != to) {
+                let mv = Move {
+                    from,
+                    to,
+                    destroyed: target.square,
+                };
+                let score = if Some(mv) == table_move {
+                    i32::MAX
+                } else if Some(mv) == killers[0] {
+                    i32::MAX - 1
+                } else if Some(mv) == killers[1] {
+                    i32::MAX - 2
+                } else {
+                    let threatened = target.distance.unsigned_abs() <= opponent.rays[target.direction];
+                    self.history[history_index(side, mv)] + STATIC_WEIGHT * (reach + 8 * i32::from(threatened))
+                };
+                out.push((score, mv));
+            }
         }
     }
 
@@ -392,7 +398,6 @@ impl Search {
     }
 }
 
-/// Le plateau entouré de 3 rangées de cases fermées pour suivre les rayons sans tester les bords
 struct Grid {
     open: [bool; PADDED * PADDED],
 }
@@ -411,17 +416,24 @@ impl Grid {
         self.open == Self::new(board).open
     }
 
-    fn ray(&self, start: usize, step: isize) -> u8 {
-        let mut length = 0;
-        let mut current = start;
-        while length < 3 {
-            current = current.wrapping_add_signed(step);
-            if !self.open[current] {
-                break;
+    fn destinations(&self, square: Square) -> Stack<Square, 24> {
+        let start = padded(square);
+        let mut destinations = Stack::new(square);
+        for step in STEPS {
+            let mut current = start;
+            for _ in 0..self.ray(start, step) {
+                current = current.wrapping_add_signed(step);
+                destinations.extend(SQUARES[current]);
             }
-            length += 1;
         }
-        length
+        destinations
+    }
+
+    fn ray(&self, start: usize, step: isize) -> u8 {
+        let one = self.open[start.wrapping_add_signed(step)];
+        let two = one & self.open[start.wrapping_add_signed(2 * step)];
+        let three = two & self.open[start.wrapping_add_signed(3 * step)];
+        u8::from(one) + u8::from(two) + u8::from(three)
     }
 }
 
@@ -429,91 +441,212 @@ fn padded(square: Square) -> usize {
     (usize::from(square.y()) + 3) * PADDED + usize::from(square.x()) + 3
 }
 
-/// Jusqu'à 24 cases sans allocation.
-struct Squares {
-    squares: [Square; 24],
+#[expect(clippy::cast_possible_truncation, reason = "moins de 256 lignes et colonnes")]
+const SQUARES: [Option<Square>; PADDED * PADDED] = {
+    let mut squares = [None; PADDED * PADDED];
+    let mut index = 0;
+    while index < PADDED * PADDED {
+        let (x, y) = ((index % PADDED) as u8, (index / PADDED) as u8);
+        squares[index] = Square::new(x.wrapping_sub(3), y.wrapping_sub(3));
+        index += 1;
+    }
+    squares
+};
+
+struct Stack<T, const N: usize> {
+    items: [T; N],
     len: usize,
 }
 
-impl Squares {
-    const fn new(filler: Square) -> Self {
+impl<T: Copy, const N: usize> Stack<T, N> {
+    const fn new(filler: T) -> Self {
         Self {
-            squares: [filler; 24],
+            items: [filler; N],
             len: 0,
         }
     }
 
-    fn push(&mut self, square: Square) {
-        self.squares[self.len] = square;
+    fn push(&mut self, item: T) {
+        self.items[self.len] = item;
         self.len += 1;
     }
 
-    fn as_slice(&self) -> &[Square] {
-        &self.squares[..self.len]
+    fn extend(&mut self, items: impl IntoIterator<Item = T>) {
+        for item in items {
+            self.push(item);
+        }
+    }
+
+    fn as_slice(&self) -> &[T] {
+        &self.items[..self.len]
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [T] {
+        &mut self.items[..self.len]
     }
 }
 
-/// Le plateau après le déplacement vers `to`, avant la destruction.
+#[derive(Clone, Copy)]
+struct Target {
+    square: Square,
+    direction: usize,
+    distance: i8,
+}
+
+fn targets(grid: &Grid, destroyed: u32, them: Square, destinations: &[Square]) -> Option<Stack<Target, 16>> {
+    let center = padded(them);
+    rules::destroy_rings(destroyed).iter().find_map(|ring| {
+        let mut targets = Stack::new(Target {
+            square: them,
+            direction: 0,
+            distance: 0,
+        });
+        for (direction, step) in STEPS.into_iter().enumerate() {
+            for distance in ring.clone() {
+                let index = center.wrapping_add_signed(step * isize::from(distance));
+                if let Some(square) = SQUARES[index].filter(|_| grid.open[index]) {
+                    targets.push(Target {
+                        square,
+                        direction,
+                        distance,
+                    });
+                }
+            }
+        }
+        let playable = match targets.as_slice() {
+            [] => false,
+            [only] => destinations.iter().any(|&to| to != only.square),
+            _ => !destinations.is_empty(),
+        };
+        playable.then_some(targets)
+    })
+}
+
+#[derive(Clone, Copy)]
+struct Pawn {
+    square: Square,
+    rays: [u8; 8],
+    mobility: i32,
+    free: i32,
+}
+
+impl Pawn {
+    fn new(grid: &Grid, square: Square) -> Self {
+        let center = padded(square);
+        let rays = STEPS.map(|step| grid.ray(center, step));
+        Self {
+            square,
+            rays,
+            mobility: rays.iter().map(|&length| i32::from(length)).sum(),
+            free: rays.iter().map(|&length| i32::from(length > 0)).sum(),
+        }
+    }
+
+    fn blocked(mut self, square: Square) -> Self {
+        if let Some((direction, distance)) = alignment(self.square, square) {
+            let length = &mut self.rays[direction];
+            if distance.unsigned_abs() <= *length {
+                let shorter = distance.unsigned_abs() - 1;
+                self.mobility -= i32::from(*length - shorter);
+                *length = shorter;
+            }
+            self.free -= i32::from(distance == 1);
+        }
+        self
+    }
+}
+
+struct Gains {
+    best: (i32, Square),
+    second: i32,
+    cut: i32,
+}
+
+impl Gains {
+    fn new(opponent: &Pawn, targets: &[Target], destroyed: u32) -> Self {
+        let mut gains = Self {
+            best: (i32::MIN, opponent.square),
+            second: i32::MIN,
+            cut: 0,
+        };
+        for target in targets {
+            let cut = cut(Some((target.direction, target.distance)), opponent.rays);
+            let gain = cpu::level_three(destroyed, 0, cut, i32::from(target.distance == 1));
+            if gain > gains.best.0 {
+                gains.second = gains.best.0;
+                gains.best = (gain, target.square);
+            } else {
+                gains.second = gains.second.max(gain);
+            }
+            gains.cut = gains.cut.max(cut);
+        }
+        gains
+    }
+}
+
 struct Arrival {
     to: Square,
-    them: Square,
-    /// Celui qui joue, puis l'adversaire.
-    mobility: [i32; 2],
-    rays: [[u8; 8]; 2],
-    free: [i32; 2],
+    mine: Pawn,
+    theirs: Pawn,
     ring: RangeInclusive<i8>,
     ring_count: i32,
     edges: i32,
 }
 
 impl Arrival {
-    fn new(grid: &Grid, to: Square, them: Square, ring: RangeInclusive<i8>) -> Self {
-        let centers = [padded(to), padded(them)];
-        let rays = centers.map(|center| STEPS.map(|step| grid.ray(center, step)));
-        let mobility = rays.map(|lengths| lengths.iter().map(|&length| i32::from(length)).sum());
-        let free = centers.map(|center| {
-            STEPS
-                .into_iter()
-                .map(|step| i32::from(grid.open[center.wrapping_add_signed(step)]))
-                .sum()
-        });
+    fn new(grid: &Grid, to: Square, opponent: Pawn, ring: RangeInclusive<i8>) -> Self {
+        let center = padded(to);
+        let them = padded(opponent.square);
         let mut ring_count = 0;
         for step in STEPS {
             for k in ring.clone() {
-                let square = centers[0].wrapping_add_signed(step * isize::from(k));
-                ring_count += i32::from(square == centers[1] || grid.open[square]);
+                let square = center.wrapping_add_signed(step * isize::from(k));
+                ring_count += i32::from(square == them || grid.open[square]);
             }
         }
         Self {
             to,
-            them,
-            mobility,
-            rays,
-            free,
+            mine: Pawn::new(grid, to),
+            theirs: opponent.blocked(to),
             ring,
             ring_count,
-            edges: cpu::edge_distance(to) - cpu::edge_distance(them),
+            edges: cpu::edge_distance(to) - cpu::edge_distance(opponent.square),
         }
     }
 
-    /// `None` quand il faut jouer le coup pour savoir si l'adversaire peut encore jouer.
-    fn value(&self, square: Square, destroyed: u32, ply: u8) -> Option<i32> {
-        let theirs = self.mobility[1] - cut(alignment(self.them, square), self.rays[1]);
+    fn value(&self, target: Target, destroyed: u32, ply: u8) -> Option<i32> {
+        let theirs = self.theirs.mobility - cut(Some((target.direction, target.distance)), self.theirs.rays);
         if theirs == 0 {
             return Some(-loss(ply + 1));
         }
-        let line = alignment(self.to, square);
+        let line = alignment(self.to, target.square);
         let in_ring = line.is_some_and(|(_, distance)| self.ring.contains(&distance));
         if self.ring_count - i32::from(in_ring) < 2 {
             return None;
         }
-        let mine = self.mobility[0] - cut(line, self.rays[0]);
-        let free = (self.free[0] - adjacent(square, self.to)) - (self.free[1] - adjacent(square, self.them));
+        let mine = self.mine.mobility - cut(line, self.mine.rays);
+        let free =
+            (self.mine.free - adjacent(target.square, self.to)) - (self.theirs.free - i32::from(target.distance == 1));
         Some(cpu::level_three(destroyed, self.edges, mine - theirs, free))
+    }
+
+    fn bound(&self, gains: &Gains, destroyed: u32) -> i32 {
+        if self.ring_count <= 2 || self.theirs.mobility <= gains.cut {
+            return INF;
+        }
+        let gain = if gains.best.1 == self.to {
+            gains.second
+        } else {
+            gains.best.0
+        };
+        let (mobility, free) = (
+            self.mine.mobility - self.theirs.mobility,
+            self.mine.free - self.theirs.free,
+        );
+        cpu::level_three(destroyed, self.edges, mobility, free) + gain
     }
 }
 
-/// Les destinations perdues si la case alignée ainsi (voir `alignment`) est détruite.
 fn cut(line: Option<(usize, i8)>, rays: [u8; 8]) -> i32 {
     line.map_or(0, |(direction, distance)| {
         (i32::from(rays[direction]) - i32::from(distance) + 1).max(0)
@@ -535,6 +668,13 @@ fn adjacent(a: Square, b: Square) -> i32 {
     i32::from(a.x().abs_diff(b.x()) <= 1 && a.y().abs_diff(b.y()) <= 1)
 }
 
+fn keeps_board_consistent(board: &Board, side: Color, mv: Move) -> bool {
+    mv.from == board.pawn(side)
+        && mv.to != mv.destroyed
+        && board.is_empty(mv.to)
+        && (mv.destroyed == mv.from || board.is_empty(mv.destroyed))
+}
+
 const fn bound(value: i32, alpha: i32, beta: i32) -> Bound {
     if value <= alpha {
         Bound::Upper
@@ -554,7 +694,6 @@ fn loss(ply: u8) -> i32 {
     i32::from(ply) - WIN
 }
 
-/// Dans la table, les victoires se comptent depuis le nœud.
 fn to_table(value: i32, ply: u8) -> i32 {
     match value {
         v if v > WIN_BOUND => v + i32::from(ply),
@@ -612,9 +751,11 @@ mod tests {
         let mut search = Search::new(&scratch, color, far());
         let start = search.hash;
         let mut moves = rules::legal_moves(board, color);
-        let (_, value) = search.root(&mut scratch, &mut moves, depth).unwrap();
-        let expected = brute(&search, &mut board.clone(), color, depth, 0);
-        assert_eq!(value, expected, "profondeur {depth}\n{board}");
+        for depth in 1..=depth {
+            let (_, value) = search.root(&mut scratch, &mut moves, depth).unwrap();
+            let expected = brute(&search, &mut board.clone(), color, depth, 0);
+            assert_eq!(value, expected, "profondeur {depth}\n{board}");
+        }
         assert_eq!(&scratch, board);
         assert_eq!(search.hash, start);
         assert!(search.grid.matches(board));
@@ -623,9 +764,7 @@ mod tests {
     #[test]
     fn root_value_matches_brute_force() {
         for (board, color) in positions(11, 6, 30) {
-            for depth in 1..=2 {
-                assert_root_matches_brute_force(&board, color, depth);
-            }
+            assert_root_matches_brute_force(&board, color, 2);
         }
         for (board, color) in positions(5, 4, 12) {
             assert_root_matches_brute_force(&board, color, 3);
@@ -645,17 +784,27 @@ mod tests {
         let (mut fast, mut slow) = (0, 0);
         for (board, color) in boards {
             let search = Search::new(&board, color, far());
-            let them = board.pawn(color.other());
+            let (from, them) = (board.pawn(color), board.pawn(color.other()));
             let destroyed = board.destroyed() + 1;
+            let mut grid = Grid::new(&board);
+            grid.open[padded(from)] = true;
+            let opponent = Pawn::new(&grid, them);
+            let destinations: Vec<Square> = rules::legal_moves(&board, color).iter().map(|mv| mv.to).collect();
+            let targets = targets(&grid, board.destroyed(), them, &destinations).unwrap();
+            let gains = Gains::new(&opponent, targets.as_slice(), destroyed);
             for mv in rules::legal_moves(&board, color) {
-                let mut grid = Grid::new(&board);
-                grid.open[padded(mv.from)] = true;
-                grid.open[padded(mv.to)] = false;
-                let arrival = Arrival::new(&grid, mv.to, them, rules::first_ring(destroyed));
+                let arrival = Arrival::new(&grid, mv.to, opponent, rules::first_ring(destroyed));
                 let mut after = board.clone();
                 after.apply(mv);
                 let expected = -search.leaf(&after, color.other(), 1);
-                if let Some(value) = arrival.value(mv.destroyed, destroyed, 0) {
+                assert!(expected <= arrival.bound(&gains, destroyed), "{mv}\n{board}");
+                let (direction, distance) = alignment(them, mv.destroyed).unwrap();
+                let target = Target {
+                    square: mv.destroyed,
+                    direction,
+                    distance,
+                };
+                if let Some(value) = arrival.value(target, destroyed, 0) {
                     assert_eq!(value, expected, "{mv}\n{board}");
                     fast += 1;
                 } else {
@@ -664,6 +813,20 @@ mod tests {
             }
         }
         assert!(fast > 10 * slow, "{fast} rapides, {slow} lents");
+    }
+
+    #[test]
+    fn generate_follows_the_rules() {
+        let mut boards = positions(11, 6, 30);
+        boards.extend(positions(4, 30, 60));
+        for (board, color) in boards {
+            let mut search = Search::new(&board, color, far());
+            let mut scored = Vec::new();
+            search.generate(&board, color, None, 0, &mut scored);
+            let moves: Vec<Move> = scored.into_iter().map(|(_, mv)| mv).collect();
+            assert_eq!(moves, rules::legal_moves(&board, color), "\n{board}");
+            assert!(search.grid.matches(&board));
+        }
     }
 
     #[test]
@@ -726,7 +889,6 @@ mod tests {
         assert!(start.elapsed() < Duration::from_millis(400), "{:?}", start.elapsed());
     }
 
-    /// `cargo test --release --lib engine::tests::bench -- --ignored --nocapture`
     #[test]
     #[ignore = "mesure de vitesse, à lancer en release"]
     fn bench() {
