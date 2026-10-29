@@ -98,6 +98,7 @@ impl Arena {
             team: team.id.clone(),
             build: build_hash(team),
             anchor: team.anchor,
+            remote: false,
         };
         let (red_entry, black_entry) = (entry(red), entry(black));
         let vars = Vars {

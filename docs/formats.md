@@ -130,6 +130,7 @@ Une ligne JSON par partie terminée, en ajout seul. Chaque ligne reprend l'objet
 
 - `build` : les 16 premiers caractères hexadécimaux du sha256 du jar. Un nouveau hash correspond à une nouvelle soumission : le rating est conservé mais repasse en K provisoire.
 - `anchor` (absent par défaut) : joueur de référence dont le rating reste à 1500. Sans ancre, le classement est relatif entre les équipes.
+- `remote` (absent par défaut) : l'équipe a joué depuis sa propre machine. Le serveur n'a pas vu son code, et `build` est celui qu'elle déclare.
 - Chaque ligne part en une seule écriture suivie d'un flush. Un lecteur peut donc tomber sur une dernière ligne incomplète ; la page et `isolation-check` l'ignorent, comme les versions inconnues.
 
 ## Fichiers de la page (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`, `data/live.json`)
@@ -158,8 +159,9 @@ Une ligne de partie (dans `recent` et `teams/`) reprend la partie sans les coups
 ```
 
 - `all` et `session` : rating après la partie et variation, toutes sessions confondues puis dans la session de la partie.
+- `remote` (absent par défaut) : comme dans `games.jsonl`.
 - `at` : position et longueur de la ligne complète dans `games.jsonl`. Le replay la lit avec `Range: bytes=<début>-<fin>`.
-- Une ligne de `ratings` : `team`, `rating`, `games`, `wins`, `losses`, `build_games` et `build_wins` (parties et victoires du build courant, base du % V), `anchor`, `provisional`, `build`, `last` (dernière partie), et `pace` (absent sans temps mesurés) : `p50`, `p95`, `p99`, `max` et `count` des temps par coup du build courant, `limit` le plus petit temps alloué.
+- Une ligne de `ratings` : `team`, `rating`, `games`, `wins`, `losses`, `build_games` et `build_wins` (parties et victoires du build courant, base du % V), `anchor`, `provisional`, `remote` (le build courant a joué au moins une partie à distance : badge « distant »), `build`, `last` (dernière partie), et `pace` (absent sans temps mesurés) : `p50`, `p95`, `p99`, `max` et `count` des temps par coup du build courant, `limit` le plus petit temps alloué.
 - Au démarrage, le ladder réécrit `teams/`, `timeline.jsonl` et `summary.json` à partir de `games.jsonl`. Une équipe dont le nom n'est pas fait de lettres, chiffres, `-` et `_` (64 au plus) n'a pas de fichier d'équipe.
 
 ## Protocole des clients

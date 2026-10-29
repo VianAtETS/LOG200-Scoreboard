@@ -47,7 +47,8 @@
                             <th scope="col">Équipe</th>
                             <th scope="col" class="num">Elo</th>
                             <th scope="col" class="num"><abbr title="Victoires et défaites">V–D</abbr></th>
-                            <th scope="col" class="num"><abbr title="Pourcentage de victoires, version actuelle">% V</abbr></th>
+                            <th scope="col" class="num"><abbr title="Pourcentage de victoires, version actuelle">%
+                                    V</abbr></th>
                             <th scope="col" class="num pace">
                                 <abbr title="95e centile du temps par coup, version actuelle">p95</abbr>
                             </th>
@@ -70,6 +71,9 @@
                         1500.</span>
                     <span id="bot-note" hidden>Une ligne grisée marquée <span class="badge">bot</span> est un
                         adversaire de référence, pas une équipe.</span>
+                    <span id="remote-note" hidden>Une équipe marquée <span class="badge remote">distant</span> joue
+                        depuis sa propre machine : le serveur ne voit pas son code, ne limite ni ses coeurs ni sa
+                        mémoire, et compte la latence réseau dans son temps.</span>
                     Temps par coup du ladder : <span id="time-ms">?</span> ms, contre 5000 ms au tournoi.
                 </p>
             </details>
@@ -157,8 +161,7 @@
                 <ul id="chips" class="chips" aria-label="Équipes choisies"></ul>
                 <input id="picker-input" class="picker-input" type="text" role="combobox"
                     aria-label="Ajouter une équipe" aria-expanded="false" aria-controls="picker-list"
-                    aria-autocomplete="list" placeholder="Filtrer par équipe" autocomplete="off"
-                    spellcheck="false" />
+                    aria-autocomplete="list" placeholder="Filtrer par équipe" autocomplete="off" spellcheck="false" />
                 <button id="picker-clear" class="picker-icon" type="button" aria-label="Retirer toutes les équipes">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M6 6l12 12M18 6L6 18" />

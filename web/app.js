@@ -32,6 +32,8 @@ const RECENT_GAMES = 50
 const PLAY_MS = 500
 // p99 au-delà de cette part du temps par coup : l'équipe frôle le timeout.
 const PACE_WARN = 0.8
+const REMOTE_TITLE =
+    "Joue depuis la machine de l'équipe : code non vérifié, sans limite de coeurs ni de mémoire, latence réseau comptée"
 const SESSION = params.get('session')
 const GAME = params.get('game')
 const WINDOW = params.get('window') ?? GLOBAL
@@ -225,6 +227,10 @@ function version(player) {
     return n ? `v${n}` : ''
 }
 
+function remoteBadge() {
+    return el('span', { class: 'badge remote', title: REMOTE_TITLE }, 'distant')
+}
+
 function paceCell(pace) {
     if (!pace) return el('td', { class: 'num pace' })
     const title = `Médiane ${pace.p50} ms, p99 ${pace.p99} ms, max ${pace.max} ms, ${pace.count} coups`
@@ -237,6 +243,7 @@ function renderRanking(ratings) {
     $('anchor-note').hidden = !ratings.some((r) => r.anchor)
     const isBot = (r) => !r.build
     $('bot-note').hidden = !ratings.some(isBot)
+    $('remote-note').hidden = !ratings.some((r) => r.remote)
     $('ranking')
         .querySelector('tbody')
         .replaceChildren(
@@ -245,6 +252,7 @@ function renderRanking(ratings) {
                 const team = el('td', { class: 'team', title: r.team }, r.team)
                 const v = version(r)
                 if (v) team.append(el('span', { class: 'badge', title: `Build ${r.build}` }, v))
+                if (r.remote) team.append(remoteBadge())
                 if (bot) team.append(el('span', { class: 'badge', title: 'Adversaire de référence' }, 'bot'))
                 if (r.anchor) team.append(el('span', { class: 'badge anchor' }, 'ancre'))
                 if (r.provisional) team.append(el('span', { class: 'badge' }, 'provisoire'))
@@ -381,6 +389,7 @@ function renderGames(list, key) {
                     { class: `side ${color}${g.winner === color ? ' winner' : ''}` },
                     el('span', {}, g[color].team)
                 )
+                if (g[color].remote) node.append(remoteBadge())
                 const d = change(color)
                 if (d) {
                     const title = `Elo après la partie : ${Math.round(g[color][key][0])}`
@@ -388,7 +397,8 @@ function renderGames(list, key) {
                 }
                 return node
             }
-            const who = (color, name) => `${g[color].team} (${name}${change(color) ? `, ${signed(change(color))}` : ''})`
+            const who = (color, name) =>
+                `${g[color].team} (${name}${g[color].remote ? ', distant' : ''}${change(color) ? `, ${signed(change(color))}` : ''})`
             const button = el(
                 'button',
                 {
@@ -449,10 +459,11 @@ async function showGame(row, pinned = replay.pinned) {
     const loser = g.winner === 'red' ? 'black' : 'red'
     const ending = ENDINGS[g.reason]?.(g[loser].team) ?? g.reason
     const name = (color) => [g[color].team, version(g[color])].filter(Boolean).join(' ')
+    const player = (color) => [el('strong', {}, name(color)), ...(g[color].remote ? [remoteBadge()] : [])]
     $('replay-info').replaceChildren(
-        el('strong', {}, name('red')),
+        ...player('red'),
         ' (rouge) contre ',
-        el('strong', {}, name('black')),
+        ...player('black'),
         ` (noir) : ${g[g.winner].team} gagne, ${ending}.`
     )
     for (const button of $('games').querySelectorAll('.game')) {

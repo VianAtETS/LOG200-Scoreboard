@@ -418,6 +418,18 @@ tbody tr:first-child .elo {
     color: var(--ink);
 }
 
+/* Pointillé : résultat non vérifié par le serveur. */
+.badge.remote {
+    border-style: dashed;
+    border-color: var(--muted);
+    color: var(--ink);
+}
+
+.side .badge {
+    flex: none;
+    margin-left: 0;
+}
+
 .running {
     display: grid;
     gap: 4px;

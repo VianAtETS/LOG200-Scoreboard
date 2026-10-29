@@ -83,6 +83,7 @@ struct Standing {
     build: Option<String>,
     games_on_build: u32,
     wins_on_build: u32,
+    remote_on_build: bool,
     last: String,
     paces: HashMap<Option<String>, Pace>,
 }
@@ -110,6 +111,7 @@ impl Scope {
             build: None,
             games_on_build: 0,
             wins_on_build: 0,
+            remote_on_build: false,
             last: String::new(),
             paces: HashMap::new(),
         });
@@ -119,7 +121,9 @@ impl Scope {
             s.build.clone_from(&player.build);
             s.games_on_build = 0;
             s.wins_on_build = 0;
+            s.remote_on_build = false;
         }
+        s.remote_on_build |= player.remote;
         s
     }
 
@@ -209,6 +213,7 @@ impl Scope {
                 build_wins: s.wins_on_build,
                 anchor: s.anchor,
                 provisional: !s.anchor && s.games_on_build < PROVISIONAL_GAMES,
+                remote: s.remote_on_build,
                 build: s.build.as_deref(),
                 last: &s.last,
                 pace: s.paces.get(&s.build).map(Pace::view),
@@ -231,6 +236,8 @@ struct Side {
     team: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     build: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    remote: bool,
     /// Rating après la partie et variation, toutes sessions puis dans la session.
     all: [f64; 2],
     session: [f64; 2],
@@ -298,6 +305,7 @@ struct RatingRow<'a> {
     build_wins: u32,
     anchor: bool,
     provisional: bool,
+    remote: bool,
     build: Option<&'a str>,
     last: &'a str,
     pace: Option<PaceView>,
@@ -398,6 +406,7 @@ impl Standings {
         let side = |player: &Player, color: Color| Side {
             team: player.team.clone(),
             build: player.build.clone(),
+            remote: player.remote,
             all: all[color],
             session: in_session[color],
         };
@@ -463,6 +472,7 @@ mod tests {
             team: team.into(),
             build: None,
             anchor: false,
+            remote: false,
         }
     }
 
@@ -538,6 +548,31 @@ mod tests {
         assert!(a.provisional);
         assert_eq!((a.games, a.build), (PROVISIONAL_GAMES + 1, Some("v2")));
         assert_eq!((a.build_games, a.build_wins), (1, 1));
+    }
+
+    #[test]
+    fn remote_follows_the_current_build_and_the_game_rows() {
+        let mut standings = Standings {
+            dir: PathBuf::from("d"),
+            all: Scope::default(),
+            sessions: HashMap::new(),
+            builds: BTreeMap::new(),
+        };
+        let mut g = game("a", "b", Color::Red);
+        g.red.build = Some("v1".into());
+        g.red.remote = true;
+        let row = serde_json::to_value(standings.play(&g, 0..1)).unwrap();
+        assert_eq!(row["red"]["remote"], true);
+        assert!(row["black"].get("remote").is_none());
+        g.red.remote = false;
+        standings.play(&g, 1..2);
+        let ratings = standings.all.ratings();
+        assert!(rating(&ratings, "a").remote);
+        assert!(!rating(&ratings, "b").remote);
+
+        g.red.build = Some("v2".into());
+        standings.play(&g, 2..3);
+        assert!(!rating(&standings.all.ratings(), "a").remote);
     }
 
     #[test]

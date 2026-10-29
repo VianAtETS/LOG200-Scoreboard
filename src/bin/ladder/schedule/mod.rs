@@ -281,6 +281,7 @@ mod tests {
             team: team.into(),
             build: (!bots.contains(&team)).then(|| format!("{team}-build")),
             anchor: false,
+            remote: false,
         };
         GameRecord {
             id: format!("20261024T120000.000Z-{red}-{black}"),

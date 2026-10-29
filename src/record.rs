@@ -55,6 +55,9 @@ pub struct Player {
     /// Joueur de référence : rating fixe dans le classement.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub anchor: bool,
+    /// Joué depuis la machine de l'équipe : code non vérifié, `build` déclaré par l'équipe.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remote: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -208,11 +211,13 @@ mod tests {
                 team: "eq01".into(),
                 build: Some("abc".into()),
                 anchor: false,
+                remote: false,
             },
             black: Player {
                 team: "eq02".into(),
                 build: None,
                 anchor: true,
+                remote: false,
             },
             result: GameResult {
                 v: RECORD_VERSION,
@@ -259,6 +264,16 @@ mod tests {
         assert!(v["black"].get("build").is_none());
         assert_eq!(v["black"]["anchor"], true);
         assert!(v["red"].get("anchor").is_none());
+    }
+
+    #[test]
+    fn remote_is_written_only_when_set() {
+        let mut game = sample();
+        assert!(serde_json::to_value(&game).unwrap()["red"].get("remote").is_none());
+        game.red.remote = true;
+        let line = serde_json::to_string(&game).unwrap();
+        assert!(line.contains(r#""red":{"team":"eq01","build":"abc","remote":true}"#));
+        assert_eq!(Jsonl::parse(&line).games, vec![game]);
     }
 
     #[test]
