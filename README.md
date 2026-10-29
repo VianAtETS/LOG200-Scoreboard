@@ -72,7 +72,7 @@ Only the bot uses full LTO and one codegen unit, giving the compiler more optimi
 ```sh
 cargo build --release --bin isolation-referee --bin isolation-ladder --bin isolation-check
 cargo build --profile bot --bin isolation-bot
-sandbox/build.sh                     # sandbox image (needs Docker with gVisor)
+sandbox/build.sh                     # sandbox images (needs Docker with gVisor)
 cp ladder.example.toml ladder.toml   # teams, time per move, session
 target/release/isolation-ladder ladder.toml
 npx http-server . -p 8000            # then open http://localhost:8000/web/

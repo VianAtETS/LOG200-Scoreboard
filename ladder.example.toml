@@ -42,6 +42,7 @@ team_cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "{jar}"]
 
 # Exporte en SANDBOX_<CLE> pour les scripts de sandbox/. Les limites s'appliquent a chaque joueur.
 [sandbox]
+# Les jars tournent dans l'image <image>-jar, sans nos binaires (autre nom : jar_image).
 image = "isolation-sandbox"
 runtime = "runsc-host-uds"
 rundir = "/tmp/isolation-ladder"

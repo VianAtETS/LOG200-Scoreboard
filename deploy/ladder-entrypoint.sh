@@ -15,8 +15,10 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Instantane si rien n'a change (cache dans le volume du Docker interne).
+# Instantane si rien n'a change (cache dans le volume du Docker interne). Les jars tournent dans
+# l'image -jar, sans nos binaires.
 docker build -q -t isolation-sandbox /opt/sandbox-image > /dev/null
+docker build -q -t isolation-sandbox-jar --target jar /opt/sandbox-image > /dev/null
 
 mkdir -p /srv/site
 cp -r /opt/web/. /srv/site/

@@ -203,6 +203,7 @@ Ce que ça garantit, vérifié avec des jars hostiles :
 - Pas de réseau : ni Internet ni DNS.
 - Un jar n'atteint que la socket de sa couleur, et chaque relais n'accepte qu'une connexion. Il ne peut donc pas en ouvrir une seconde pour jouer à la place de l'adversaire. Sous gVisor, deux conteneurs ne partagent pas de loopback, d'où les sockets Unix.
 - Le jar tourne en `nobody`, sans capacités, sur un système de fichiers en lecture seule (sauf un `/tmp` de 64 Mo). Il ne voit ni le jar ni la socket de l'adversaire, et ne peut pas tuer son relais.
+- Les jars tournent dans une image sans nos binaires (`isolation-sandbox-jar`), et `/tmp` est `noexec`. Un jar ne peut donc lancer ni `isolation-bot --strategy niveau-4` à sa place, ni un binaire natif qu'il embarquerait.
 - Mémoire, processus et CPU sont plafonnés, avec un cœur dédié par couleur. Un dépassement de mémoire tue le conteneur du joueur, pas la machine. Les threads Java ne comptent pas dans le plafond de processus.
 - Plusieurs parties peuvent se jouer en même temps, une par `[[slot]]` de `ladder.toml`. Chaque slot remplace les clés de `[sandbox]` qu'il redéfinit, en pratique `cpuset_red` et `cpuset_black` : deux parties ne partagent jamais un cœur. Une équipe ne joue qu'une paire à la fois, et une paire n'est lancée que si elle fait partie des moins jouées. Sans `[[slot]]`, une seule partie à la fois. Les smoke tests prennent eux aussi un slot libre.
 - Les conteneurs et les sockets sont supprimés après chaque partie, et au démarrage du ladder après un arrêt brutal.
@@ -215,7 +216,7 @@ Sur la machine du ladder, il faut Docker et gVisor, avec ce runtime dans `/etc/d
 { "runtimes": { "runsc-host-uds": { "path": "/usr/bin/runsc", "runtimeArgs": ["--host-uds=all"] } } }
 ```
 
-`--host-uds` laisse les bacs à sable se connecter aux sockets Unix des répertoires montés ; seul le répertoire de la partie l'est. `sandbox/build.sh` construit ensuite l'image `isolation-sandbox` (Java 24, socat et nos binaires).
+`--host-uds` laisse les bacs à sable se connecter aux sockets Unix des répertoires montés ; seul le répertoire de la partie l'est. `sandbox/build.sh` construit ensuite deux images : `isolation-sandbox` (Java 24, socat et nos binaires), pour l'arbitre et les bots, et `isolation-sandbox-jar` (la même sans nos binaires), pour les jars.
 
 ## Soumission des jars
 
@@ -277,7 +278,7 @@ act workflow_dispatch -P ubuntu-latest=catthehacker/ubuntu:act-latest --network 
 ```sh
 cargo build --release --bin isolation-referee --bin isolation-ladder --bin isolation-check
 cargo build --profile bot --bin isolation-bot
-sandbox/build.sh                            # image des bacs a sable
+sandbox/build.sh                            # images des bacs a sable
 cp ladder.example.toml ladder.toml          # equipes, temps, session
 target/release/isolation-ladder ladder.toml # Ctrl+C pour arreter, relancer reprend la session
 target/release/isolation-check data/games.jsonl

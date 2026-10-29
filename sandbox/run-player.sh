@@ -24,10 +24,13 @@ if [ -n "${SANDBOX_HOST_ALIAS:-}" ]; then
     args+=(--add-host "$SANDBOX_HOST_ALIAS:127.0.0.1")
 fi
 
+# Les jars tournent dans l'image sans nos binaires : ils ne peuvent pas lancer isolation-bot.
 if [ "$1" = --bot ]; then
+    image=$SANDBOX_IMAGE
     cmd=(isolation-bot --strategy "$2" --port "$port")
 else
+    image=${SANDBOX_JAR_IMAGE:-$SANDBOX_IMAGE-jar}
     args+=(-v "$(realpath "$1"):/bot.jar:ro")
     cmd=(java -XX:-UsePerfData -Djava.net.preferIPv4Stack=true "-Xmx$SANDBOX_JAVA_HEAP" -jar /bot.jar)
 fi
-exec docker run "${args[@]}" "$SANDBOX_IMAGE" player-entry.sh "$port" "${cmd[@]}"
+exec docker run "${args[@]}" "$image" player-entry.sh "$port" "${cmd[@]}"
