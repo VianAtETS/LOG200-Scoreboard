@@ -13,11 +13,11 @@ use std::time::Duration;
 use thiserror::Error;
 
 use isolation::board::{Color, Move};
+use isolation::digest::short_hash;
 use isolation::notation;
 use isolation::record::{GameRecord, GameResult, Player, ValidationError, now_rfc3339};
 
 use crate::config::{Config, Team, Vars};
-use crate::digest::short_hash;
 use crate::journal::compact_timestamp;
 use crate::remote::{GameSpec, Seat, Seated};
 

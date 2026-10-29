@@ -12,6 +12,7 @@ use serde::Serialize;
 use thiserror::Error;
 use tiny_http::Method;
 
+use isolation::digest::short_hash;
 use isolation::record::now_rfc3339;
 
 use super::auth::{RegistryError, TeamId, find_team, load_teams};
@@ -19,7 +20,6 @@ use super::manifest::{self, BadThreads};
 use super::smoke::{Forfeit, Verdict, smoke_test};
 use crate::arena::{Arena, GameError};
 use crate::config::SubmitConfig;
-use crate::digest::short_hash;
 use crate::journal::append_jsonl;
 
 pub struct Request<'a, B> {

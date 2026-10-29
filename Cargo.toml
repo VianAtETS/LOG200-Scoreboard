@@ -7,15 +7,16 @@ publish = false
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 rand = "0.10.3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11.1"
 thiserror = "2"
 tiny_http = "0.12"
 toml = "1.1.8+spec-1.1.0"
-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 zip = { version = "9.1.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [lints.clippy]
@@ -52,3 +53,7 @@ path = "src/bin/ladder/main.rs"
 [[bin]]
 name = "isolation-check"
 path = "src/bin/check.rs"
+
+[[bin]]
+name = "isolation-remote"
+path = "src/bin/remote.rs"

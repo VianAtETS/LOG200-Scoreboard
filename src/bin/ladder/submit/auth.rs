@@ -11,7 +11,7 @@ use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::digest::{hex, sha256_hex};
+use isolation::digest::{hex, sha256_hex};
 
 pub const DEFAULT_TEAMS: &str = "jars/teams.toml";
 

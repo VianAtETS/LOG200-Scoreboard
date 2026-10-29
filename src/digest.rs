@@ -1,3 +1,5 @@
+//! Empreintes sha256 : tokens des équipes et versions de jar (`build`).
+
 use std::fmt::Write;
 
 use sha2::{Digest, Sha256};

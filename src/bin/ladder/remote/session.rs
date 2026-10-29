@@ -447,6 +447,7 @@ fn bridge(link: &mut Link, referee: &mut RefereeStream, lines: &Receiver<String>
                 // Arbitre parti : sa fin de connexion arrive par `lines`.
                 let _ = referee.write_all(format!("{text}\n").as_bytes());
             }
+            Ok(Some(Message::Hangup)) => referee.shutdown(),
             Ok(_) => {}
             Err(Gone) => return Outcome::Gone,
         }

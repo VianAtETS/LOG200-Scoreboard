@@ -4,7 +4,6 @@
 
 mod arena;
 mod config;
-mod digest;
 mod journal;
 mod live;
 mod remote;

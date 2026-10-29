@@ -35,6 +35,8 @@ pub enum Message {
     Failed {
         reason: String,
     },
+    /// Le jar a fermé sa connexion en cours de partie : le ladder ferme la sienne avec l'arbitre.
+    Hangup,
     /// Une ligne du protocole des clients, sans fin de ligne.
     Line {
         text: String,
