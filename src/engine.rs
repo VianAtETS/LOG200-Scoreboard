@@ -1,11 +1,17 @@
-//! Moteur du niveau 4 : negamax PVS avec table de transposition, et l'évaluation du niveau 3.
+//! Moteurs des niveaux 4 et 5 : negamax PVS avec table de transposition. Le niveau 4 évalue comme
+//! le niveau 3 ; le niveau 5 compte les cases que chaque pion atteint en un et en deux coups.
 
 use std::cmp::Reverse;
 use std::ops::RangeInclusive;
-use std::time::Instant;
+use std::panic::resume_unwind;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
-use rand::Rng;
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
 
 use crate::board::{Board, CELLS, Cell, Color, Move, SIZE, Square};
 use crate::cpu::{self, Choice, Level};
@@ -18,42 +24,159 @@ const MAX_DEPTH: u8 = 64;
 const MAX_PLY: usize = MAX_DEPTH as usize + 1;
 const CHECK_EVERY: u64 = 1024;
 const TABLE_SIZE: usize = 1 << 20;
+const VALUE_OFFSET: i32 = 1 << 21;
+/// Valeur d'une case atteinte en un coup, et en deux, pour `Eval::Territory`.
+const NEAR_WEIGHT: i32 = 4;
+const FAR_WEIGHT: i32 = 1;
+/// Coups tardifs cherchés deux demi-coups moins profond, pour garder la parité des feuilles.
+const LMR_LATE: usize = 8;
+const LMR_DEPTH: u8 = 3;
 const STATIC_WEIGHT: i32 = 64;
 const PICKED: usize = 3;
 const PADDED: usize = SIZE as usize + 6;
 const STEPS: [isize; 8] = [-19, -18, -17, -1, 1, 17, 18, 19];
 
-pub fn choose(board: &Board, color: Color, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
-    let mut board = board.clone();
-    let mut search = Search::new(&board, color, deadline);
-    let mut ordered = Vec::new();
-    search.generate(&board, color, None, 0, &mut ordered);
-    ordered.shuffle(rng);
-    let &(_, first) = ordered.first()?;
-    if ordered.len() == 1 {
-        return Some(Choice { mv: first, depth: None });
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Eval {
+    /// L'évaluation du niveau 3 (niveau 4).
+    LevelThree,
+    /// Cases que chaque pion atteint en un et en deux coups (niveau 5).
+    Territory,
+}
+
+/// Sans mémoire : chaque coup repart d'une table vide.
+pub fn choose(board: &Board, color: Color, eval: Eval, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
+    Engine::new(eval, 1).choose(board, color, deadline, rng)
+}
+
+/// Garde la table de transposition et l'historique d'un coup à l'autre de la même partie, et
+/// cherche avec plusieurs fils qui se partagent la table. Les valeurs de `Eval::Territory` ne
+/// dépendent que du joueur au trait : ce que `ponder` cherche pour l'adversaire sert ensuite.
+pub struct Engine {
+    eval: Eval,
+    threads: usize,
+    table: Arc<Table>,
+    stop: Arc<AtomicBool>,
+    searches: Vec<Search>,
+    pondering: Vec<JoinHandle<Search>>,
+}
+
+impl Engine {
+    pub fn new(eval: Eval, threads: usize) -> Self {
+        Self {
+            eval,
+            threads: threads.max(1),
+            table: Arc::new(Table::new(eval == Eval::Territory)),
+            stop: Arc::default(),
+            searches: Vec::new(),
+            pondering: Vec::new(),
+        }
     }
-    ordered.sort_unstable_by_key(|&(score, _)| Reverse(score));
-    let mut moves: Vec<Move> = ordered.into_iter().map(|(_, mv)| mv).collect();
-    let mut best = Choice {
-        mv: moves[0],
-        depth: Some(0),
-    };
-    for depth in 1..=MAX_DEPTH {
-        search.age_history();
-        let found = search.root(&mut board, &mut moves, depth);
-        if let Some((mv, _)) = found {
-            best.mv = mv;
-        }
-        if search.timed_out {
-            break;
-        }
-        best.depth = Some(depth);
-        if found.is_some_and(|(_, value)| value.abs() > WIN_BOUND) {
-            break;
+
+    /// Le coup de la plus grande profondeur terminée, tous fils confondus.
+    pub fn choose(&mut self, board: &Board, color: Color, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
+        self.stop_pondering();
+        self.prepare(board, color, deadline);
+        let seeds: Vec<u64> = (1..self.threads).map(|_| rng.next_u64()).collect();
+        let stop = &*self.stop;
+        let (main, helpers) = self.searches.split_first_mut()?;
+        thread::scope(|scope| {
+            let helpers: Vec<_> = helpers
+                .iter_mut()
+                .zip(seeds)
+                .map(|(search, seed)| {
+                    scope.spawn(move || search.choose(board, color, 3, &mut StdRng::seed_from_u64(seed)))
+                })
+                .collect();
+            let main = main.choose(board, color, 1, rng);
+            stop.store(true, Ordering::Relaxed);
+            helpers
+                .into_iter()
+                .filter_map(|helper| helper.join().unwrap_or_else(|panic| resume_unwind(panic)))
+                .fold(main, |best, other| match best {
+                    Some(best) if best.depth >= other.depth => Some(best),
+                    _ => Some(other),
+                })
+        })
+    }
+
+    /// Cherche pour `side`, l'adversaire au trait, jusqu'au prochain `choose`. Aux profondeurs
+    /// paires : nos positions, ses enfants, gardent ainsi des feuilles juste après notre coup, comme
+    /// dans nos propres recherches.
+    pub fn ponder(&mut self, board: &Board, side: Color) {
+        self.stop_pondering();
+        self.prepare(board, side, Instant::now() + Duration::from_secs(3600));
+        for (index, mut search) in self.searches.drain(..).enumerate() {
+            let board = board.clone();
+            let first = if index == 0 { 2 } else { 4 };
+            self.pondering.push(thread::spawn(move || {
+                search.choose(&board, side, first, &mut StdRng::seed_from_u64(index as u64));
+                search
+            }));
         }
     }
-    Some(best)
+
+    fn prepare(&mut self, board: &Board, color: Color, deadline: Instant) {
+        self.stop.store(false, Ordering::Relaxed);
+        while self.searches.len() < self.threads {
+            let (table, stop) = (Arc::clone(&self.table), Arc::clone(&self.stop));
+            self.searches
+                .push(Search::shared(board, color, self.eval, deadline, table, stop));
+        }
+        for search in &mut self.searches {
+            search.reset(board, color, deadline);
+        }
+    }
+
+    fn stop_pondering(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        for handle in self.pondering.drain(..) {
+            self.searches
+                .push(handle.join().unwrap_or_else(|panic| resume_unwind(panic)));
+        }
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        self.stop_pondering();
+    }
+}
+
+impl Search {
+    /// Approfondit de `first` à `MAX_DEPTH`, jusqu'à l'échéance ou à l'arrêt demandé.
+    fn choose(&mut self, board: &Board, color: Color, first: u8, rng: &mut impl Rng) -> Option<Choice> {
+        let mut board = board.clone();
+        let mut ordered = Vec::new();
+        self.generate(&board, color, None, 0, &mut ordered);
+        ordered.shuffle(rng);
+        let &(_, only) = ordered.first()?;
+        if ordered.len() == 1 {
+            return Some(Choice { mv: only, depth: None });
+        }
+        ordered.sort_unstable_by_key(|&(score, _)| Reverse(score));
+        let mut moves: Vec<Move> = ordered.into_iter().map(|(_, mv)| mv).collect();
+        let mut best = Choice {
+            mv: moves[0],
+            depth: Some(0),
+        };
+        let step = if self.eval == Eval::Territory { 2 } else { 1 };
+        for depth in (first..=MAX_DEPTH).step_by(step) {
+            self.age_history();
+            let found = self.root(&mut board, &mut moves, depth);
+            if let Some((mv, _)) = found {
+                best.mv = mv;
+            }
+            if self.timed_out {
+                break;
+            }
+            best.depth = Some(depth);
+            if found.is_some_and(|(_, value)| value.abs() > WIN_BOUND) {
+                break;
+            }
+        }
+        Some(best)
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -64,22 +187,104 @@ enum Bound {
     Upper,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct Entry {
-    key: u64,
     mv: Option<Move>,
     value: i32,
     depth: u8,
     bound: Bound,
 }
 
+impl Entry {
+    fn pack(self) -> u64 {
+        let index = |square: Square| square.index() as u64;
+        let mv = self.mv.map_or(0, |mv| {
+            1 << 24 | index(mv.from) << 16 | index(mv.to) << 8 | index(mv.destroyed)
+        });
+        let value = u64::from((self.value + VALUE_OFFSET).cast_unsigned());
+        mv | value << 25 | u64::from(self.depth) << 47 | (self.bound as u64) << 55
+    }
+
+    #[expect(clippy::cast_possible_truncation, reason = "champs extraits par masque")]
+    fn unpack(data: u64) -> Self {
+        let square = |shift: u32| Square::from_index(usize::from((data >> shift) as u8));
+        let mv = || {
+            Some(Move {
+                from: square(16)?,
+                to: square(8)?,
+                destroyed: square(0)?,
+            })
+        };
+        Self {
+            mv: if data >> 24 & 1 == 1 { mv() } else { None },
+            value: ((data >> 25) as u32 & ((1 << 22) - 1)).cast_signed() - VALUE_OFFSET,
+            depth: (data >> 47) as u8,
+            bound: match data >> 55 & 3 {
+                0 => Bound::Exact,
+                1 => Bound::Lower,
+                _ => Bound::Upper,
+            },
+        }
+    }
+}
+
+/// Table de transposition partagée entre fils, sans verrou : la clé est rangée masquée par les
+/// données, si bien qu'une entrée déchirée par deux écritures simultanées ne se valide pas.
+struct Table {
+    cells: Vec<[AtomicU64; 2]>,
+    deep: bool,
+}
+
+impl Table {
+    fn new(deep: bool) -> Self {
+        Self {
+            cells: (0..TABLE_SIZE)
+                .map(|_| [AtomicU64::new(0), AtomicU64::new(0)])
+                .collect(),
+            deep,
+        }
+    }
+
+    fn get(&self, key: u64) -> Option<Entry> {
+        let first = slot(key) & !usize::from(self.deep);
+        self.cells[first..=first + usize::from(self.deep)]
+            .iter()
+            .find_map(|[check, data]| {
+                let data = data.load(Ordering::Relaxed);
+                (check.load(Ordering::Relaxed) ^ data == key).then(|| Entry::unpack(data))
+            })
+    }
+
+    fn set(&self, key: u64, entry: Entry) {
+        let mut index = slot(key) & !usize::from(self.deep);
+        if self.deep {
+            let [check, data] = &self.cells[index];
+            let data = data.load(Ordering::Relaxed);
+            if check.load(Ordering::Relaxed) ^ data != key && Entry::unpack(data).depth > entry.depth {
+                index += 1;
+            }
+        }
+        let data = entry.pack();
+        let [check, word] = &self.cells[index];
+        check.store(key ^ data, Ordering::Relaxed);
+        word.store(data, Ordering::Relaxed);
+    }
+}
+
+#[expect(clippy::cast_possible_truncation, reason = "les 20 bits bas du hash")]
+const fn slot(key: u64) -> usize {
+    key as usize & (TABLE_SIZE - 1)
+}
+
 struct Search {
     own: Color,
+    eval: Eval,
     deadline: Instant,
     nodes: u64,
     timed_out: bool,
     hash: u64,
-    table: Vec<Entry>,
+    table: Arc<Table>,
+    stop: Arc<AtomicBool>,
     buffers: Vec<Vec<(i32, Move)>>,
     killers: [[Option<Move>; 2]; MAX_PLY],
     history: Vec<i32>,
@@ -87,19 +292,50 @@ struct Search {
 }
 
 impl Search {
-    fn new(board: &Board, own: Color, deadline: Instant) -> Self {
+    #[cfg(test)]
+    fn new(board: &Board, own: Color, eval: Eval, deadline: Instant) -> Self {
+        Self::shared(
+            board,
+            own,
+            eval,
+            deadline,
+            Arc::new(Table::new(eval == Eval::Territory)),
+            Arc::default(),
+        )
+    }
+
+    fn shared(
+        board: &Board,
+        own: Color,
+        eval: Eval,
+        deadline: Instant,
+        table: Arc<Table>,
+        stop: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             own,
+            eval,
             deadline,
             nodes: 0,
             timed_out: false,
             hash: cpu::hash(board),
-            table: vec![Entry::default(); TABLE_SIZE],
+            table,
+            stop,
             buffers: vec![Vec::new(); MAX_PLY],
             killers: [[None; 2]; MAX_PLY],
             history: vec![0; 2 * CELLS * CELLS],
             grid: Grid::new(board),
         }
+    }
+
+    fn reset(&mut self, board: &Board, own: Color, deadline: Instant) {
+        self.own = own;
+        self.deadline = deadline;
+        self.nodes = 0;
+        self.timed_out = false;
+        self.hash = cpu::hash(board);
+        self.killers = [[None; 2]; MAX_PLY];
+        self.grid = Grid::new(board);
     }
 
     fn root(&mut self, board: &mut Board, moves: &mut [Move], depth: u8) -> Option<(Move, i32)> {
@@ -140,12 +376,13 @@ impl Search {
             return self.leaf(board, side, ply);
         }
         if depth == 1 {
-            return self.frontier(board, side, ply, alpha, beta);
+            return match self.eval {
+                Eval::LevelThree => self.frontier(board, side, ply, alpha, beta),
+                Eval::Territory => self.frontier_territory(board, side, ply, alpha, beta),
+            };
         }
-        let slot = self.slot();
-        let entry = self.table[slot];
         let mut table_move = None;
-        if entry.key == self.hash {
+        if let Some(entry) = self.table.get(self.hash) {
             table_move = entry.mv;
             let value = from_table(entry.value, ply);
             let usable = match entry.bound {
@@ -183,7 +420,15 @@ impl Search {
             let value = if index == 0 {
                 -self.negamax(board, side.other(), depth - 1, ply + 1, -beta, -alpha)
             } else {
-                let value = -self.negamax(board, side.other(), depth - 1, ply + 1, -alpha - 1, -alpha);
+                let reduced = self.eval == Eval::Territory && depth >= LMR_DEPTH && index >= LMR_LATE;
+                let mut value = if reduced {
+                    -self.negamax(board, side.other(), depth - 3, ply + 1, -alpha - 1, -alpha)
+                } else {
+                    alpha + 1
+                };
+                if value > alpha && !self.timed_out {
+                    value = -self.negamax(board, side.other(), depth - 1, ply + 1, -alpha - 1, -alpha);
+                }
                 if value > alpha && value < beta && !self.timed_out {
                     -self.negamax(board, side.other(), depth - 1, ply + 1, -beta, -alpha)
                 } else {
@@ -218,7 +463,7 @@ impl Search {
         if self.timed_out {
             return 0;
         }
-        self.store(slot, best_move, best, depth, ply, bound(best, original_alpha, beta));
+        self.store(best_move, best, depth, ply, bound(best, original_alpha, beta));
         best
     }
 
@@ -287,17 +532,115 @@ impl Search {
         best
     }
 
-    fn store(&mut self, slot: usize, mv: Move, value: i32, depth: u8, ply: u8, bound: Bound) {
-        self.table[slot] = Entry {
-            key: self.hash,
+    /// `frontier` pour `Eval::Territory`. Les pions ne bloquant pas `Reach`, la valeur adverse ne
+    /// dépend que de la cible et se calcule une fois par cible, à la demande ; la nôtre sans
+    /// destruction borne celle de chaque cible, et on ne recalcule que les coups qui peuvent battre
+    /// le meilleur. Les coups tueurs passent d'abord, pour couper avant d'avoir tout calculé.
+    fn frontier_territory(&mut self, board: &Board, side: Color, ply: u8, alpha: i32, beta: i32) -> i32 {
+        let (from, them) = (board.pawn(side), board.pawn(side.other()));
+        let start = padded(from);
+        self.grid.open[start] = true;
+        let mut destinations = self.grid.destinations(from);
+        let targets = targets(&self.grid, board.destroyed(), them, destinations.as_slice());
+        self.grid.open[start] = false;
+        let Some(targets) = targets else {
+            return loss(ply);
+        };
+        let killers = self.killers[usize::from(ply)];
+        let destinations = destinations.as_mut_slice();
+        for killer in killers.iter().rev().flatten() {
+            if let Some(position) = destinations.iter().position(|&to| to == killer.to) {
+                destinations[..=position].rotate_right(1);
+            }
+        }
+        let targets = targets.as_slice();
+        let lifted = self.grid.empty | Bits::of(from);
+        let free = lifted | Bits::of(them);
+        let neighbours = SHIFTS
+            .into_iter()
+            .fold(Bits::default(), |all, shift| all | Bits::of(them).shift(shift));
+        let mut theirs: [Option<Reach>; 16] = [None; 16];
+        let (mut best, mut best_move, mut ceiling) = (-INF, None, -INF);
+        'search: for &to in &*destinations {
+            let mine = Reach::new(free, to);
+            let bound = mine.value(them);
+            let rings = rings(to, board.destroyed() + 1);
+            let landed = lifted & !Bits::of(to);
+            let mut order: Stack<usize, 16> = Stack::new(0);
+            order.extend(0..targets.len());
+            for killer in killers.iter().rev().flatten().filter(|killer| killer.to == to) {
+                if let Some(position) = order
+                    .as_slice()
+                    .iter()
+                    .position(|&i| targets[i].square == killer.destroyed)
+                {
+                    order.as_mut_slice()[..=position].rotate_right(1);
+                }
+            }
+            for &index in order.as_slice() {
+                let target = targets[index];
+                if target.square == to {
+                    continue;
+                }
+                let destroyed = Bits::of(target.square);
+                let empty = landed & !destroyed;
+                let their = *theirs[index].get_or_insert_with(|| Reach::new(free & !destroyed, them));
+                let their_value = their.value(to);
+                let value = if !opponent_moves(them, neighbours, empty, rings.as_slice()) {
+                    -loss(ply + 1)
+                } else if bound - their_value <= best.max(alpha) {
+                    ceiling = ceiling.max(bound - their_value);
+                    continue;
+                } else if (mine.region() & destroyed).is_empty() {
+                    bound - their_value
+                } else {
+                    Reach::new(free & !destroyed, to).value(them) - their_value
+                };
+                if value > best {
+                    best = value;
+                    best_move = Some(Move {
+                        from,
+                        to,
+                        destroyed: target.square,
+                    });
+                    if value >= beta {
+                        break 'search;
+                    }
+                }
+            }
+        }
+        if let Some(mv) = best_move
+            && best >= beta
+        {
+            self.reward(side, mv, 1, ply);
+        }
+        best.max(ceiling)
+    }
+
+    fn store(&self, mv: Move, value: i32, depth: u8, ply: u8, bound: Bound) {
+        let entry = Entry {
             mv: Some(mv),
             value: to_table(value, ply),
             depth,
             bound,
         };
+        self.table.set(self.hash, entry);
     }
 
     fn leaf(&self, board: &Board, side: Color, ply: u8) -> i32 {
+        if self.eval == Eval::Territory {
+            let (mine, theirs) = (board.pawn(side), board.pawn(side.other()));
+            let empty = self.grid.empty;
+            let near = reach(Bits::of(mine), empty);
+            if !can_move(
+                near,
+                empty | Bits::of(mine),
+                rings(theirs, board.destroyed()).as_slice(),
+            ) {
+                return loss(ply);
+            }
+            return territory(empty | Bits::of(mine) | Bits::of(theirs), mine, theirs);
+        }
         let Some(movable) = rules::playable_mobility(board, side) else {
             return loss(ply);
         };
@@ -370,7 +713,12 @@ impl Search {
 
     fn out_of_time(&mut self) -> bool {
         self.nodes += 1;
-        if self.nodes.is_multiple_of(CHECK_EVERY) && Instant::now() > self.deadline {
+        let every = if self.eval == Eval::Territory {
+            CHECK_EVERY / 4
+        } else {
+            CHECK_EVERY
+        };
+        if self.nodes.is_multiple_of(every) && (Instant::now() > self.deadline || self.stop.load(Ordering::Relaxed)) {
             self.timed_out = true;
         }
         self.timed_out
@@ -379,36 +727,40 @@ impl Search {
     fn play(&mut self, board: &mut Board, mv: Move) {
         self.hash ^= cpu::move_key(board, mv);
         board.apply(mv);
-        self.grid.open[padded(mv.from)] = true;
-        self.grid.open[padded(mv.to)] = false;
-        self.grid.open[padded(mv.destroyed)] = false;
+        self.grid.set(mv.from, true);
+        self.grid.set(mv.to, false);
+        self.grid.set(mv.destroyed, false);
     }
 
     fn unplay(&mut self, board: &mut Board, mv: Move) {
         board.undo(mv);
         self.hash ^= cpu::move_key(board, mv);
-        self.grid.open[padded(mv.destroyed)] = true;
-        self.grid.open[padded(mv.to)] = true;
-        self.grid.open[padded(mv.from)] = false;
-    }
-
-    #[expect(clippy::cast_possible_truncation, reason = "les 20 bits bas du hash")]
-    const fn slot(&self) -> usize {
-        self.hash as usize & (TABLE_SIZE - 1)
+        self.grid.set(mv.destroyed, true);
+        self.grid.set(mv.to, true);
+        self.grid.set(mv.from, false);
     }
 }
 
 struct Grid {
     open: [bool; PADDED * PADDED],
+    empty: Bits,
 }
 
 impl Grid {
     fn new(board: &Board) -> Self {
-        let mut open = [false; PADDED * PADDED];
+        let mut grid = Self {
+            open: [false; PADDED * PADDED],
+            empty: Bits::default(),
+        };
         for (square, &cell) in (0..CELLS).filter_map(Square::from_index).zip(board.cells()) {
-            open[padded(square)] = cell == Cell::Empty;
+            grid.set(square, cell == Cell::Empty);
         }
-        Self { open }
+        grid
+    }
+
+    fn set(&mut self, square: Square, open: bool) {
+        self.open[padded(square)] = open;
+        self.empty.set(square, open);
     }
 
     #[cfg(test)]
@@ -434,6 +786,168 @@ impl Grid {
         let two = one & self.open[start.wrapping_add_signed(2 * step)];
         let three = two & self.open[start.wrapping_add_signed(3 * step)];
         u8::from(one) + u8::from(two) + u8::from(three)
+    }
+}
+
+/// Ce qu'un pion atteint en un coup (`near`) et en deux (`far`) dans `free`, les cases non
+/// détruites : les pions n'y bloquent rien, pour que la valeur d'un côté ne dépende pas de l'autre.
+#[derive(Clone, Copy)]
+struct Reach {
+    near: Bits,
+    far: Bits,
+}
+
+impl Reach {
+    fn new(free: Bits, pawn: Square) -> Self {
+        let near = reach(Bits::of(pawn), free);
+        Self {
+            near,
+            far: reach(near, free) & !near & !Bits::of(pawn),
+        }
+    }
+
+    fn region(self) -> Bits {
+        self.near | self.far
+    }
+
+    /// Sans compter `other`, la case du pion adverse.
+    fn value(self, other: Square) -> i32 {
+        let other = !Bits::of(other);
+        NEAR_WEIGHT * (self.near & other).count() + FAR_WEIGHT * (self.far & other).count()
+    }
+}
+
+fn territory(free: Bits, mine: Square, theirs: Square) -> i32 {
+    Reach::new(free, mine).value(theirs) - Reach::new(free, theirs).value(mine)
+}
+
+/// Anneaux de destruction autour de `center`, dans l'ordre de repli de `rules::destroy_rings`.
+fn rings(center: Square, destroyed: u32) -> Stack<Bits, 3> {
+    let center = Bits::of(center);
+    let mut rings = Stack::new(Bits::default());
+    for ring in rules::destroy_rings(destroyed) {
+        let ring = ring
+            .clone()
+            .flat_map(|k| SHIFTS.map(|shift| center.shift(shift * i32::from(k))));
+        rings.push(ring.fold(Bits::default(), |all, square| all | square));
+    }
+    rings
+}
+
+/// Comme `rules::has_moves` : `open` compte la case de départ du joueur comme vide.
+fn can_move(destinations: Bits, open: Bits, rings: &[Bits]) -> bool {
+    !destinations.is_empty()
+        && rings.iter().any(|&ring| {
+            let targets = ring & open;
+            match targets.count() {
+                0 => false,
+                1 => targets != destinations,
+                _ => true,
+            }
+        })
+}
+
+/// `can_move` du pion adverse, dont les destinations ne se calculent que s'il a moins de deux
+/// voisines libres : sinon il en a au moins deux.
+fn opponent_moves(them: Square, neighbours: Bits, empty: Bits, rings: &[Bits]) -> bool {
+    let open = empty | Bits::of(them);
+    match (neighbours & empty).count() {
+        0 => false,
+        1 => can_move(reach(Bits::of(them), empty), open, rings),
+        _ => rings.iter().any(|&ring| !(ring & open).is_empty()),
+    }
+}
+
+/// Cases où un coup mène depuis l'une de `from` : jusqu'à 3 pas en ligne droite dans `empty`.
+fn reach(from: Bits, empty: Bits) -> Bits {
+    ray::<-17>(from, empty)
+        | ray::<-16>(from, empty)
+        | ray::<-15>(from, empty)
+        | ray::<-1>(from, empty)
+        | ray::<1>(from, empty)
+        | ray::<15>(from, empty)
+        | ray::<16>(from, empty)
+        | ray::<17>(from, empty)
+}
+
+#[expect(clippy::inline_always, reason = "chaque décalage se résout à la compilation")]
+#[inline(always)]
+fn ray<const BY: i32>(from: Bits, empty: Bits) -> Bits {
+    // ±1 reste dans la rangée : sa retenue entre mots tomberait sur une colonne de garde.
+    let step = |bits: Bits| match BY {
+        1 => Bits(bits.0.map(|word| word << 1)),
+        -1 => Bits(bits.0.map(|word| word >> 1)),
+        _ => bits.shift(BY),
+    };
+    let one = step(from) & empty;
+    let two = step(one) & empty;
+    one | two | (step(two) & empty)
+}
+
+/// Décalages des 8 directions dans `Bits`, rangées de 16 bits.
+const SHIFTS: [i32; 8] = [-17, -16, -15, -1, 1, 15, 16, 17];
+
+/// Une case par bit, 16 bits par rangée : les colonnes 12 à 15 restent vides et arrêtent les
+/// décalages qui débordent sur le côté.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct Bits([u64; 3]);
+
+impl Bits {
+    fn of(square: Square) -> Self {
+        let mut bits = Self::default();
+        bits.set(square, true);
+        bits
+    }
+
+    fn set(&mut self, square: Square, on: bool) {
+        let index = usize::from(square.y()) * 16 + usize::from(square.x());
+        let (word, bit) = (index / 64, 1 << (index % 64));
+        if on {
+            self.0[word] |= bit;
+        } else {
+            self.0[word] &= !bit;
+        }
+    }
+
+    #[expect(clippy::inline_always, reason = "appelé avec un décalage constant")]
+    #[inline(always)]
+    fn shift(self, by: i32) -> Self {
+        let [a, b, c] = self.0;
+        let s = by.unsigned_abs();
+        if by > 0 {
+            Self([a << s, b << s | a >> (64 - s), c << s | b >> (64 - s)])
+        } else {
+            Self([a >> s | b << (64 - s), b >> s | c << (64 - s), c >> s])
+        }
+    }
+
+    fn count(self) -> i32 {
+        self.0.iter().map(|word| word.count_ones().cast_signed()).sum()
+    }
+
+    fn is_empty(self) -> bool {
+        self.0 == [0; 3]
+    }
+}
+
+impl std::ops::BitAnd for Bits {
+    type Output = Self;
+    fn bitand(self, other: Self) -> Self {
+        Self([self.0[0] & other.0[0], self.0[1] & other.0[1], self.0[2] & other.0[2]])
+    }
+}
+
+impl std::ops::BitOr for Bits {
+    type Output = Self;
+    fn bitor(self, other: Self) -> Self {
+        Self([self.0[0] | other.0[0], self.0[1] | other.0[1], self.0[2] | other.0[2]])
+    }
+}
+
+impl std::ops::Not for Bits {
+    type Output = Self;
+    fn not(self) -> Self {
+        Self(self.0.map(|word| !word))
     }
 }
 
@@ -720,6 +1234,7 @@ mod tests {
 
     use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rand::seq::IndexedRandom;
 
     use super::*;
     use crate::board::DIRS;
@@ -730,30 +1245,30 @@ mod tests {
         Instant::now() + Duration::from_secs(60)
     }
 
-    fn brute(search: &Search, board: &mut Board, side: Color, depth: u8, ply: u8) -> i32 {
+    fn brute(search: &mut Search, board: &mut Board, side: Color, depth: u8, ply: u8) -> i32 {
         if depth == 0 {
             return search.leaf(board, side, ply);
         }
         rules::legal_moves(board, side)
             .into_iter()
             .map(|mv| {
-                board.apply(mv);
+                search.play(board, mv);
                 let value = -brute(search, board, side.other(), depth - 1, ply + 1);
-                board.undo(mv);
+                search.unplay(board, mv);
                 value
             })
             .max()
             .unwrap_or_else(|| loss(ply))
     }
 
-    fn assert_root_matches_brute_force(board: &Board, color: Color, depth: u8) {
+    fn assert_root_matches_brute_force(board: &Board, color: Color, eval: Eval, depth: u8) {
         let mut scratch = board.clone();
-        let mut search = Search::new(&scratch, color, far());
+        let mut search = Search::new(&scratch, color, eval, far());
         let start = search.hash;
         let mut moves = rules::legal_moves(board, color);
         for depth in 1..=depth {
             let (_, value) = search.root(&mut scratch, &mut moves, depth).unwrap();
-            let expected = brute(&search, &mut board.clone(), color, depth, 0);
+            let expected = brute(&mut search, &mut board.clone(), color, depth, 0);
             assert_eq!(value, expected, "profondeur {depth}\n{board}");
         }
         assert_eq!(&scratch, board);
@@ -763,11 +1278,21 @@ mod tests {
 
     #[test]
     fn root_value_matches_brute_force() {
-        for (board, color) in positions(11, 6, 30) {
-            assert_root_matches_brute_force(&board, color, 2);
+        for eval in [Eval::LevelThree, Eval::Territory] {
+            for (board, color) in positions(11, 6, 30) {
+                assert_root_matches_brute_force(&board, color, eval, 2);
+            }
+            for (board, color) in positions(5, 4, 12) {
+                assert_root_matches_brute_force(&board, color, eval, 3);
+            }
         }
-        for (board, color) in positions(5, 4, 12) {
-            assert_root_matches_brute_force(&board, color, 3);
+        for game in 0..12 {
+            let opening = rules::random_opening(2 + 4 * game, &mut StdRng::seed_from_u64(game as u64));
+            if let Ok(replay) = rules::Replay::from_moves(opening)
+                && replay.winner.is_none()
+            {
+                assert_root_matches_brute_force(&replay.board, replay.turn, Eval::Territory, 2);
+            }
         }
     }
 
@@ -783,7 +1308,7 @@ mod tests {
         boards.extend(positions(4, 30, 60));
         let (mut fast, mut slow) = (0, 0);
         for (board, color) in boards {
-            let search = Search::new(&board, color, far());
+            let search = Search::new(&board, color, Eval::LevelThree, far());
             let (from, them) = (board.pawn(color), board.pawn(color.other()));
             let destroyed = board.destroyed() + 1;
             let mut grid = Grid::new(&board);
@@ -820,12 +1345,63 @@ mod tests {
         let mut boards = positions(11, 6, 30);
         boards.extend(positions(4, 30, 60));
         for (board, color) in boards {
-            let mut search = Search::new(&board, color, far());
+            let mut search = Search::new(&board, color, Eval::LevelThree, far());
             let mut scored = Vec::new();
             search.generate(&board, color, None, 0, &mut scored);
             let moves: Vec<Move> = scored.into_iter().map(|(_, mv)| mv).collect();
             assert_eq!(moves, rules::legal_moves(&board, color), "\n{board}");
             assert!(search.grid.matches(&board));
+        }
+    }
+
+    #[test]
+    fn reach_follows_destinations() {
+        let mut boards = positions(11, 6, 30);
+        boards.extend(positions(4, 30, 60));
+        for (board, color) in boards {
+            let grid = Grid::new(&board);
+            let from = board.pawn(color);
+            let mut expected = Bits::default();
+            rules::destinations(&board, from, |to| expected.set(to, true));
+            assert!(
+                reach(Bits::of(from), grid.empty) == expected,
+                "
+{board}"
+            );
+            let mut second = Bits::default();
+            rules::destinations(&board, from, |to| {
+                rules::destinations(&board, to, |next| second.set(next, true));
+            });
+            assert!(
+                reach(expected, grid.empty) == second,
+                "
+{board}"
+            );
+        }
+    }
+
+    #[test]
+    fn has_moves_follows_the_rules() {
+        let mut rng = StdRng::seed_from_u64(3);
+        for _ in 0..300 {
+            let (mut board, mut turn) = (Board::initial(), Color::Red);
+            loop {
+                let (from, them) = (board.pawn(turn), board.pawn(turn.other()));
+                let expected = rules::has_moves(&board, turn);
+                let empty = Grid::new(&board).empty;
+                let rings = rings(them, board.destroyed());
+                let moves = can_move(reach(Bits::of(from), empty), empty | Bits::of(from), rings.as_slice());
+                assert_eq!(
+                    moves, expected,
+                    "
+{board}"
+                );
+                let Some(&mv) = rules::legal_moves(&board, turn).choose(&mut rng) else {
+                    break;
+                };
+                board.apply(mv);
+                turn = turn.other();
+            }
         }
     }
 
@@ -868,7 +1444,14 @@ mod tests {
              ............
              ............",
         );
-        let choice = choose(&board, Color::Red, far(), &mut StdRng::seed_from_u64(1)).unwrap();
+        let choice = choose(
+            &board,
+            Color::Red,
+            Eval::LevelThree,
+            far(),
+            &mut StdRng::seed_from_u64(1),
+        )
+        .unwrap();
         let mut after = board;
         after.apply(choice.mv);
         assert_eq!(
@@ -884,7 +1467,14 @@ mod tests {
     fn stops_near_the_deadline() {
         let start = Instant::now();
         let deadline = start + Duration::from_millis(100);
-        let choice = choose(&Board::initial(), Color::Red, deadline, &mut StdRng::seed_from_u64(2)).unwrap();
+        let choice = choose(
+            &Board::initial(),
+            Color::Red,
+            Eval::LevelThree,
+            deadline,
+            &mut StdRng::seed_from_u64(2),
+        )
+        .unwrap();
         assert!(rules::is_legal(&Board::initial(), Color::Red, choice.mv));
         assert!(start.elapsed() < Duration::from_millis(400), "{:?}", start.elapsed());
     }
@@ -892,30 +1482,32 @@ mod tests {
     #[test]
     #[ignore = "mesure de vitesse, à lancer en release"]
     fn bench() {
-        let start = Instant::now();
-        let mut nodes = 0;
-        for game in 0..10 {
-            for plies in [4, 14, 24] {
-                let opening = rules::random_opening(plies, &mut StdRng::seed_from_u64(game));
-                let Ok(replay) = rules::Replay::from_moves(opening) else {
-                    continue;
-                };
-                if replay.winner.is_some() {
-                    continue;
+        for eval in [Eval::LevelThree, Eval::Territory] {
+            let start = Instant::now();
+            let mut nodes = 0;
+            for game in 0..10 {
+                for plies in [4, 14, 24] {
+                    let opening = rules::random_opening(plies, &mut StdRng::seed_from_u64(game));
+                    let Ok(replay) = rules::Replay::from_moves(opening) else {
+                        continue;
+                    };
+                    if replay.winner.is_some() {
+                        continue;
+                    }
+                    let mut board = replay.board;
+                    let mut search = Search::new(&board, replay.turn, eval, far());
+                    let mut moves = rules::legal_moves(&board, replay.turn);
+                    for depth in 1..=5 {
+                        search.age_history();
+                        search.root(&mut board, &mut moves, depth);
+                    }
+                    nodes += search.nodes;
                 }
-                let mut board = replay.board;
-                let mut search = Search::new(&board, replay.turn, far());
-                let mut moves = rules::legal_moves(&board, replay.turn);
-                for depth in 1..=5 {
-                    search.age_history();
-                    search.root(&mut board, &mut moves, depth);
-                }
-                nodes += search.nodes;
             }
+            let elapsed = start.elapsed();
+            #[expect(clippy::cast_precision_loss, reason = "débit affiché")]
+            let rate = nodes as f64 / elapsed.as_secs_f64() / 1000.0;
+            println!("{eval:?} : {nodes} nœuds en {elapsed:.2?}, {rate:.0} k nœuds/s");
         }
-        let elapsed = start.elapsed();
-        #[expect(clippy::cast_precision_loss, reason = "débit affiché")]
-        let rate = nodes as f64 / elapsed.as_secs_f64() / 1000.0;
-        println!("{nodes} nœuds en {elapsed:.2?}, {rate:.0} k nœuds/s");
     }
 }

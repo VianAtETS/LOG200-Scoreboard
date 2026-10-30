@@ -1,5 +1,5 @@
-//! Stratégies des bots : bots de test, répliques du CPU du serveur officiel (`cpu`) et moteur du
-//! niveau 4 (`engine`).
+//! Stratégies des bots : bots de test, répliques du CPU du serveur officiel (`cpu`) et moteurs des
+//! niveaux 4 et 5 (`engine`).
 
 use std::time::Instant;
 
@@ -8,7 +8,7 @@ use rand::seq::IndexedRandom;
 
 use crate::board::{Board, Color, Move};
 use crate::cpu::{self, Choice, Level};
-use crate::engine;
+use crate::engine::{self, Engine, Eval};
 use crate::rules::{self, mobility};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
@@ -35,6 +35,10 @@ pub enum Strategy {
     /// ordonnés ; pas une réplique du serveur officiel.
     #[value(name = "niveau-4")]
     Niveau4,
+    /// La recherche du niveau 4, mais évalue les cases que chaque pion atteint en un et en deux
+    /// coups ; avec `Bot`, garde sa table d'un coup à l'autre.
+    #[value(name = "niveau-5")]
+    Niveau5,
 }
 
 impl Strategy {
@@ -46,8 +50,46 @@ impl Strategy {
             Self::Niveau1 => cpu::choose(board, color, Level::One, deadline, rng),
             Self::Niveau2 => cpu::choose(board, color, Level::Two, deadline, rng),
             Self::Niveau3 => cpu::choose(board, color, Level::Three, deadline, rng),
-            Self::Niveau4 => engine::choose(board, color, deadline, rng),
+            Self::Niveau4 => engine::choose(board, color, Eval::LevelThree, deadline, rng),
+            Self::Niveau5 => engine::choose(board, color, Eval::Territory, deadline, rng),
         }
+    }
+}
+
+/// Une stratégie et ce qu'elle retient d'un coup à l'autre : la table du niveau 5, cherchée avec
+/// `threads` fils. Un par partie.
+pub struct Bot {
+    strategy: Strategy,
+    threads: usize,
+    engine: Option<Engine>,
+}
+
+impl Bot {
+    pub const fn new(strategy: Strategy, threads: usize) -> Self {
+        Self {
+            strategy,
+            threads,
+            engine: None,
+        }
+    }
+
+    pub fn choose(&mut self, board: &Board, color: Color, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
+        match self.strategy {
+            Strategy::Niveau5 => self.engine().choose(board, color, deadline, rng),
+            strategy => strategy.choose(board, color, deadline, rng),
+        }
+    }
+
+    /// Réfléchit pendant que `side` cherche son coup, jusqu'au prochain `choose`
+    pub fn ponder(&mut self, board: &Board, side: Color) {
+        if self.strategy == Strategy::Niveau5 {
+            self.engine().ponder(board, side);
+        }
+    }
+
+    fn engine(&mut self) -> &mut Engine {
+        let threads = self.threads;
+        self.engine.get_or_insert_with(|| Engine::new(Eval::Territory, threads))
     }
 }
 

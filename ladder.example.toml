@@ -155,6 +155,24 @@ cmd = [
     "niveau-4",
 ]
 
+# Reflechit aussi pendant le tour adverse, sur le coeur de sa couleur.
+[[team]]
+id = "niveau-5"
+cmd = [
+    "sandbox/run-player.sh",
+    "{game}",
+    "{side}",
+    "{port}",
+    "--bot",
+    "niveau-5",
+]
+
+# Variante sur deux coeurs : ne joue que dans un slot `multithread = true`.
+# [[team]]
+# id = "niveau-5-mt"
+# cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "--bot", "niveau-5", "--threads", "2"]
+# multithread = true
+
 # [[team]]
 # id = "eq01"
 # cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "jars/eq01/current.jar"]

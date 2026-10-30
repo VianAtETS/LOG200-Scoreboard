@@ -17,7 +17,7 @@ use isolation::board::{Board, Color, Move, SIZE};
 use isolation::cpu;
 use isolation::protocol::{LineConn, Outcome, RecvError, ServerMsg};
 use isolation::rules;
-use isolation::strategy::Strategy;
+use isolation::strategy::{Bot, Strategy};
 
 use probe::ProbeKind;
 
@@ -39,6 +39,12 @@ struct Cli {
     seed: Option<u64>,
     #[arg(long, default_value_t = 50)]
     margin_ms: u64,
+    /// Fils de recherche du niveau 5.
+    #[arg(long, default_value_t = 1)]
+    threads: usize,
+    /// Le niveau 5 ne réfléchit pas pendant le tour adverse, par exemple s'il partage son coeur
+    #[arg(long)]
+    no_ponder: bool,
     /// Envoie d'abord, à chaque tour, un coup que notre moteur refuse.
     #[arg(long)]
     probe_illegal: bool,
@@ -79,6 +85,8 @@ fn run(cli: &Cli) -> anyhow::Result<Report> {
         player: Player {
             conn,
             strategy: cli.strategy,
+            threads: cli.threads,
+            ponder: !cli.no_ponder,
             rng,
             margin: Duration::from_millis(cli.margin_ms),
             probe: cli.probe_illegal,
@@ -175,6 +183,7 @@ struct Game {
     deadline: Instant,
     search: SearchStats,
     opponent_moves: Vec<(Board, Move)>,
+    bot: Bot,
 }
 
 #[derive(Default)]
@@ -185,7 +194,7 @@ struct SearchStats {
 }
 
 impl Game {
-    fn new(color: Color, budget: Duration) -> Self {
+    fn new(color: Color, budget: Duration, bot: Bot) -> Self {
         Self {
             board: Board::initial(),
             color,
@@ -197,6 +206,7 @@ impl Game {
             deadline: Instant::now() + budget,
             search: SearchStats::default(),
             opponent_moves: Vec::new(),
+            bot,
         }
     }
 
@@ -262,9 +272,12 @@ impl Game {
     }
 }
 
+#[expect(clippy::struct_excessive_bools, reason = "options de la ligne de commande")]
 struct Player {
     conn: LineConn,
     strategy: Strategy,
+    threads: usize,
+    ponder: bool,
     rng: StdRng,
     margin: Duration,
     probe: bool,
@@ -280,10 +293,7 @@ impl Player {
                 return self.send(game, Pending::Probe(mv, kind));
             }
         }
-        let Some(choice) = self
-            .strategy
-            .choose(&game.board, game.color, game.deadline, &mut self.rng)
-        else {
+        let Some(choice) = game.bot.choose(&game.board, game.color, game.deadline, &mut self.rng) else {
             report.mismatch(format!("demande de coup sans coup légal\n{}", game.board));
             return Ok(());
         };
@@ -301,6 +311,13 @@ impl Player {
             eprintln!("-> {mv}");
         }
         self.conn.send(mv).context("envoi")?;
+        if let Pending::Move(mv) = pending
+            && self.ponder
+        {
+            let mut after = game.board.clone();
+            after.apply(mv);
+            game.bot.ponder(&after, game.color.other());
+        }
         game.pending = Some(pending);
         Ok(())
     }
@@ -343,7 +360,8 @@ impl Client {
                 }
                 eprintln!("nouvelle partie : {color}, {time_ms} ms");
                 let budget = Duration::from_millis(time_ms).saturating_sub(self.player.margin);
-                self.game = Some(Game::new(color, budget));
+                let bot = Bot::new(self.player.strategy, self.player.threads);
+                self.game = Some(Game::new(color, budget, bot));
             }
             ServerMsg::Board { color, board } => {
                 let game = self.game.as_mut().context("plateau reçu avant le message 0")?;

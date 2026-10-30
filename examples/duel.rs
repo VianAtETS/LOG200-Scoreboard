@@ -13,7 +13,7 @@ use rand::rngs::StdRng;
 
 use isolation::board::{ByColor, Color, Move};
 use isolation::rules::{self, Replay};
-use isolation::strategy::Strategy;
+use isolation::strategy::{Bot, Strategy};
 
 #[derive(Parser)]
 #[command(name = "duel", about = "Fait jouer deux stratégies l'une contre l'autre, en mémoire")]
@@ -126,6 +126,7 @@ fn play(
     let mut replay = Replay::from_moves(opening.iter().copied()).unwrap_or_default();
     let mut depths = Depths::default();
     let mut plies = 0;
+    let mut bots = players.map(|strategy| Bot::new(strategy, 1));
     let (winner, reason) = loop {
         if let Some(winner) = replay.winner {
             break (side(winner), Reason::NoMoves);
@@ -133,7 +134,7 @@ fn play(
         let turn = replay.turn;
         let me = side(turn);
         let start = Instant::now();
-        let choice = players[me].choose(&replay.board, turn, start + budget, rng);
+        let choice = bots[me].choose(&replay.board, turn, start + budget, rng);
         if start.elapsed() > time {
             break (1 - me, Reason::Timeout);
         }

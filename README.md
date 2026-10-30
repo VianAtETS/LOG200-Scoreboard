@@ -35,7 +35,7 @@ java -jar Client-eqXX.jar                       # connects first: plays red
 ./isolation-bot --port 8888 --strategy niveau-1 # plays black
 ```
 
-The strategies `aleatoire`, `niveau-1`, `niveau-2` and `niveau-3` play like the CPU levels of the official server (Aléatoire, Niveau 1 to 3). `niveau-4` is not a replica: it is our own engine, far stronger than Niveau 3, and the top target of the ladder.
+The strategies `aleatoire`, `niveau-1`, `niveau-2` and `niveau-3` play like the CPU levels of the official server (Aléatoire, Niveau 1 to 3). `niveau-4` and `niveau-5` are not replicas but our own engines, far stronger than Niveau 3. `niveau-5`, the top target of the ladder, evaluates the squares each pawn reaches in one and two moves, keeps searching during the opponent's turn (`--no-ponder` turns this off, for instance when both players share a core), and searches on several cores with `--threads N`.
 
 The referee checks every move and prints the result at the end (`winner`, and `reason`: `no_moves`, `timeout`, `disconnect` or `no_show`). An illegal move is answered with `4`, like on the official server. To play black, start the bot before your jar. On Windows, run `.\isolation-referee.exe` and `.\isolation-bot.exe`. On macOS, first run `xattr -d com.apple.quarantine isolation-*` so the unsigned binaries can start.
 
@@ -66,7 +66,7 @@ The relay starts the jar for every game and keeps reconnecting until stopped. Th
 | --- | --- |
 | `src/rules.rs` | Game rules as applied by the official server (see `docs/rules.md`) |
 | `isolation-referee` | Headless referee for one game; speaks the official protocol, prints one JSON result |
-| `isolation-bot` | Protocol client used for tests and conformance checks; its strategies `aleatoire` and `niveau-1` to `niveau-3` replicate the official server's CPU levels (`src/cpu.rs`); `niveau-4` is our own stronger engine (`src/engine.rs`) |
+| `isolation-bot` | Protocol client used for tests and conformance checks; its strategies `aleatoire` and `niveau-1` to `niveau-3` replicate the official server's CPU levels (`src/cpu.rs`); `niveau-4` and `niveau-5` are our own stronger engines (`src/engine.rs`) |
 | `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), and receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`) |
 | `isolation-check` | Replays and validates a JSONL file or an official save (`BOARDGAME 1`) |
 | `isolation-remote` | Relay for a team that plays from its own machine: starts the jar for each game and forwards its lines to the ladder (`/api/remote`, see `docs/formats.md`) |
