@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
+jiff = { version = "0.2.38", features = ["tzdb-bundle-always"] }
 rand = "0.10.3"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }

@@ -11,11 +11,11 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use isolation::board::{ByColor, Color};
-use isolation::record::{GameRecord, Player, Reason};
+use isolation::record::{GameRecord, Player, Reason, TournamentGame};
 
 use crate::journal::append_jsonl;
 
-const START: f64 = 1500.0;
+pub const START: f64 = 1500.0;
 const K_PROVISIONAL: f64 = 40.0;
 const K_STABLE: f64 = 20.0;
 /// Parties à K provisoire après chaque nouveau build.
@@ -269,6 +269,8 @@ struct Row {
     duration_ms: u64,
     red: Side,
     black: Side,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tournament: Option<TournamentGame>,
     at: [u64; 2],
 }
 
@@ -352,7 +354,15 @@ struct Scopes {
 
 impl Scopes {
     fn play(&mut self, game: &GameRecord) -> (ByColor<[f64; 2]>, ByColor<[f64; 2]>) {
-        let all = self.all.play(game);
+        let all = if game.tournament.is_some() {
+            let rating = |p: &Player| [round2(self.all.teams.get(&p.team).map_or(START, |s| s.rating)), 0.0];
+            ByColor {
+                red: rating(&game.red),
+                black: rating(&game.black),
+            }
+        } else {
+            self.all.play(game)
+        };
         (all, self.session(&game.session).play(game))
     }
 
@@ -361,7 +371,9 @@ impl Scopes {
     }
 
     fn push_recent(&mut self, row: &Row) {
-        self.all.push_recent(row.clone());
+        if row.tournament.is_none() {
+            self.all.push_recent(row.clone());
+        }
         self.session(&row.session).push_recent(row.clone());
     }
 
@@ -434,6 +446,12 @@ impl Standings {
         self.full.all.teams.get(team).map_or(START, |s| s.rating)
     }
 
+    /// Rating sans parties distantes et ordre d'arrivée dans `session`.
+    pub fn verified_session(&self, session: &str, team: &str) -> Option<(f64, usize)> {
+        let s = self.verified.sessions.get(session)?.teams.get(team)?;
+        Some((s.rating, s.order))
+    }
+
     /// `at` : octets de la partie dans `games.jsonl`.
     pub fn record(&mut self, game: &GameRecord, at: Range<u64>) -> io::Result<()> {
         let row = self.play(game, at);
@@ -491,6 +509,7 @@ impl Standings {
             duration_ms: result.duration_ms,
             red: side(&game.red, Color::Red),
             black: side(&game.black, Color::Black),
+            tournament: game.tournament.clone(),
             at: [at.start, at.end - at.start],
         };
         self.full.push_recent(&row);
@@ -672,6 +691,46 @@ mod tests {
                 .all(|r| r["team"] != "c")
         );
         assert_eq!(verified["s2"]["games"], 1);
+    }
+
+    #[test]
+    fn tournament_games_count_only_in_their_session() {
+        let mut standings = Standings::new(Path::new("d"));
+        standings.play(&game("a", "b", Color::Red), 0..1);
+        let before = (standings.rating("a"), standings.rating("b"));
+        let mut t = game("b", "a", Color::Red);
+        t.session = "tournoi-2026-11-08".into();
+        t.tournament = Some(TournamentGame {
+            id: "tournoi-2026-11-08".into(),
+            match_id: "W1".into(),
+            game: 1,
+        });
+        let row = standings.play(&t, 1..2);
+        assert_eq!((standings.rating("a"), standings.rating("b")), before);
+        assert_eq!(row.black.all, [before.0, 0.0]);
+        assert!(row.black.session[1] < 0.0);
+        assert_eq!(serde_json::to_value(&row).unwrap()["tournament"]["match"], "W1");
+        let summary = serde_json::to_value(standings.summary()).unwrap();
+        assert_eq!(summary["scopes"][""]["games"], 1);
+        assert_eq!(summary["scopes"][""]["recent"].as_array().unwrap().len(), 1);
+        assert_eq!(summary["scopes"]["tournoi-2026-11-08"]["games"], 1);
+    }
+
+    #[test]
+    fn verified_session_ignores_remote_games_and_other_sessions() {
+        let mut standings = Standings::new(Path::new("d"));
+        standings.play(&game("a", "b", Color::Red), 0..1);
+        let mut remote = game("b", "a", Color::Red);
+        remote.red.remote = true;
+        standings.play(&remote, 0..1);
+        let mut elsewhere = game("b", "a", Color::Red);
+        elsewhere.session = "s2".into();
+        standings.play(&elsewhere, 0..1);
+        let (a, a_order) = standings.verified_session("s1", "a").unwrap();
+        let (b, b_order) = standings.verified_session("s1", "b").unwrap();
+        assert!(a > b, "{a} {b}");
+        assert_eq!((a_order, b_order), (0, 1));
+        assert!(standings.verified_session("s1", "c").is_none());
     }
 
     #[test]
