@@ -484,7 +484,6 @@ tbody tr:first-child .elo {
 .empty {
     padding: 16px 8px;
     color: var(--muted);
-    max-width: 60ch;
 }
 
 .how {
@@ -500,7 +499,6 @@ tbody tr:first-child .elo {
 
 .how p {
     margin-top: 6px;
-    max-width: 70ch;
 }
 
 /* --- Soumission ------------------------------------------------------------------------------ */
