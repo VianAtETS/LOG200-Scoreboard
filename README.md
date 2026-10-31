@@ -6,11 +6,15 @@ Live leaderboard (Elo, game history, replays) for the Isolation lab of LOG200.
 
 Pick one or more teams above the recent games (type to filter, × to remove) to see only their games. With several teams, choose between the games of any of them ("Avec l'une") or only the games they played against each other ("Entre elles"). With a single team, its Elo over time is shown, over the last hour, day, week or all games, with a dashed mark where each new jar version (v2, v3…) starts; with several, a link opens their ranks on the Graphe page. The address follows the choices (`?teams=eq03,eq08`, `?match=entre`, `?window=24h`, `?game=<id>`), so a filtered view or a single game can be shared as a link ("Copier le lien" above the replay), and the chosen teams follow you to the Graphe page and back.
 
-![Leaderboard filtered on one team: Elo curve over the last 7 days with a mark at each new version (v2 to v7) above its recent games, and the first game of v4 in the replay](docs/images/leaderboard-team.png)
+![Leaderboard filtered on one team: Elo curve over the last 7 days with a mark at each new version (v2 to v6) above its recent games, and the first game of v4 in the replay](docs/images/leaderboard-team.png)
 
 The Graphe page (link in the header) follows the rank of several teams game after game, like a CTFd scoreboard: one line per team, and a node at each new jar version, as on a git graph. It shows the top 10 by default; teams are added from the field above the chart (type to filter) and removed with their ×. Over long windows the rank is averaged so the lines stay readable. Hover the chart or use the arrow keys to read the exact rank, Elo and version of every followed team at any game, then click or press Enter to open that game in the replay. The address keeps the choices (`?teams=eq03,eq07`, `?window=7j`).
 
-![Graphe page: rank of the top 10 teams over the last 7 days, the line of eq04 highlighted with a node at each of its versions (v2 to v6), and a tooltip listing the rank, version and Elo of each team after one game](docs/images/graph.png)
+![Graphe page: rank of the top 10 teams over the last 7 days, the line of eq07 highlighted with a node at each of its versions, and a tooltip listing the rank, version and Elo of each team after one game](docs/images/graph.png)
+
+The Tournoi page rehearses the final tournament every week. Every Sunday at noon (Montréal time), the ladder draws the teams that have an accepted jar, freezes their jars and plays a double-elimination bracket before its regular games: strongest against weakest in the first round by verified Elo, best of 3 at 5 s per move, and a best-of-5 grand final where the winners' bracket champion starts 1–0. The page draws the bracket live, Challonge style, with the final standings and a link to replay every game; past tournaments stay available from the selector (`?tournament=`). Tournament games count only in their own session (`tournoi-2026-11-08`), not in the overall Elo.
+
+![Tournoi page: winners and losers brackets of a 12-team tournament won by eq02 from the losers bracket, every match with its seeds, scores and links to replay its games, and the final standings above](docs/images/tournament.png)
 
 Each team submits its jar; the ladder makes the teams play each other around the clock and the page shows the result:
 
@@ -67,11 +71,11 @@ The relay starts the jar for every game and keeps reconnecting until stopped. Th
 | `src/rules.rs` | Game rules as applied by the official server (see `docs/rules.md`) |
 | `isolation-referee` | Headless referee for one game; speaks the official protocol, prints one JSON result |
 | `isolation-bot` | Protocol client used for tests and conformance checks; its strategies `aleatoire` and `niveau-1` to `niveau-3` replicate the official server's CPU levels (`src/cpu.rs`); `niveau-4` and `niveau-5` are our own stronger engines (`src/engine.rs`) |
-| `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), and receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`) |
+| `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`) and runs the weekly tournament (`[tournament]` in `ladder.toml`, `data/tournaments/`, see `docs/spec-tournoi-hebdo.md`) |
 | `isolation-check` | Replays and validates a JSONL file or an official save (`BOARDGAME 1`) |
 | `isolation-remote` | Relay for a team that plays from its own machine: starts the jar for each game and forwards its lines to the ladder (`/api/remote`, see `docs/formats.md`) |
 | `sandbox/` | gVisor sandboxes for the referee and each player (see `docs/formats.md`) |
-| `web/` | Static pages (vanilla JS): Elo ranking, recent games, replay; rank graph of the chosen teams (`graphe.html`) |
+| `web/` | Static pages (vanilla JS): Elo ranking, recent games, replay; rank graph of the chosen teams (`graphe.html`); weekly tournament bracket (`tournoi.html`) |
 | `templates/ladder.yml` | GitHub Actions workflow for the team repositories: builds the jar and submits it on every push to `main` |
 
 The referee contract and the JSONL format are described in `docs/formats.md`. Any referee that follows it, such as the official C++ CLI, can replace ours.
@@ -86,6 +90,7 @@ cargo build --profile bot --bin isolation-bot
 sandbox/build.sh                     # sandbox images (needs Docker with gVisor)
 cp ladder.example.toml ladder.toml   # teams, time per move, session
 target/release/isolation-ladder ladder.toml
+target/release/isolation-ladder tournament start ladder.toml  # from another terminal: a tournament right away
 npx http-server . -p 8000            # then open http://localhost:8000/web/
 ```
 

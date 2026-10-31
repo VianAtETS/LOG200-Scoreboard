@@ -42,6 +42,18 @@ Pour que chaque push sur `main` soumette le jar, ajouter [`templates/ladder.yml`
 
 Les journaux des joueurs vont dans `data/logs/`, les jars et les tokens dans `jars/`. La page ne sert ni l'un ni l'autre.
 
+## Tournoi hebdomadaire
+
+La section `[tournament]` de `ladder.toml` tire un tournoi chaque semaine (`weekly = "sun 12:00"`, heure de Montréal) entre les équipes qui ont un jar accepté : double élimination à 5 s par coup, jars figés au tirage. Le ladder le joue en priorité, puis reprend ses parties ; la page Tournoi montre le tableau. Un créneau manqué de moins de 2 h (ladder arrêté) est rattrapé au démarrage. Règles et fichiers : `docs/spec-tournoi-hebdo.md`.
+
+| Pour… | Faire |
+| --- | --- |
+| Lancer un tournoi maintenant | `docker compose exec ladder isolation-ladder tournament start /srv/ladder.toml` |
+| Débloquer un match suspendu (3 relances en échec) | `docker compose exec ladder isolation-ladder tournament resume /srv/ladder.toml tournoi-2026-11-08 W3` |
+| Désactiver | retirer `weekly` de `[tournament]`, puis `docker compose restart ladder` |
+
+La commande dépose une requête dans `jars/admin/`, que le ladder lit en moins de 10 s.
+
 ## Nom de domaine et HTTPS
 
 Hors du périmètre de ce compose : placer le reverse proxy de votre choix (Caddy, Nginx…) devant le port 8080.

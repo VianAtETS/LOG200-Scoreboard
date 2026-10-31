@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Démarre l'affichage virtuel, le serveur VNC/noVNC puis le serveur de jeu sous Wine.
-# Le serveur de jeu est relancé s'il est fermé (bouton « Quitter »).
+# Le serveur de jeu est relancé s'il est fermé (bouton "Quitter").
 set -euo pipefail
 
 SCREEN="${SCREEN:-1024x864x24}"

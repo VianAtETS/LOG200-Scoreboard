@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Tournoi du ladder Isolation</title>
+    <!-- Vide : données sur le site qui sert la page. -->
+    <meta name="scoreboard-server" content="" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="tournoi.js"></script>
+</head>
+
+<body>
+    <header class="masthead">
+        <h1 class="title">Ladder Isolation <span class="title-course">LOG200</span></h1>
+        <nav class="pages" aria-label="Pages">
+            <a href="./">Classement</a>
+            <a href="graphe.html">Graphe</a>
+            <a href="tournoi.html" aria-current="page">Tournoi</a>
+        </nav>
+        <div class="controls">
+            <label class="session">
+                <span>Tournoi</span>
+                <select id="tournament"></select>
+            </label>
+            <p class="status" role="status">
+                <span id="live" class="live" aria-hidden="true"></span>
+                <span id="status">Chargement du tournoi…</span>
+            </p>
+        </div>
+    </header>
+
+    <main class="layout tournament-layout">
+        <section class="panel tournament" aria-labelledby="tournament-title">
+            <div class="tournament-head">
+                <div>
+                    <h2 id="tournament-title">Tournoi hebdomadaire</h2>
+                    <p id="tournament-meta" class="tournament-meta"></p>
+                </div>
+                <p id="next" class="next" hidden></p>
+            </div>
+            <ol id="places" class="places" aria-label="Classement final" hidden></ol>
+            <p id="tournament-empty" class="empty" hidden>
+                Aucun tournoi pour l'instant. Chaque semaine, le ladder joue une répétition du tournoi final :
+                double élimination à 5 s par coup, entre les équipes qui ont un jar accepté.
+            </p>
+            <div id="bracket" class="bracket"></div>
+        </section>
+    </main>
+</body>
+
+</html>

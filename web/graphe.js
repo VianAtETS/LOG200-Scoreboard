@@ -108,7 +108,8 @@ function render() {
     const scope = scopes[session]
     const selected = selectedTeams(scope.ratings)
     const w = document.querySelector('#bump-window input:checked')?.value
-    const { columns, series } = rankSeries(timeline.rows, {
+    const rows = session === GLOBAL ? timeline.rows.filter((t) => !t.tournament) : timeline.rows
+    const { columns, series } = rankSeries(rows, {
         key: session === GLOBAL ? 'all' : 'session',
         session,
         selected,

@@ -283,6 +283,8 @@ struct Tick<'a> {
     session: &'a str,
     red: &'a Side,
     black: &'a Side,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    tournament: bool,
 }
 
 impl Row {
@@ -294,6 +296,7 @@ impl Row {
             session: &self.session,
             red: &self.red,
             black: &self.black,
+            tournament: self.tournament.is_some(),
         }
     }
 }
@@ -710,10 +713,13 @@ mod tests {
         assert_eq!(row.black.all, [before.0, 0.0]);
         assert!(row.black.session[1] < 0.0);
         assert_eq!(serde_json::to_value(&row).unwrap()["tournament"]["match"], "W1");
+        assert_eq!(serde_json::to_value(row.tick()).unwrap()["tournament"], true);
         let summary = serde_json::to_value(standings.summary()).unwrap();
         assert_eq!(summary["scopes"][""]["games"], 1);
         assert_eq!(summary["scopes"][""]["recent"].as_array().unwrap().len(), 1);
         assert_eq!(summary["scopes"]["tournoi-2026-11-08"]["games"], 1);
+        let ladder = standings.play(&game("a", "b", Color::Red), 2..3);
+        assert!(serde_json::to_value(ladder.tick()).unwrap().get("tournament").is_none());
     }
 
     #[test]

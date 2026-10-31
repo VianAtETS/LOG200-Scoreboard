@@ -1454,6 +1454,263 @@ p.graph-link:hover {
 
 /* --- Petits écrans ---------------------------------------------------------------------------- */
 
+/* --- Tournoi --------------------------------------------------------------------------------- */
+
+.layout.tournament-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: none;
+}
+
+.tournament {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+}
+
+.tournament-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px 24px;
+}
+
+.tournament-meta,
+.next {
+    color: var(--muted);
+    font-size: 0.875rem;
+}
+
+.tournament-meta {
+    margin-top: 2px;
+}
+
+.places {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.places li {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 0.875rem;
+}
+
+.places .place {
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.places .first {
+    border-color: var(--red);
+    background: color-mix(in srgb, var(--red) 10%, transparent);
+    font-weight: 700;
+}
+
+.bracket {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    align-content: start;
+    gap: 20px;
+    overflow: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+
+.band {
+    margin: 0 0 10px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: var(--tile);
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.rounds {
+    position: relative;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 196px;
+    column-gap: 40px;
+    width: max-content;
+}
+
+.links {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.links path {
+    fill: none;
+    stroke: var(--black-mark);
+    stroke-width: 1.5;
+}
+
+.round {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.round-title {
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.round-matches {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    gap: 14px;
+}
+
+.match-wrap {
+    display: grid;
+    gap: 3px;
+}
+
+/* Deux exemptions : rien à montrer, mais la place garde l'alignement de l'arbre. */
+.match-wrap:empty {
+    min-height: 76px;
+}
+
+.match-id {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.match-state {
+    padding: 0 6px;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.match-state.running {
+    background: color-mix(in srgb, var(--ok) 18%, transparent);
+    color: var(--ok);
+}
+
+.match-state.suspended {
+    background: color-mix(in srgb, var(--red) 14%, transparent);
+    color: var(--red);
+}
+
+.match-note {
+    font-weight: 500;
+    letter-spacing: 0;
+}
+
+.match {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+}
+
+.match.running {
+    border-color: var(--ok);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 25%, transparent);
+}
+
+.match.suspended {
+    border-color: var(--red);
+    border-style: dashed;
+}
+
+.match.bye {
+    opacity: 0.55;
+}
+
+.slot {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) 28px;
+    align-items: center;
+    height: 28px;
+    font-size: 0.875rem;
+}
+
+.slot+.slot {
+    border-top: 1px solid var(--line);
+}
+
+.slot .seed {
+    color: var(--muted);
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+.slot .name {
+    overflow: hidden;
+    padding-right: 6px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.slot .score {
+    align-self: stretch;
+    display: grid;
+    place-items: center;
+    background: var(--tile);
+    font-weight: 700;
+}
+
+.slot.win .name {
+    font-weight: 700;
+}
+
+.slot.win .score {
+    background: var(--red);
+    color: var(--red-ink);
+}
+
+.slot.lose .name,
+.slot.tbd .name {
+    color: var(--muted);
+}
+
+.slot.tbd .name {
+    font-size: 0.8125rem;
+    font-style: italic;
+}
+
+.match-games {
+    display: flex;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.match-games a {
+    color: var(--ink);
+}
+
 @media (max-width: 959px),
 (max-height: 599px) {
     .ranking-scroll {

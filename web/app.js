@@ -151,6 +151,9 @@ function follow() {
     return following
 }
 
+// Les parties de tournoi ne comptent que dans leur session.
+const outside = (g, session) => session === GLOBAL && Boolean(g.tournament)
+
 const matchMode = () => document.querySelector('#match input:checked')?.value ?? GLOBAL
 
 // Lien ?game= : l'id finit par `-<rouge>-<noir>`, la partie est dans le fichier de l'équipe rouge.
@@ -194,7 +197,7 @@ function render() {
     const teams = selectedTeams()
     const rows = new Map([...followed].map(([team, state]) => [team, state.rows]))
     const list = teams.length
-        ? gamesOf(rows, teams, { mode: matchMode(), session }).filter((g) => !verified || !isRemote(g))
+        ? gamesOf(rows, teams, { mode: matchMode(), session }).filter((g) => (!verified || !isRemote(g)) && !outside(g, session))
         : scope.recent
     renderRunning()
     renderPaceHeader()
@@ -274,7 +277,7 @@ function nextPaceStat() {
 function renderDuel(teams, ratings, rows, session, verified) {
     $('duel').hidden = teams.length !== 2
     if (teams.length !== 2) return
-    const games = gamesOf(rows, teams, { mode: BETWEEN, session }).filter((g) => !verified || !isRemote(g))
+    const games = gamesOf(rows, teams, { mode: BETWEEN, session }).filter((g) => (!verified || !isRemote(g)) && !outside(g, session))
     const line = (team, opponent) => {
         const build = ratings.find((r) => r.team === team)?.build
         const { wins, games: n } = record(games, team, opponent, build)
