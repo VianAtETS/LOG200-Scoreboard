@@ -38,6 +38,7 @@ use remote::Registry;
 use schedule::Scheduler;
 use standings::Standings;
 use submit::TeamId;
+use tournament::admin::{self, Request};
 use tournament::{Organizer, Pending};
 
 /// Pause après une partie annulée : une config cassée ne doit pas faire tourner le ladder à vide.
@@ -68,6 +69,24 @@ enum Command {
         #[arg(long, default_value = submit::DEFAULT_TEAMS)]
         teams: PathBuf,
     },
+    /// Requête lue par le ladder en marche.
+    Tournament {
+        #[command(subcommand)]
+        action: TournamentAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum TournamentAction {
+    Start {
+        config: PathBuf,
+    },
+    Resume {
+        config: PathBuf,
+        id: String,
+        #[arg(value_name = "MATCH")]
+        match_id: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -76,6 +95,7 @@ fn main() -> ExitCode {
         (Some(Command::AddTeam { id, teams }), _) => submit::add_team(&teams, id)
             .map(|token| println!("{token}"))
             .map_err(anyhow::Error::from),
+        (Some(Command::Tournament { action }), _) => request(action),
         (None, Some(path)) => run(&path, cli.rounds),
         (None, None) => unreachable!("clap exige la configuration sans sous-commande"),
     };
@@ -88,11 +108,29 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
-    let cfg: Config = fs::read_to_string(path)
+fn load(path: &Path) -> anyhow::Result<Config> {
+    fs::read_to_string(path)
         .with_context(|| path.display().to_string())?
         .parse()
-        .with_context(|| path.display().to_string())?;
+        .with_context(|| path.display().to_string())
+}
+
+fn request(action: TournamentAction) -> anyhow::Result<()> {
+    let (path, request) = match action {
+        TournamentAction::Start { config } => (config, Request::Start),
+        TournamentAction::Resume { config, id, match_id } => (config, Request::Resume { id, match_id }),
+    };
+    let sent = admin::send(&load(&path)?, &request)?;
+    println!(
+        "requête déposée dans {} : le ladder la lit sous {} s",
+        sent.display(),
+        IDLE_DELAY.as_secs()
+    );
+    Ok(())
+}
+
+fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
+    let cfg = load(path)?;
     let logs = cfg.logs_dir();
     fs::create_dir_all(&logs).with_context(|| logs.display().to_string())?;
     let history = fs::read_to_string(&cfg.out)
@@ -121,6 +159,7 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut busy = HashSet::new();
     loop {
         tournaments.tick(cfg, &standings, rng.random());
+        tournaments.poll(cfg, &standings, rng.random());
         if rounds.is_none_or(|n| round < n) {
             launch_tournament(&arena, &mut tournaments, &mut busy, &mut running, &reports);
             if running.iter().sum::<usize>() < cfg.slots() {

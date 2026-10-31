@@ -1,3 +1,4 @@
+pub mod admin;
 mod bracket;
 pub mod calendar;
 mod draw;
@@ -174,7 +175,6 @@ impl Tournament {
         suspend
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "commande admin, étape 8"))]
     pub fn resume(&mut self, match_id: &str) -> bool {
         let Some(k) = self.index(match_id).filter(|&k| self.suspended[k]) else {
             return false;

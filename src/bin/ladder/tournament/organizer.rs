@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use isolation::notation;
 use isolation::record::{GameRecord, TournamentGame};
 
+use super::admin::{self, Request};
 use super::calendar::{Calendar, now};
 use super::draw::Entrant;
 use super::{Pending, Tournament, discard_jars, draw_path, resume, start, tournament_id, write_atomic};
@@ -39,6 +40,7 @@ struct Index {
 }
 
 pub struct Organizer {
+    enabled: bool,
     settings: TournamentConfig,
     current: Option<Tournament>,
     calendar: Option<Calendar>,
@@ -49,6 +51,7 @@ impl Organizer {
     /// `enabled` faux (`--rounds`) : aucun tournoi.
     pub fn new(cfg: &Config, enabled: bool, games: &[GameRecord]) -> anyhow::Result<Self> {
         let mut organizer = Self {
+            enabled,
             settings: cfg.tournament.clone().unwrap_or_default(),
             current: None,
             calendar: None,
@@ -82,6 +85,34 @@ impl Organizer {
         }
         if let Some(date) = self.due.take() {
             self.open(cfg, standings, date, seed);
+        }
+    }
+
+    pub fn poll(&mut self, cfg: &Config, standings: &Standings, seed: u64) {
+        if !self.enabled {
+            return;
+        }
+        for request in admin::take(cfg) {
+            match request {
+                Request::Start => match now() {
+                    Ok(now) => self.open(cfg, standings, now.date(), seed),
+                    Err(e) => eprintln!("tournoi non tiré : {e}"),
+                },
+                Request::Resume { id, match_id } => self.resume(cfg, &id, &match_id),
+            }
+        }
+    }
+
+    fn resume(&mut self, cfg: &Config, id: &str, match_id: &str) {
+        let Some(t) = self.current.as_mut().filter(|t| t.draw.id == id) else {
+            eprintln!("aucun tournoi {id} en cours");
+            return;
+        };
+        if t.resume(match_id) {
+            eprintln!("   {id} {match_id} repris");
+            self.publish(cfg);
+        } else {
+            eprintln!("   {id} {match_id} n'est pas suspendu");
         }
     }
 
@@ -204,11 +235,40 @@ mod tests {
 
     use serde_json::Value;
 
+    use super::super::admin::{self, Request};
     use super::super::draw;
     use super::*;
 
     fn read(path: &std::path::Path) -> Value {
         serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn admin_requests_start_a_tournament_and_resume_a_suspended_match() {
+        let (dir, cfg) = draw::tests::setup(&["eq01", "eq02", "eq03", "eq04", "eq05", "eq06"]);
+        let standings = Standings::from_history(cfg.data_dir(), &[], &[]).unwrap();
+        let mut organizer = Organizer::new(&cfg, true, &[]).unwrap();
+        admin::send(&cfg, &Request::Start).unwrap();
+        organizer.poll(&cfg, &standings, 1);
+        let p = organizer.pending(&HashSet::new()).remove(0);
+        for _ in 0..4 {
+            organizer.start(&cfg, &p);
+            organizer.record(&cfg, &p.game, None);
+        }
+        let blocked = |o: &Organizer| {
+            o.pending(&HashSet::new())
+                .iter()
+                .all(|q| q.match_index != p.match_index)
+        };
+        assert!(blocked(&organizer));
+        let resume = Request::Resume {
+            id: p.game.id.clone(),
+            match_id: p.game.match_id.clone(),
+        };
+        admin::send(&cfg, &resume).unwrap();
+        organizer.poll(&cfg, &standings, 1);
+        assert!(!blocked(&organizer));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
