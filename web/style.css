@@ -325,6 +325,22 @@ select {
     .ranking-scroll {
         max-height: min(calc(2rem + 10.5 * 2.25rem), calc(100dvh - 20rem));
     }
+
+    .layout.single-team {
+        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-areas:
+            'ranking submit'
+            'games replay';
+    }
+
+    .single-team .ranking {
+        max-height: 50dvh;
+        overflow: auto;
+    }
+
+    .single-team .ranking-scroll {
+        max-height: min(calc(2rem + 7.5 * 2.25rem), calc(50dvh - 8rem));
+    }
 }
 
 @media (min-width: 1400px) and (min-height: 600px) {
@@ -455,30 +471,48 @@ tbody tr:first-child .elo {
 }
 
 .running {
-    display: grid;
-    gap: 4px;
-    margin: 0 0 10px;
-    padding: 0;
-    list-style: none;
+    display: none;
 }
 
-.running li {
-    display: flex;
-    flex-wrap: wrap;
+.duel-icon {
+    flex: none;
+    width: 1em;
+    height: 1em;
+    overflow: visible;
+}
+
+.duel-sword {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+}
+
+.duel-sword.red {
+    stroke: var(--red);
+}
+
+.duel-sword.black {
+    stroke: var(--pawn-rim);
+}
+
+.duel-badge {
+    display: inline-flex;
     align-items: center;
-    gap: 2px 8px;
-    min-width: 0;
-    font-size: 0.875rem;
+    gap: 3px;
+    max-width: 100%;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border: 1px solid color-mix(in srgb, var(--red) 45%, var(--line));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--red) 8%, transparent);
+    color: var(--ink);
+    font-size: 0.75rem;
+    white-space: nowrap;
 }
 
-.running-label {
-    color: var(--red);
-    font-weight: 700;
-}
-
-.running .versus,
-.running time {
-    color: var(--muted);
+.duel-badge.black {
+    border-color: color-mix(in srgb, var(--pawn-rim) 55%, var(--line));
 }
 
 .empty {
@@ -1725,6 +1759,55 @@ p.graph-link:hover {
 }
 
 @media (max-width: 640px) {
+    .masthead {
+        align-items: flex-start;
+        gap: 10px 14px;
+        padding-top: max(10px, env(safe-area-inset-top));
+    }
+
+    .title {
+        font-size: 1.25rem;
+    }
+
+    .pages {
+        order: 3;
+        width: 100%;
+        margin-right: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .pages a {
+        flex: none;
+        padding-inline: 10px;
+    }
+
+    .controls {
+        margin-left: auto;
+        justify-content: flex-end;
+        gap: 4px 12px;
+    }
+
+    .session>span,
+    .status {
+        font-size: 0.75rem;
+    }
+
+    .layout {
+        gap: 10px;
+        padding: 10px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    }
+
+    .panel {
+        padding: 12px;
+        border-radius: 8px;
+    }
+
+    .duel-badge {
+        margin-left: 4px;
+        padding-inline: 4px;
+    }
+
     .submit-form {
         grid-template-columns: minmax(0, 1fr);
     }

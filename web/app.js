@@ -195,11 +195,11 @@ function render() {
     const key = session === GLOBAL ? 'all' : 'session'
     const rating = (side) => ratingOf(side, key, verified)
     const teams = selectedTeams()
+    document.querySelector('.layout').classList.toggle('single-team', teams.length === 1)
     const rows = new Map([...followed].map(([team, state]) => [team, state.rows]))
     const list = teams.length
         ? gamesOf(rows, teams, { mode: matchMode(), session }).filter((g) => (!verified || !isRemote(g)) && !outside(g, session))
         : scope.recent
-    renderRunning()
     renderPaceHeader()
     renderRanking(scope.ratings)
     picker.render(teams)
@@ -222,21 +222,23 @@ function render() {
     if (latest && !replay.pinned && replay.game?.id !== latest.id) showGame(latest)
 }
 
-function renderRunning() {
-    $('running').hidden = running.length === 0
-    $('running').replaceChildren(
-        ...running.map((g) => {
-            const started = `lancée ${ago(g.since)}`
-            return el(
-                'li',
-                { 'aria-label': `${g.red} (rouge) contre ${g.black} (noir), ${started}` },
-                el('span', { class: 'running-label' }, 'En cours'),
-                el('span', { class: 'side red' }, el('span', {}, g.red)),
-                el('span', { class: 'versus' }, 'contre'),
-                el('span', { class: 'side black' }, el('span', {}, g.black)),
-                el('time', { datetime: g.since, title: fullFormat.format(new Date(g.since)) }, started)
-            )
-        })
+function duelIcon() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('class', 'duel-icon')
+    svg.setAttribute('viewBox', '0 0 20 16')
+    svg.setAttribute('aria-hidden', 'true')
+    svg.innerHTML = `
+        <path class="duel-sword red" d="M3 1l12 12m-2-1 3 3m-5-1 4-4" />
+        <path class="duel-sword black" d="M17 1L5 13m2-1-3 3m5-1-4-4" />`
+    return svg
+}
+
+function duelBadge(opponent, color) {
+    return el(
+        'span',
+        { class: `duel-badge ${color}`, title: `Partie en cours contre ${opponent}` },
+        duelIcon(),
+        opponent
     )
 }
 
@@ -293,6 +295,11 @@ function renderRanking(ratings) {
     $('ranking-empty').hidden = ratings.length > 0
     $('anchor-note').hidden = !ratings.some((r) => r.anchor)
     const isBot = (r) => !r.build
+    const duels = new Map()
+    for (const g of running) {
+        if (!duels.has(g.red)) duels.set(g.red, { opponent: g.black, color: 'red' })
+        if (!duels.has(g.black)) duels.set(g.black, { opponent: g.red, color: 'black' })
+    }
     $('bot-note').hidden = !ratings.some(isBot)
     $('remote-note').hidden = !ratings.some((r) => r.remote)
     $('ranking')
@@ -307,6 +314,8 @@ function renderRanking(ratings) {
                 if (bot) team.append(el('span', { class: 'badge', title: 'Adversaire de référence' }, 'bot'))
                 if (r.anchor) team.append(el('span', { class: 'badge anchor' }, 'ancre'))
                 if (r.provisional) team.append(el('span', { class: 'badge' }, 'provisoire'))
+                const duel = duels.get(r.team)
+                if (duel) team.append(duelBadge(duel.opponent, duel.color))
                 return el(
                     'tr',
                     bot ? { class: 'bot' } : {},
