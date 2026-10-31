@@ -326,13 +326,6 @@ select {
         max-height: min(calc(2rem + 10.5 * 2.25rem), calc(100dvh - 20rem));
     }
 
-    .layout.single-team {
-        grid-template-rows: auto minmax(0, 1fr);
-        grid-template-areas:
-            'ranking submit'
-            'games replay';
-    }
-
     .single-team .ranking {
         max-height: 50dvh;
         overflow: auto;
