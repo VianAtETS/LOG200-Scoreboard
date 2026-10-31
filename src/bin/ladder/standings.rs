@@ -550,6 +550,7 @@ mod tests {
             ts: "2026-10-24T12:00:00.000Z".into(),
             red: player(red),
             black: player(black),
+            tournament: None,
             result: GameResult {
                 v: RECORD_VERSION,
                 time_ms: 500,

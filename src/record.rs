@@ -67,8 +67,18 @@ pub struct GameRecord {
     pub ts: String,
     pub red: Player,
     pub black: Player,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tournament: Option<TournamentGame>,
     #[serde(flatten)]
     pub result: GameResult,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+pub struct TournamentGame {
+    pub id: String,
+    #[serde(rename = "match")]
+    pub match_id: String,
+    pub game: u32,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -219,6 +229,7 @@ mod tests {
                 anchor: true,
                 remote: false,
             },
+            tournament: None,
             result: GameResult {
                 v: RECORD_VERSION,
                 time_ms: 500,
@@ -273,6 +284,20 @@ mod tests {
         game.red.remote = true;
         let line = serde_json::to_string(&game).unwrap();
         assert!(line.contains(r#""red":{"team":"eq01","build":"abc","remote":true}"#));
+        assert_eq!(Jsonl::parse(&line).games, vec![game]);
+    }
+
+    #[test]
+    fn tournament_is_written_only_when_set() {
+        let mut game = sample();
+        assert!(serde_json::to_value(&game).unwrap().get("tournament").is_none());
+        game.tournament = Some(TournamentGame {
+            id: "tournoi-2026-11-08".into(),
+            match_id: "W3".into(),
+            game: 2,
+        });
+        let line = serde_json::to_string(&game).unwrap();
+        assert!(line.contains(r#""tournament":{"id":"tournoi-2026-11-08","match":"W3","game":2}"#));
         assert_eq!(Jsonl::parse(&line).games, vec![game]);
     }
 

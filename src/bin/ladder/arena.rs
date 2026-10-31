@@ -154,6 +154,7 @@ impl Arena {
             ts,
             red: red_entry,
             black: black_entry,
+            tournament: None,
             result,
         })
     }
