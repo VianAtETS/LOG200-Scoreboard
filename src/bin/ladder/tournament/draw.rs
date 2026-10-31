@@ -117,7 +117,14 @@ impl Draw {
     }
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub fn discard_jars(cfg: &Config, id: &str) -> std::io::Result<()> {
+    match frozen_dir(cfg, id).map(fs::remove_dir_all) {
+        Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }

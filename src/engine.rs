@@ -34,9 +34,9 @@ const LMR_DEPTH: u8 = 3;
 const STATIC_WEIGHT: i32 = 64;
 const PICKED: usize = 3;
 // TEMP expériences : N5_STEP, N5_LMR, N5_NEAR, N5_FAR.
-static KNOBS: std::sync::LazyLock<[i32; 4]> = std::sync::LazyLock::new(|| {
+static KNOBS: std::sync::LazyLock<[i32; 5]> = std::sync::LazyLock::new(|| {
     let k = |n: &str, d| std::env::var(n).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
-    [k("N5_STEP", 2), k("N5_LMR", 2), k("N5_NEAR", 4), k("N5_FAR", 1)]
+    [k("N5_STEP", 2), k("N5_LMR", 2), k("N5_NEAR", 4), k("N5_FAR", 1), k("N5_LATE", 8)]
 });
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn knob_u8(i: usize) -> u8 { KNOBS[i] as u8 }
@@ -427,7 +427,7 @@ impl Search {
             let value = if index == 0 {
                 -self.negamax(board, side.other(), depth - 1, ply + 1, -beta, -alpha)
             } else {
-                let reduced = self.eval == Eval::Territory && depth >= LMR_DEPTH && index >= LMR_LATE;
+                let reduced = self.eval == Eval::Territory && depth >= LMR_DEPTH && index >= usize::from(knob_u8(4));
                 let mut value = if reduced {
                     -self.negamax(board, side.other(), depth - 1 - knob_u8(1), ply + 1, -alpha - 1, -alpha)
                 } else {

@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Source {
     Seed(usize),
@@ -5,7 +7,8 @@ pub enum Source {
     Loser(usize),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Side {
     Winners,
     Losers,
@@ -16,7 +19,6 @@ pub enum Side {
 pub struct Match {
     pub id: String,
     pub side: Side,
-    #[cfg_attr(not(test), expect(dead_code, reason = "publication pas encore branchée"))]
     pub round: u32,
     pub sources: [Source; 2],
     pub best_of: u32,
@@ -32,6 +34,13 @@ pub enum Status {
         winner: Option<usize>,
         loser: Option<usize>,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Slot {
+    Unknown,
+    Bye,
+    Seed(usize),
 }
 
 pub struct Bracket {
@@ -134,27 +143,16 @@ impl Bracket {
     pub fn statuses(&self, wins: &[[u32; 2]]) -> Vec<Status> {
         let mut out: Vec<Status> = Vec::with_capacity(self.matches.len());
         for (k, m) in self.matches.iter().enumerate() {
-            let entrant = |source| match source {
-                Source::Seed(s) => Some((s < self.teams).then_some(s)),
-                Source::Winner(j) | Source::Loser(j) => match out[j] {
-                    Status::Done { winner, loser } => Some(if matches!(source, Source::Winner(_)) {
-                        winner
-                    } else {
-                        loser
-                    }),
-                    _ => None,
-                },
-            };
-            let status = match m.sources.map(entrant) {
-                [Some(None), Some(None)] => Status::Done {
+            let status = match m.sources.map(|source| self.entrant(&out, source)) {
+                [Slot::Bye, Slot::Bye] => Status::Done {
                     winner: None,
                     loser: None,
                 },
-                [Some(Some(team)), Some(None)] | [Some(None), Some(Some(team))] => Status::Done {
+                [Slot::Seed(team), Slot::Bye] | [Slot::Bye, Slot::Seed(team)] => Status::Done {
                     winner: Some(team),
                     loser: None,
                 },
-                [Some(Some(a)), Some(Some(b))] => {
+                [Slot::Seed(a), Slot::Seed(b)] => {
                     let w = wins.get(k).copied().unwrap_or_default();
                     let needed = m.best_of / 2 + 1;
                     if w[0] + m.head_start[0] >= needed {
@@ -178,7 +176,21 @@ impl Bracket {
         out
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "publication, étape 7"))]
+    pub fn entrant(&self, done: &[Status], source: Source) -> Slot {
+        let known = |seed: Option<usize>| seed.map_or(Slot::Bye, Slot::Seed);
+        match source {
+            Source::Seed(s) => known((s < self.teams).then_some(s)),
+            Source::Winner(j) | Source::Loser(j) => match done[j] {
+                Status::Done { winner, loser } => known(if matches!(source, Source::Winner(_)) {
+                    winner
+                } else {
+                    loser
+                }),
+                _ => Slot::Unknown,
+            },
+        }
+    }
+
     pub fn placements(&self, statuses: &[Status]) -> Option<Vec<usize>> {
         let Status::Done {
             winner: Some(champion),

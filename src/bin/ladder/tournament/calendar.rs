@@ -67,6 +67,10 @@ impl Calendar {
         }
     }
 
+    pub fn next(&self) -> Option<&Zoned> {
+        self.next.as_ref()
+    }
+
     pub fn due_at(&mut self, now: &Zoned) -> Option<Date> {
         let slot = self.next.take_if(|slot| *slot <= *now)?;
         self.next = self.weekly.next(now).ok();

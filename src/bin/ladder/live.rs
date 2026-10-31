@@ -6,13 +6,15 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use isolation::record::now_rfc3339;
+use isolation::record::{TournamentGame, now_rfc3339};
 
 #[derive(Serialize)]
 struct Running {
     red: String,
     black: String,
     since: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tournament: Option<TournamentGame>,
 }
 
 #[derive(Serialize)]
@@ -33,11 +35,12 @@ impl Live {
         Ok(live)
     }
 
-    pub fn start(&mut self, red: &str, black: &str) -> io::Result<()> {
+    pub fn start(&mut self, red: &str, black: &str, tournament: Option<&TournamentGame>) -> io::Result<()> {
         self.games.push(Running {
             red: red.to_string(),
             black: black.to_string(),
             since: now_rfc3339(),
+            tournament: tournament.cloned(),
         });
         self.write()
     }
@@ -87,21 +90,37 @@ mod tests {
         assert_eq!(read(&dir)["v"], 1);
         assert!(teams(&read(&dir)).is_empty());
 
-        live.start("a", "b").unwrap();
-        live.start("c", "d").unwrap();
+        live.start("a", "b", None).unwrap();
+        live.start("c", "d", None).unwrap();
         assert_eq!(teams(&read(&dir)), [("a", "b"), ("c", "d")]);
         assert!(read(&dir)["games"][0]["since"].as_str().unwrap().ends_with('Z'));
 
         live.end("a", "b").unwrap();
-        live.start("b", "a").unwrap();
+        live.start("b", "a", None).unwrap();
         assert_eq!(teams(&read(&dir)), [("c", "d"), ("b", "a")]);
         assert!(!dir.join("live.json.tmp").exists());
     }
 
     #[test]
+    fn tournament_games_carry_their_match() {
+        let dir = temp_dir("live-tournament");
+        let mut live = Live::new(dir.clone()).unwrap();
+        live.start("a", "b", None).unwrap();
+        let game = TournamentGame {
+            id: "tournoi-2026-11-08".into(),
+            match_id: "W1".into(),
+            game: 2,
+        };
+        live.start("c", "d", Some(&game)).unwrap();
+        let file = read(&dir);
+        assert!(file["games"][0].get("tournament").is_none());
+        assert_eq!(file["games"][1]["tournament"]["match"], "W1");
+    }
+
+    #[test]
     fn restart_clears_a_stale_file() {
         let dir = temp_dir("live-restart");
-        Live::new(dir.clone()).unwrap().start("a", "b").unwrap();
+        Live::new(dir.clone()).unwrap().start("a", "b", None).unwrap();
         Live::new(dir.clone()).unwrap();
         assert!(teams(&read(&dir)).is_empty());
     }

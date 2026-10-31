@@ -25,7 +25,6 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use rand::RngExt;
 
-use isolation::board::Color;
 use isolation::board::Move;
 use isolation::notation;
 use isolation::record::{GameRecord, Jsonl, TournamentGame};
@@ -163,8 +162,8 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
         };
         match report {
             Report::Wake => {}
-            Report::Started { red, black } => {
-                if let Err(e) = live.start(&red, &black) {
+            Report::Started { red, black, game } => {
+                if let Err(e) = live.start(&red, &black, game.as_ref()) {
                     eprintln!("   parties en cours non publiées : {e}");
                 }
             }
@@ -177,9 +176,9 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
                 if let Err(e) = live.end(&red, &black) {
                     eprintln!("   parties en cours non publiées : {e}");
                 }
-                let winner = save(cfg, &mut standings, outcome, &red, &black)?;
+                let saved = save(cfg, &mut standings, outcome, &red, &black)?;
                 if let Some(game) = game {
-                    tournaments.record(&game, winner.as_deref());
+                    tournaments.record(cfg, &game, saved.as_ref());
                 }
             }
             Report::Done { pair, multithread } => {
@@ -194,14 +193,14 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Le gagnant, `None` pour une partie annulée.
+/// `None` pour une partie annulée.
 fn save(
     cfg: &Config,
     standings: &mut Standings,
     outcome: Result<GameRecord, GameError>,
     red: &str,
     black: &str,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<GameRecord>> {
     let record = match outcome {
         Ok(record) => record,
         Err(e) => {
@@ -220,10 +219,7 @@ fn save(
         result.reason,
         result.moves.len()
     );
-    Ok(Some(match result.winner {
-        Color::Red => record.red.team,
-        Color::Black => record.black.team,
-    }))
+    Ok(Some(record))
 }
 
 fn launch_tournament(
@@ -239,7 +235,7 @@ fn launch_tournament(
         if running[usize::from(multithread)] < cfg.slots_of(multithread) {
             running[usize::from(multithread)] += 1;
             busy.extend([p.red.id.clone(), p.black.id.clone()]);
-            tournaments.start(&p);
+            tournaments.start(cfg, &p);
             spawn_game(Arc::clone(arena), p, reports.clone());
         }
     }
@@ -252,6 +248,7 @@ enum Report {
     Started {
         red: String,
         black: String,
+        game: Option<TournamentGame>,
     },
     Played {
         red: String,
@@ -286,6 +283,7 @@ fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: 
             let _ = reports.send(Report::Started {
                 red: red.id.clone(),
                 black: black.id.clone(),
+                game: None,
             });
             let outcome = arena.play(red, black, &opening, None);
             let failed = outcome.is_err();
@@ -313,6 +311,7 @@ fn spawn_game(arena: Arc<Arena>, p: Pending, reports: Sender<Report>) {
         let _ = reports.send(Report::Started {
             red: p.red.id.clone(),
             black: p.black.id.clone(),
+            game: Some(p.game.clone()),
         });
         let fixture = Fixture {
             game: p.game.clone(),
