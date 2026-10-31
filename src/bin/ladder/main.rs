@@ -10,6 +10,8 @@ mod remote;
 mod schedule;
 mod standings;
 mod submit;
+#[cfg_attr(not(test), expect(dead_code, reason = "pas encore branché"))]
+mod tournament;
 
 use std::collections::HashSet;
 use std::fs;
