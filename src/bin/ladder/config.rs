@@ -15,6 +15,7 @@ use isolation::board::Color;
 
 use crate::remote::Seat;
 use crate::submit::TeamId;
+use crate::tournament::calendar::Weekly;
 
 /// Une partie détruit au plus une case par coup.
 const MAX_PLIES: u64 = 144;
@@ -62,6 +63,7 @@ pub struct Config {
     pub submit: Option<SubmitConfig>,
     /// Équipes qui jouent depuis leur machine. Demande `[submit]`, qui tient les tokens.
     pub remote: Option<RemoteConfig>,
+    pub tournament: Option<TournamentConfig>,
     #[serde(default, rename = "team")]
     pub teams: Vec<Team>,
 }
@@ -98,6 +100,8 @@ pub enum ConfigError {
     RemoteWithoutSubmit,
     #[error("[remote] connect doit commencer par unix: ou tcp:, pas {0:?}")]
     BadConnect(String),
+    #[error("[tournament] min_teams doit valoir au moins 2, pas {0}")]
+    TournamentTooSmall(usize),
 }
 
 impl FromStr for Config {
@@ -118,6 +122,11 @@ impl FromStr for Config {
             {
                 return Err(ConfigError::BadConnect(remote.connect.clone()));
             }
+        }
+        if let Some(tournament) = &config.tournament
+            && tournament.min_teams < 2
+        {
+            return Err(ConfigError::TournamentTooSmall(tournament.min_teams));
         }
         Ok(config)
     }
@@ -227,6 +236,28 @@ impl Default for RemoteConfig {
         Self {
             listen: "0.0.0.0:8091".into(),
             connect: "unix:/tmp/isolation-ladder/{game}/{side}/sock".into(),
+        }
+    }
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct TournamentConfig {
+    pub weekly: Option<Weekly>,
+    pub time_ms: u64,
+    pub min_teams: usize,
+    pub catch_up_h: u64,
+    pub retries: u32,
+}
+
+impl Default for TournamentConfig {
+    fn default() -> Self {
+        Self {
+            weekly: None,
+            time_ms: 5000,
+            min_teams: 4,
+            catch_up_h: 2,
+            retries: 3,
         }
     }
 }
@@ -346,7 +377,37 @@ mod tests {
         let cfg: Config = include_str!("../../../ladder.example.toml").parse().unwrap();
         let submit = cfg.submit.as_ref().unwrap();
         assert_eq!(submit.max_jar_mb, 20);
+        assert!(cfg.tournament.as_ref().unwrap().weekly.is_some());
         assert_eq!(cfg.team_cmd.args().last().map(String::as_str), Some("{jar}"));
+    }
+
+    #[test]
+    fn tournament_defaults_to_five_seconds_without_a_schedule() {
+        assert!(MINIMAL.parse::<Config>().unwrap().tournament.is_none());
+        let cfg: Config = format!("{MINIMAL}[tournament]\n").parse().unwrap();
+        let t = cfg.tournament.unwrap();
+        assert_eq!(
+            (t.weekly, t.time_ms, t.min_teams, t.catch_up_h, t.retries),
+            (None, 5000, 4, 2, 3)
+        );
+    }
+
+    #[test]
+    fn tournament_schedule_and_size_are_validated() {
+        let cfg: Config = format!("{MINIMAL}[tournament]\nweekly = \"sun 12:00\"\n")
+            .parse()
+            .unwrap();
+        assert_eq!(
+            cfg.tournament.unwrap().weekly.map(|w| w.weekday),
+            Some(jiff::civil::Weekday::Sunday)
+        );
+        let bad = format!("{MINIMAL}[tournament]\nweekly = \"dimanche midi\"\n");
+        assert!(matches!(bad.parse::<Config>(), Err(ConfigError::Toml(_))));
+        let tiny = format!("{MINIMAL}[tournament]\nmin_teams = 1\n");
+        assert!(matches!(
+            tiny.parse::<Config>(),
+            Err(ConfigError::TournamentTooSmall(1))
+        ));
     }
 
     #[test]

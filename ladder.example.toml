@@ -97,6 +97,15 @@ min_interval_s = 300
 # listen = "0.0.0.0:8091"
 # connect = "unix:/tmp/isolation-ladder/{game}/{side}/sock"
 
+# Tournoi hebdomadaire en double elimination (docs/spec-tournoi-hebdo.md), entre les equipes qui ont
+# un jar accepte. Sans weekly, il ne part qu'a la main (isolation-ladder tournament start).
+[tournament]
+weekly = "sun 12:00"  # heure de Montreal
+time_ms = 5000
+# min_teams = 4
+# catch_up_h = 2
+# retries = 3
+
 # Equipes fixes, en plus des equipes inscrites. Dans cmd, {port}, {game} et {side} (red ou black)
 # sont remplaces. `anchor = true` fige le rating a 1500.
 [[team]]

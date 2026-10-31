@@ -1,5 +1,3 @@
-//! Tableau à double élimination. Une tête de série est un indice, 0 pour la meilleure.
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Source {
     Seed(usize),
@@ -44,7 +42,6 @@ const BEST_OF: u32 = 3;
 const FINAL_BEST_OF: u32 = 5;
 
 impl Bracket {
-    /// Une source désigne toujours un match antérieur.
     pub fn new(teams: usize) -> Self {
         assert!(teams >= 2, "un tableau demande au moins deux équipes");
         let mut order = vec![0];
@@ -133,11 +130,9 @@ impl Bracket {
         Self { teams, matches }
     }
 
-    /// `wins[k]` : manches gagnées par chaque place du match k.
     pub fn statuses(&self, wins: &[[u32; 2]]) -> Vec<Status> {
         let mut out: Vec<Status> = Vec::with_capacity(self.matches.len());
         for (k, m) in self.matches.iter().enumerate() {
-            // Some(None) : exemption.
             let entrant = |source| match source {
                 Source::Seed(s) => Some((s < self.teams).then_some(s)),
                 Source::Winner(j) | Source::Loser(j) => match out[j] {
@@ -182,7 +177,6 @@ impl Bracket {
         out
     }
 
-    /// Ex aequo par tour d'élimination ; `None` avant la fin de la grande finale.
     pub fn placements(&self, statuses: &[Status]) -> Option<Vec<usize>> {
         let Status::Done {
             winner: Some(champion),
