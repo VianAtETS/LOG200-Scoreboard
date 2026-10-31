@@ -11,7 +11,7 @@ use isolation::record::{GameRecord, TournamentGame};
 use super::admin::{self, Request};
 use super::calendar::{Calendar, now};
 use super::draw::Entrant;
-use super::{Pending, Tournament, discard_jars, draw_path, resume, start, tournament_id, write_atomic};
+use super::{Pending, Tournament, discard_jars, draw_path, preview, resume, start, tournament_id, write_atomic};
 use crate::config::{Config, TournamentConfig};
 use crate::standings::Standings;
 
@@ -181,6 +181,28 @@ impl Organizer {
         }
     }
 
+    /// `data/tournament-preview.json`, supprimé sous `min_teams`.
+    pub fn publish_preview(&self, cfg: &Config, standings: &Standings) {
+        if !self.enabled {
+            return;
+        }
+        let path = cfg.data_dir().join("tournament-preview.json");
+        let written = preview(cfg, standings).and_then(|draw| match draw {
+            Some(draw) => {
+                let teams = draw.teams(cfg)?;
+                let view = Tournament::new(draw, teams, cfg.opening_plies, 0);
+                Ok(write_atomic(&path, &serde_json::to_vec(&view.view())?)?)
+            }
+            None => match fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+                _ => Ok(()),
+            },
+        });
+        if let Err(e) = written {
+            eprintln!("   aperçu du tournoi non publié : {e:#}");
+        }
+    }
+
     fn publish(&self, cfg: &Config) {
         if let Some(t) = &self.current {
             let path = draw_path(cfg, &t.draw.id);
@@ -268,6 +290,30 @@ mod tests {
         admin::send(&cfg, &resume).unwrap();
         organizer.poll(&cfg, &standings, 1);
         assert!(!blocked(&organizer));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_preview_is_published_then_removed_below_the_minimum() {
+        let (dir, cfg) = draw::tests::setup(&["eq01", "eq02", "eq03", "eq04", "eq05", "eq06", "eq07", "eq08"]);
+        let standings = Standings::from_history(cfg.data_dir(), &[], &[]).unwrap();
+        let organizer = Organizer::new(&cfg, true, &[]).unwrap();
+        organizer.publish_preview(&cfg, &standings);
+        let path = cfg.data_dir().join("tournament-preview.json");
+        let view = read(&path);
+        assert_eq!(view["id"], "apercu");
+        assert_eq!(view["matches"][0]["teams"], serde_json::json!(["eq01", "eq08"]));
+        assert!(
+            Organizer::new(&cfg, true, &[])
+                .unwrap()
+                .pending(&HashSet::new())
+                .is_empty()
+        );
+        for team in ["eq03", "eq04", "eq05", "eq06", "eq07", "eq08"] {
+            fs::remove_file(cfg.submit.as_ref().unwrap().jars.join(team).join("current.jar")).unwrap();
+        }
+        organizer.publish_preview(&cfg, &standings);
+        assert!(!path.exists());
         let _ = fs::remove_dir_all(&dir);
     }
 

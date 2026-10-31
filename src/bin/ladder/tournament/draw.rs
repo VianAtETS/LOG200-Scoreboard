@@ -54,45 +54,80 @@ pub fn seeding(mut candidates: Vec<(String, Option<(f64, usize)>)>) -> Vec<(Stri
     candidates.into_iter().map(|(team, s)| (team, key(&s).0)).collect()
 }
 
-/// `None` : moins de `min_teams` équipes avec un jar.
-pub fn draw(cfg: &Config, standings: &Standings, id: &str, seed: u64) -> anyhow::Result<Option<Draw>> {
-    let settings = cfg.tournament.clone().unwrap_or_default();
-    let teams: HashMap<String, Team> = submit::active_teams(cfg)?
+pub const PREVIEW: &str = "apercu";
+
+/// Équipes avec un jar, meilleure tête de série d'abord ; `None` sous `min_teams`.
+fn seeded(cfg: &Config, standings: &Standings) -> anyhow::Result<Option<Vec<(Team, f64)>>> {
+    let mut teams: HashMap<String, Team> = submit::active_teams(cfg)?
         .into_iter()
         .map(|t| (t.id.clone(), t))
         .collect();
-    if teams.len() < settings.min_teams {
+    if teams.len() < cfg.tournament.clone().unwrap_or_default().min_teams {
         return Ok(None);
     }
-    let frozen = frozen_dir(cfg, id).context("[submit] absent")?;
-    fs::create_dir_all(&frozen).with_context(|| frozen.display().to_string())?;
     let seeds = seeding(
         teams
             .keys()
             .map(|t| (t.clone(), standings.verified_session(&cfg.session, t)))
             .collect(),
     );
-    let mut entrants = Vec::new();
-    for (team, rating) in seeds {
-        let jar = teams[&team].build_file().context("équipe sans jar")?;
-        let bytes = fs::read(&jar).with_context(|| jar.display().to_string())?;
-        fs::write(frozen.join(format!("{team}.jar")), &bytes)?;
-        entrants.push(Entrant {
-            build: short_hash(&bytes),
-            rating,
-            multithread: teams[&team].multithread,
-            team,
-        });
-    }
-    let draw = Draw {
+    Ok(Some(
+        seeds
+            .into_iter()
+            .filter_map(|(id, rating)| Some((teams.remove(&id)?, rating)))
+            .collect(),
+    ))
+}
+
+fn new_draw(cfg: &Config, id: &str, seed: u64, entrants: Vec<Entrant>) -> Draw {
+    Draw {
         v: 1,
         id: id.to_string(),
         ts: now_rfc3339(),
         session: cfg.session.clone(),
-        time_ms: settings.time_ms,
+        time_ms: cfg.tournament.clone().unwrap_or_default().time_ms,
         seed,
         entrants,
+    }
+}
+
+/// Le tirage si le tournoi partait maintenant, sans figer de jar.
+pub fn preview(cfg: &Config, standings: &Standings) -> anyhow::Result<Option<Draw>> {
+    let Some(seeded) = seeded(cfg, standings)? else {
+        return Ok(None);
     };
+    let entrants = seeded
+        .into_iter()
+        .map(|(team, rating)| Entrant {
+            build: standings.build(&team.id).unwrap_or_default().to_string(),
+            rating,
+            multithread: team.multithread,
+            team: team.id,
+        })
+        .collect();
+    Ok(Some(new_draw(cfg, PREVIEW, 0, entrants)))
+}
+
+/// `None` : moins de `min_teams` équipes avec un jar.
+pub fn draw(cfg: &Config, standings: &Standings, id: &str, seed: u64) -> anyhow::Result<Option<Draw>> {
+    let Some(seeded) = seeded(cfg, standings)? else {
+        return Ok(None);
+    };
+    let frozen = frozen_dir(cfg, id).context("[submit] absent")?;
+    fs::create_dir_all(&frozen).with_context(|| frozen.display().to_string())?;
+    let mut entrants = Vec::new();
+    for (team, rating) in seeded {
+        let jar = team.build_file().context("équipe sans jar")?;
+        let bytes = fs::read(&jar).with_context(|| jar.display().to_string())?;
+        fs::write(frozen.join(format!("{}.jar", team.id)), &bytes)?;
+        entrants.push(Entrant {
+            build: short_hash(&bytes),
+            rating,
+            multithread: team.multithread,
+            team: team.id,
+        });
+    }
+    let draw = new_draw(cfg, id, seed, entrants);
     let path = draw_path(cfg, id);
     write_atomic(&path, &serde_json::to_vec(&draw)?).with_context(|| path.display().to_string())?;
     Ok(Some(draw))
@@ -216,6 +251,21 @@ pub(super) mod tests {
         let standings = Standings::from_history(cfg.data_dir(), &[], &[]).unwrap();
         assert!(draw(&cfg, &standings, "tournoi-2026-11-08", 1).unwrap().is_none());
         assert!(!draw_path(&cfg, "tournoi-2026-11-08").exists());
+        assert!(preview(&cfg, &standings).unwrap().is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_preview_seeds_like_the_draw_without_freezing_anything() {
+        let (dir, cfg) = setup(&["eq07", "eq03", "eq05", "eq01", "eq06", "eq02", "eq04"]);
+        let standings = Standings::from_history(cfg.data_dir(), &[], &[]).unwrap();
+        let names = |d: &Draw| d.entrants.iter().map(|e| e.team.clone()).collect::<Vec<_>>();
+        let preview = preview(&cfg, &standings).unwrap().unwrap();
+        assert_eq!((preview.id.as_str(), preview.time_ms), ("apercu", 5000));
+        assert!(!cfg.submit.as_ref().unwrap().jars.join("tournaments").exists());
+        assert!(!cfg.data_dir().join("tournaments").exists());
+        let drawn = draw(&cfg, &standings, "tournoi-2026-11-08", 1).unwrap().unwrap();
+        assert_eq!(names(&preview), names(&drawn));
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -1,5 +1,5 @@
-// Page Tournoi : tableau à double élimination d'un tournoi hebdomadaire, lu dans data/tournaments/.
-// ?tournament= suit le tournoi affiché.
+// Page Tournoi : tableau à double élimination d'un tournoi hebdomadaire, lu dans data/tournaments/, ou
+// aperçu du prochain (data/tournament-preview.json). ?tournament= suit le tableau affiché.
 
 import { $, DATA, el, fullFormat, linkPages, pageUrl, params, pulse, REFRESH_MS, setParam, timeFormat } from './common.js'
 
@@ -8,12 +8,14 @@ const SIDES = [
     ['losers', 'Repêchage'],
 ]
 const STATUS = { running: 'en cours', suspended: 'suspendu' }
+const PREVIEW = 'apercu'
 const dateFormat = new Intl.DateTimeFormat('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' })
 const shortDate = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' })
 
 let index = null
 let view = null
 let viewText = null
+let previewText = null
 let builds = new Map()
 
 async function json(url) {
@@ -26,13 +28,14 @@ async function refresh() {
     try {
         index = await json(`${DATA}/tournaments/index.json`).catch(() => ({ next: null, tournaments: [] }))
         builds = new Map(Object.entries((await json(`${DATA}/summary.json`).catch(() => ({}))).builds ?? {}))
+        previewText = await fetch(`${DATA}/tournament-preview.json`, { cache: 'no-store' })
+            .then((res) => (res.ok ? res.text() : null))
+            .catch(() => null)
         renderPicker()
         const id = $('tournament').value
         let changed = false
         if (id) {
-            const res = await fetch(`${DATA}/tournaments/${encodeURIComponent(id)}.json`, { cache: 'no-store' })
-            if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            const text = await res.text()
+            const text = id === PREVIEW ? previewText : await fetchView(id)
             changed = viewText !== null && text !== viewText
             if (text !== viewText) view = JSON.parse(text)
             viewText = text
@@ -48,14 +51,22 @@ async function refresh() {
     }
 }
 
+async function fetchView(id) {
+    const res = await fetch(`${DATA}/tournaments/${encodeURIComponent(id)}.json`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.text()
+}
+
+// Par défaut : le tournoi en cours, sinon l'aperçu du prochain, sinon le dernier.
 function renderPicker() {
     const select = $('tournament')
     const wanted = select.value || params.get('tournament')
-    const ids = index.tournaments.map((t) => t.id)
-    select.replaceChildren(
-        ...index.tournaments.map((t) => el('option', { value: t.id }, shortDate.format(new Date(t.ts))))
-    )
-    select.value = ids.includes(wanted) ? wanted : (ids[0] ?? '')
+    const options = index.tournaments.map((t) => el('option', { value: t.id }, shortDate.format(new Date(t.ts))))
+    if (previewText) options.unshift(el('option', { value: PREVIEW }, 'Prochain (aperçu)'))
+    select.replaceChildren(...options)
+    const ids = options.map((o) => o.value)
+    const running = index.tournaments.find((t) => !t.winner)?.id
+    select.value = [wanted, running, previewText && PREVIEW, ids[0]].find((id) => id && ids.includes(id)) ?? ''
     select.disabled = ids.length < 2
 }
 
@@ -71,18 +82,26 @@ function render() {
         $('bracket').replaceChildren()
         return
     }
-    $('tournament-title').textContent = `Tournoi du ${dateFormat.format(new Date(view.ts))}`
-    const winner = view.winner ? ` · vainqueur : ${view.winner}` : ''
-    $('tournament-meta').textContent =
-        `${view.entrants.length} équipes · ${view.time_ms < 1000 ? `${view.time_ms} ms` : `${view.time_ms / 1000} s`} par coup · tiré le ${fullFormat.format(new Date(view.ts))}${winner}`
+    const pace = `${view.time_ms < 1000 ? `${view.time_ms} ms` : `${view.time_ms / 1000} s`} par coup`
+    if (view.id === PREVIEW) {
+        $('tournament-title').textContent = 'Aperçu du prochain tournoi'
+        $('tournament-meta').textContent =
+            `${view.entrants.length} équipes · ${pace} · le tirage si le tournoi partait maintenant, selon l'Elo vérifié de la session, recalculé après chaque partie`
+    } else {
+        $('tournament-title').textContent = `Tournoi du ${dateFormat.format(new Date(view.ts))}`
+        const winner = view.winner ? ` · vainqueur : ${view.winner}` : ''
+        $('tournament-meta').textContent =
+            `${view.entrants.length} équipes · ${pace} · tiré le ${fullFormat.format(new Date(view.ts))}${winner}`
+    }
     renderPlaces()
     renderBracket()
 }
 
-function version(team) {
+// « eq07 v3 · 1612 Elo » : version et Elo au tirage.
+function describe(team) {
     const entrant = view.entrants.find((e) => e.team === team)
     const n = (builds.get(team)?.indexOf(entrant?.build) ?? -1) + 1
-    return n ? `v${n}` : ''
+    return [team, n ? `v${n}` : '', entrant ? `· ${Math.round(entrant.rating)} Elo` : ''].filter(Boolean).join(' ')
 }
 
 function renderPlaces() {
@@ -109,6 +128,7 @@ function roundTitle(side, round, last) {
 
 function renderBracket() {
     const seeds = new Map(view.entrants.map((e, i) => [e.team, i + 1]))
+    const byId = new Map(view.matches.map((m) => [m.id, m]))
     const sections = SIDES.map(([side, title]) => {
         const matches = view.matches.filter((m) => m.side === side)
         const last = Math.max(...matches.map((m) => m.round))
@@ -129,7 +149,7 @@ function renderBracket() {
                 { class: 'rounds' },
                 svg,
                 ...rounds.map(([name, list]) =>
-                    el('div', { class: 'round' }, el('p', { class: 'round-title' }, name), el('div', { class: 'round-matches' }, ...list.map((m) => card(m, seeds))))
+                    el('div', { class: 'round' }, el('p', { class: 'round-title' }, name), el('div', { class: 'round-matches' }, ...list.map((m) => card(m, seeds, byId))))
                 )
             )
         )
@@ -138,7 +158,7 @@ function renderBracket() {
     requestAnimationFrame(drawLinks)
 }
 
-function card(m, seeds) {
+function card(m, seeds, byId) {
     const bye = m.status === 'done' && !m.games.length
     const wrap = el('div', {
         class: 'match-wrap',
@@ -146,18 +166,22 @@ function card(m, seeds) {
         'data-from': m.from.flatMap((f) => (f.winner ? [f.winner] : [])).join(','),
     })
     if (bye && !m.teams[0] && !m.teams[1]) return wrap
-    const awaiting = (from) =>
-        bye ? 'exempt' : from.winner ? `vainqueur ${from.winner}` : from.loser ? `perdant ${from.loser}` : 'à venir'
+    // Une place qui vient d'un match réglé sans partie est déjà une exemption.
+    const awaiting = (from) => {
+        const source = byId.get(from.winner ?? from.loser)
+        if (bye || (source?.status === 'done' && !source.games.length && (from.loser || !source.winner))) return 'exempt'
+        return from.winner ? `vainqueur ${from.winner}` : from.loser ? `perdant ${from.loser}` : 'à venir'
+    }
+    const scored = m.games.length > 0 || m.head_start.some(Boolean)
     const slot = (i) => {
         const team = m.teams[i]
         const state = !team ? ' tbd' : bye ? '' : m.winner === team ? ' win' : m.winner ? ' lose' : ''
-        const v = team ? version(team) : ''
         return el(
             'div',
             { class: `slot${state}` },
             el('span', { class: 'seed' }, team ? String(seeds.get(team)) : ''),
-            el('span', { class: 'name', title: team ? [team, v].filter(Boolean).join(' ') : '' }, team ?? awaiting(m.from[i])),
-            el('span', { class: 'score' }, team && !bye ? String(m.score[i]) : '')
+            el('span', { class: 'name', title: team ? describe(team) : '' }, team ?? awaiting(m.from[i])),
+            el('span', { class: 'score' }, team && scored ? String(m.score[i]) : '')
         )
     }
     const label = [m.id, m.best_of === 5 ? 'meilleur de 5, le vainqueur du principal part à 1–0' : `meilleur de ${m.best_of}`]

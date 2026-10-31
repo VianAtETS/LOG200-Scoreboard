@@ -140,6 +140,7 @@ fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut standings = Standings::from_history(cfg.data_dir(), &history.games, &history.at)
         .with_context(|| cfg.data_dir().display().to_string())?;
     let mut tournaments = Organizer::new(&cfg, rounds.is_none(), &history.games)?;
+    tournaments.publish_preview(&cfg, &standings);
     drop(history);
     let mut live = Live::new(cfg.data_dir().to_path_buf()).with_context(|| cfg.data_dir().display().to_string())?;
 
@@ -216,6 +217,7 @@ fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
                     eprintln!("   parties en cours non publiées : {e}");
                 }
                 let saved = save(cfg, &mut standings, outcome, &red, &black)?;
+                tournaments.publish_preview(cfg, &standings);
                 if let Some(game) = game {
                     tournaments.record(cfg, &game, saved.as_ref());
                 }

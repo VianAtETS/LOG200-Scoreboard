@@ -20,7 +20,7 @@ use isolation::rules::random_opening;
 use crate::config::{Config, Team};
 use crate::standings::Standings;
 use bracket::{Bracket, Side, Slot, Source, Status};
-pub use draw::{Draw, discard_jars, draw, draw_path, tournament_id, write_atomic};
+pub use draw::{Draw, discard_jars, draw, draw_path, preview, tournament_id, write_atomic};
 pub use organizer::Organizer;
 
 /// `None` : trop peu d'équipes.

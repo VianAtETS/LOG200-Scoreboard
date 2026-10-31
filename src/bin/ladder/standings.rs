@@ -449,6 +449,10 @@ impl Standings {
         self.full.all.teams.get(team).map_or(START, |s| s.rating)
     }
 
+    pub fn build(&self, team: &str) -> Option<&str> {
+        self.full.all.teams.get(team)?.build.as_deref()
+    }
+
     /// Rating sans parties distantes et ordre d'arrivée dans `session`.
     pub fn verified_session(&self, session: &str, team: &str) -> Option<(f64, usize)> {
         let s = self.verified.sessions.get(session)?.teams.get(team)?;
@@ -720,6 +724,18 @@ mod tests {
         assert_eq!(summary["scopes"]["tournoi-2026-11-08"]["games"], 1);
         let ladder = standings.play(&game("a", "b", Color::Red), 2..3);
         assert!(serde_json::to_value(ladder.tick()).unwrap().get("tournament").is_none());
+    }
+
+    #[test]
+    fn build_is_the_last_one_played() {
+        let mut standings = Standings::new(Path::new("d"));
+        assert_eq!(standings.build("a"), None);
+        let mut g = game("a", "b", Color::Red);
+        g.red.build = Some("h1".into());
+        standings.play(&g, 0..1);
+        g.red.build = Some("h2".into());
+        standings.play(&g, 1..2);
+        assert_eq!(standings.build("a"), Some("h2"));
     }
 
     #[test]

@@ -151,6 +151,7 @@ La page ne lit jamais `games.jsonl` en entier : en fin de session, il pèse des 
   - `matches`, dans l'ordre de jeu : `id` (`W1`, `L3`, `GF`), `side` (`winners`, `losers` ou `final`), `round`, `best_of`, `head_start` (manches d'avance par place), `from` (origine de chaque place : `{"seed": 1}`, `{"winner": "W1"}` ou `{"loser": "W1"}`), `teams` (`null` : pas encore connue, ou exemption), `score` (avance comprise), `status` (`waiting`, `ready`, `running`, `suspended` ou `done`), `winner` et `games` (ids des parties, pour le replay) ;
   - `winner`, puis `places` à la fin : une place par équipe, dans l'ordre de `entrants`.
 - `tournaments/index.json`, réécrit en même temps : `{"v": 1, "next": "2026-11-08T17:00:00Z", "tournaments": [{"id", "ts", "teams", "winner"}]}`, le plus récent d'abord. `next` (prochain créneau de `weekly`) est `null` sans horaire.
+- `tournament-preview.json`, réécrit au démarrage et après chaque partie : le tableau que donnerait un tirage maintenant, même forme que `tournaments/<id>.json` avec l'id `apercu`, sans partie ni `places`. Le `build` de chaque équipe est le dernier qu'elle a joué. Absent sous `min_teams`. Il reste hors de `tournaments/` : ce n'est pas un tournoi.
 
 Une ligne de partie (dans `recent` et `teams/`) reprend la partie sans les coups :
 
