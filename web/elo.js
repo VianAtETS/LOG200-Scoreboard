@@ -52,6 +52,21 @@ export function gamesOf(rowsByTeam, selected, { mode = '', session = '' } = {}) 
     return [...games.values()].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
 }
 
+// Bilan de `team` contre `opponent`, limité à son build `build` (toutes ses parties sans build : bots).
+// L'adversaire compte avec toutes ses versions.
+export function record(games, team, opponent, build) {
+    let wins = 0
+    let played = 0
+    for (const g of games) {
+        const color = g.red.team === team ? 'red' : g.black.team === team ? 'black' : null
+        if (!color || g[color === 'red' ? 'black' : 'red'].team !== opponent) continue
+        if (build && g[color].build !== build) continue
+        played++
+        if (g.winner === color) wins++
+    }
+    return { wins, games: played }
+}
+
 export function versionStarts(history) {
     const starts = []
     for (let k = 1; k < history.length; k++) {

@@ -33,6 +33,13 @@ const LMR_LATE: usize = 8;
 const LMR_DEPTH: u8 = 3;
 const STATIC_WEIGHT: i32 = 64;
 const PICKED: usize = 3;
+// TEMP expériences : N5_STEP, N5_LMR, N5_NEAR, N5_FAR.
+static KNOBS: std::sync::LazyLock<[i32; 4]> = std::sync::LazyLock::new(|| {
+    let k = |n: &str, d| std::env::var(n).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+    [k("N5_STEP", 2), k("N5_LMR", 2), k("N5_NEAR", 4), k("N5_FAR", 1)]
+});
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn knob_u8(i: usize) -> u8 { KNOBS[i] as u8 }
 const PADDED: usize = SIZE as usize + 6;
 const STEPS: [isize; 8] = [-19, -18, -17, -1, 1, 17, 18, 19];
 
@@ -108,7 +115,7 @@ impl Engine {
         self.prepare(board, side, Instant::now() + Duration::from_secs(3600));
         for (index, mut search) in self.searches.drain(..).enumerate() {
             let board = board.clone();
-            let first = if index == 0 { 2 } else { 4 };
+            let first = if knob_u8(0) == 1 { if index == 0 { 1 } else { 3 } } else if index == 0 { 2 } else { 4 };
             self.pondering.push(thread::spawn(move || {
                 search.choose(&board, side, first, &mut StdRng::seed_from_u64(index as u64));
                 search
@@ -160,7 +167,7 @@ impl Search {
             mv: moves[0],
             depth: Some(0),
         };
-        let step = if self.eval == Eval::Territory { 2 } else { 1 };
+        let step = if self.eval == Eval::Territory { usize::from(knob_u8(0)) } else { 1 };
         for depth in (first..=MAX_DEPTH).step_by(step) {
             self.age_history();
             let found = self.root(&mut board, &mut moves, depth);
@@ -422,7 +429,7 @@ impl Search {
             } else {
                 let reduced = self.eval == Eval::Territory && depth >= LMR_DEPTH && index >= LMR_LATE;
                 let mut value = if reduced {
-                    -self.negamax(board, side.other(), depth - 3, ply + 1, -alpha - 1, -alpha)
+                    -self.negamax(board, side.other(), depth - 1 - knob_u8(1), ply + 1, -alpha - 1, -alpha)
                 } else {
                     alpha + 1
                 };
@@ -714,7 +721,7 @@ impl Search {
     fn out_of_time(&mut self) -> bool {
         self.nodes += 1;
         let every = if self.eval == Eval::Territory {
-            CHECK_EVERY / 4
+            CHECK_EVERY / 16
         } else {
             CHECK_EVERY
         };
@@ -813,7 +820,7 @@ impl Reach {
     /// Sans compter `other`, la case du pion adverse.
     fn value(self, other: Square) -> i32 {
         let other = !Bits::of(other);
-        NEAR_WEIGHT * (self.near & other).count() + FAR_WEIGHT * (self.far & other).count()
+        KNOBS[2] * (self.near & other).count() + KNOBS[3] * (self.far & other).count()
     }
 }
 

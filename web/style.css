@@ -408,6 +408,17 @@ tbody tr:first-child .elo {
     color: var(--muted);
 }
 
+.th-toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+}
+
 .pace.warn {
     color: var(--red);
     font-weight: 700;
@@ -918,6 +929,11 @@ input[type='range'] {
 .graph-link[hidden],
 .verified[hidden] {
     display: none;
+}
+
+/* Paragraphe, pas lien : pas de survol. */
+p.graph-link:hover {
+    color: var(--muted);
 }
 
 .picker.games-picker {

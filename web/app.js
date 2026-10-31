@@ -26,7 +26,7 @@ import {
     timeFormat,
     WINDOWS,
 } from './common.js'
-import { BETWEEN, gamesOf, isRemote, ratingOf, since, versionStarts } from './elo.js'
+import { BETWEEN, gamesOf, isRemote, ratingOf, record, since, versionStarts } from './elo.js'
 import { createPicker } from './picker.js'
 import { BLACK, DESTROYED, positions, RED, SIZE, squareName } from './replay.js'
 
@@ -34,6 +34,14 @@ const RECENT_GAMES = 50
 const PLAY_MS = 500
 // p99 au-delà de cette part du temps par coup : l'équipe frôle le timeout.
 const PACE_WARN = 0.8
+// Mesure de la colonne de temps, dans l'ordre du clic : libellé et titre.
+const PACE_STATS = {
+    mean: ['moy.', 'Temps moyen par coup'],
+    p50: ['méd.', 'Temps médian par coup'],
+    p95: ['p95', '95e centile du temps par coup'],
+    p99: ['p99', '99e centile du temps par coup'],
+}
+let paceStat = params.get('pace') in PACE_STATS ? params.get('pace') : 'p95'
 const REMOTE_TITLE =
     "Joue depuis la machine de l'équipe : code non vérifié, sans limite de coeurs ni de mémoire, latence réseau comptée"
 const SESSION = params.get('session')
@@ -189,8 +197,10 @@ function render() {
         ? gamesOf(rows, teams, { mode: matchMode(), session }).filter((g) => !verified || !isRemote(g))
         : scope.recent
     renderRunning()
+    renderPaceHeader()
     renderRanking(scope.ratings)
     picker.render(teams)
+    renderDuel(teams, scope.ratings, rows, session, verified)
     $('match').hidden = teams.length < 2
     renderChart(scope.ratings, list, rating, teams.length === 1 ? teams[0] : null)
     $('graph-link').hidden = teams.length < 2
@@ -238,10 +248,42 @@ function remoteBadge() {
 }
 
 function paceCell(pace) {
-    if (!pace) return el('td', { class: 'num pace' })
-    const title = `Médiane ${pace.p50} ms, p99 ${pace.p99} ms, max ${pace.max} ms, ${pace.count} coups`
+    // Sans `mean` : summary.json d'un ladder plus ancien.
+    if (pace?.[paceStat] === undefined) return el('td', { class: 'num pace' })
+    const mean = pace.mean === undefined ? '' : `Moyenne ${pace.mean} ms, `
+    const title = `${mean}médiane ${pace.p50} ms, p95 ${pace.p95} ms, p99 ${pace.p99} ms, max ${pace.max} ms, ${pace.count} coups`
     const warn = pace.p99 >= PACE_WARN * pace.limit ? ' warn' : ''
-    return el('td', { class: `num pace${warn}`, title }, `${pace.p95} ms`)
+    return el('td', { class: `num pace${warn}`, title }, `${pace[paceStat]} ms`)
+}
+
+function renderPaceHeader() {
+    const [label, title] = PACE_STATS[paceStat]
+    const button = $('pace-stat')
+    button.textContent = label
+    button.title = `${title}, version actuelle. Cliquer pour changer de mesure.`
+}
+
+function nextPaceStat() {
+    const stats = Object.keys(PACE_STATS)
+    paceStat = stats[(stats.indexOf(paceStat) + 1) % stats.length]
+    setParam('pace', paceStat === 'p95' ? null : paceStat)
+    render()
+}
+
+// Avec deux équipes choisies : bilan de la version actuelle de chacune contre l'autre.
+function renderDuel(teams, ratings, rows, session, verified) {
+    $('duel').hidden = teams.length !== 2
+    if (teams.length !== 2) return
+    const games = gamesOf(rows, teams, { mode: BETWEEN, session }).filter((g) => !verified || !isRemote(g))
+    const line = (team, opponent) => {
+        const build = ratings.find((r) => r.team === team)?.build
+        const { wins, games: n } = record(games, team, opponent, build)
+        const name = [team, version({ team, build })].filter(Boolean).join(' ')
+        const score = n ? `${wins}–${n - wins} (${Math.round((100 * wins) / n)} %)` : 'aucune partie'
+        return `${name} contre ${opponent} : ${score}`
+    }
+    $('duel').textContent = `${line(teams[0], teams[1])} · ${line(teams[1], teams[0])}`
+    $('duel').title = "Version actuelle de chaque équipe, contre toutes les versions de l'autre"
 }
 
 function renderRanking(ratings) {
@@ -602,6 +644,7 @@ $('match').addEventListener('change', (e) => {
     reselect()
 })
 $('share').addEventListener('click', share)
+$('pace-stat').addEventListener('click', nextPaceStat)
 for (const input of document.querySelectorAll('#elo-window input'))
     input.checked = input.value === (WINDOW in WINDOWS ? WINDOW : GLOBAL)
 $('elo-window').addEventListener('change', (e) => {

@@ -37,6 +37,7 @@ fn round2(x: f64) -> f64 {
 struct Pace {
     counts: BTreeMap<u64, u64>,
     total: u64,
+    sum: u64,
     limit: u64,
 }
 
@@ -62,6 +63,7 @@ impl Pace {
 
     fn view(&self) -> PaceView {
         PaceView {
+            mean: (self.sum + self.total / 2) / self.total,
             p50: self.percentile(0.5),
             p95: self.percentile(0.95),
             p99: self.percentile(0.99),
@@ -183,6 +185,7 @@ impl Scope {
                 for m in ms {
                     *pace.counts.entry(m).or_default() += 1;
                     pace.total += 1;
+                    pace.sum += m;
                 }
                 pace.limit = pace.limit.min(result.time_ms);
             }
@@ -295,6 +298,7 @@ impl Row {
 
 #[derive(Serialize)]
 struct PaceView {
+    mean: u64,
     p50: u64,
     p95: u64,
     p99: u64,
@@ -696,7 +700,7 @@ mod tests {
         let ratings = scope.ratings();
         let pace = rating(&ratings, "a").pace.as_ref().unwrap();
         assert_eq!((pace.p50, pace.p95, pace.p99, pace.max), (50, 95, 99, 100));
-        assert_eq!((pace.count, pace.limit), (100, 500));
+        assert_eq!((pace.count, pace.limit, pace.mean), (100, 500, 51));
         assert!(rating(&ratings, "b").pace.is_some());
 
         let mut newer = game("a", "b", Color::Red);

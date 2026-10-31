@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { BETWEEN, gamesOf, isRemote, parseJsonl, ratingOf, since, START, versionStarts } from './elo.js'
+import { BETWEEN, gamesOf, isRemote, parseJsonl, ratingOf, record, since, START, versionStarts } from './elo.js'
 import { BLACK, DESTROYED, EMPTY, positions, RED, squareIndex, squareName } from './replay.js'
 
 let clock = 0
@@ -80,6 +80,19 @@ test('ratingOf reads verified ratings only when asked and present', () => {
     assert.deepEqual(ratingOf(side, 'all'), [1520, 20])
     assert.deepEqual(ratingOf(side, 'session', true), [1490, -10])
     assert.deepEqual(ratingOf({ all: [1520, 20] }, 'all', true), [1520, 20])
+})
+
+test('record counts the current build against every version of the opponent', () => {
+    const games = [
+        game('a', 'b', 'red', { red: { team: 'a', build: 'old' }, black: { team: 'b', build: 'x' } }),
+        game('b', 'a', 'black', { red: { team: 'b', build: 'x' }, black: { team: 'a', build: 'new' } }),
+        game('a', 'b', 'black', { red: { team: 'a', build: 'new' }, black: { team: 'b', build: 'y' } }),
+        game('a', 'c', 'red', { red: { team: 'a', build: 'new' } }),
+    ]
+    assert.deepEqual(record(games, 'a', 'b', 'new'), { wins: 1, games: 2 })
+    assert.deepEqual(record(games, 'b', 'a', 'x'), { wins: 0, games: 2 })
+    assert.deepEqual(record(games, 'c', 'a', undefined), { wins: 0, games: 1 })
+    assert.deepEqual(record(games, 'a', 'd', 'new'), { wins: 0, games: 0 })
 })
 
 test('isRemote is true when either side played remotely', () => {
