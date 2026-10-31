@@ -44,7 +44,7 @@ use tournament::{Organizer, Pending};
 /// Pause après une partie annulée : une config cassée ne doit pas faire tourner le ladder à vide.
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 const IDLE_DELAY: Duration = Duration::from_secs(10);
-const LOG_RETENTION: Duration = Duration::from_hours(90 * 24);
+const LOG_RETENTION: Duration = Duration::from_hours(60 * 24);
 
 #[derive(Parser)]
 #[command(

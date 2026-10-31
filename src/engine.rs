@@ -26,20 +26,13 @@ const CHECK_EVERY: u64 = 1024;
 const TABLE_SIZE: usize = 1 << 20;
 const VALUE_OFFSET: i32 = 1 << 21;
 /// Valeur d'une case atteinte en un coup, et en deux, pour `Eval::Territory`.
-const NEAR_WEIGHT: i32 = 4;
+const NEAR_WEIGHT: i32 = 2;
 const FAR_WEIGHT: i32 = 1;
-/// Coups tardifs cherchés deux demi-coups moins profond, pour garder la parité des feuilles.
+/// Coups tardifs cherchés deux demi-coups moins profond : un seul affaiblit nettement le niveau 5.
 const LMR_LATE: usize = 8;
 const LMR_DEPTH: u8 = 3;
 const STATIC_WEIGHT: i32 = 64;
 const PICKED: usize = 3;
-// TEMP expériences : N5_STEP, N5_LMR, N5_NEAR, N5_FAR.
-static KNOBS: std::sync::LazyLock<[i32; 5]> = std::sync::LazyLock::new(|| {
-    let k = |n: &str, d| std::env::var(n).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
-    [k("N5_STEP", 2), k("N5_LMR", 2), k("N5_NEAR", 4), k("N5_FAR", 1), k("N5_LATE", 8)]
-});
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn knob_u8(i: usize) -> u8 { KNOBS[i] as u8 }
 const PADDED: usize = SIZE as usize + 6;
 const STEPS: [isize; 8] = [-19, -18, -17, -1, 1, 17, 18, 19];
 
@@ -107,15 +100,13 @@ impl Engine {
         })
     }
 
-    /// Cherche pour `side`, l'adversaire au trait, jusqu'au prochain `choose`. Aux profondeurs
-    /// paires : nos positions, ses enfants, gardent ainsi des feuilles juste après notre coup, comme
-    /// dans nos propres recherches.
+    /// Cherche pour `side`, l'adversaire au trait, jusqu'au prochain `choose`.
     pub fn ponder(&mut self, board: &Board, side: Color) {
         self.stop_pondering();
         self.prepare(board, side, Instant::now() + Duration::from_secs(3600));
         for (index, mut search) in self.searches.drain(..).enumerate() {
             let board = board.clone();
-            let first = if knob_u8(0) == 1 { if index == 0 { 1 } else { 3 } } else if index == 0 { 2 } else { 4 };
+            let first = if index == 0 { 1 } else { 3 };
             self.pondering.push(thread::spawn(move || {
                 search.choose(&board, side, first, &mut StdRng::seed_from_u64(index as u64));
                 search
@@ -167,8 +158,7 @@ impl Search {
             mv: moves[0],
             depth: Some(0),
         };
-        let step = if self.eval == Eval::Territory { usize::from(knob_u8(0)) } else { 1 };
-        for depth in (first..=MAX_DEPTH).step_by(step) {
+        for depth in first..=MAX_DEPTH {
             self.age_history();
             let found = self.root(&mut board, &mut moves, depth);
             if let Some((mv, _)) = found {
@@ -427,9 +417,9 @@ impl Search {
             let value = if index == 0 {
                 -self.negamax(board, side.other(), depth - 1, ply + 1, -beta, -alpha)
             } else {
-                let reduced = self.eval == Eval::Territory && depth >= LMR_DEPTH && index >= usize::from(knob_u8(4));
+                let reduced = self.eval == Eval::Territory && depth >= LMR_DEPTH && index >= LMR_LATE;
                 let mut value = if reduced {
-                    -self.negamax(board, side.other(), depth - 1 - knob_u8(1), ply + 1, -alpha - 1, -alpha)
+                    -self.negamax(board, side.other(), depth - 3, ply + 1, -alpha - 1, -alpha)
                 } else {
                     alpha + 1
                 };
@@ -721,7 +711,7 @@ impl Search {
     fn out_of_time(&mut self) -> bool {
         self.nodes += 1;
         let every = if self.eval == Eval::Territory {
-            CHECK_EVERY / 16
+            CHECK_EVERY / 4
         } else {
             CHECK_EVERY
         };
@@ -820,7 +810,7 @@ impl Reach {
     /// Sans compter `other`, la case du pion adverse.
     fn value(self, other: Square) -> i32 {
         let other = !Bits::of(other);
-        KNOBS[2] * (self.near & other).count() + KNOBS[3] * (self.far & other).count()
+        NEAR_WEIGHT * (self.near & other).count() + FAR_WEIGHT * (self.far & other).count()
     }
 }
 

@@ -164,7 +164,7 @@ cmd = [
     "niveau-4",
 ]
 
-# Reflechit aussi pendant le tour adverse, sur le coeur de sa couleur.
+# Reflechit aussi pendant le tour adverse ; ce fil retarde la lecture du coup adverse, d'ou la marge.
 [[team]]
 id = "niveau-5"
 cmd = [
@@ -174,12 +174,14 @@ cmd = [
     "{port}",
     "--bot",
     "niveau-5",
+    "--margin-ms",
+    "100",
 ]
 
 # Variante sur deux coeurs : ne joue que dans un slot `multithread = true`.
 # [[team]]
 # id = "niveau-5-mt"
-# cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "--bot", "niveau-5", "--threads", "2"]
+# cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "--bot", "niveau-5", "--threads", "2", "--margin-ms", "100"]
 # multithread = true
 
 # [[team]]
