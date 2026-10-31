@@ -8,6 +8,10 @@ use thiserror::Error;
 
 pub const ZONE: &str = "America/Toronto";
 
+pub fn now() -> Result<Zoned, jiff::Error> {
+    jiff::Timestamp::now().in_tz(ZONE)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
 #[serde(try_from = "String")]
 pub struct Weekly {
@@ -47,6 +51,26 @@ impl TryFrom<String> for Weekly {
 
     fn try_from(text: String) -> Result<Self, BadWeekly> {
         text.parse()
+    }
+}
+
+pub struct Calendar {
+    weekly: Weekly,
+    next: Option<Zoned>,
+}
+
+impl Calendar {
+    pub fn new(weekly: Weekly, now: &Zoned) -> Self {
+        Self {
+            weekly,
+            next: weekly.next(now).ok(),
+        }
+    }
+
+    pub fn due_at(&mut self, now: &Zoned) -> Option<Date> {
+        let slot = self.next.take_if(|slot| *slot <= *now)?;
+        self.next = self.weekly.next(now).ok();
+        Some(slot.date())
     }
 }
 
@@ -149,6 +173,22 @@ mod tests {
             (spring.time(), spring.offset().seconds()),
             (Time::constant(12, 0, 0, 0), -4 * 3600)
         );
+    }
+
+    #[test]
+    fn the_calendar_fires_once_per_slot() {
+        let mut calendar = Calendar::new(sunday_noon(), &at("2026-11-08T11:00"));
+        assert_eq!(calendar.due_at(&at("2026-11-08T11:59")), None);
+        assert_eq!(
+            calendar.due_at(&at("2026-11-08T12:00")),
+            Some(Date::constant(2026, 11, 8))
+        );
+        assert_eq!(calendar.due_at(&at("2026-11-08T12:05")), None);
+        assert_eq!(
+            calendar.due_at(&at("2026-11-29T12:30")),
+            Some(Date::constant(2026, 11, 15))
+        );
+        assert_eq!(calendar.due_at(&at("2026-11-29T12:31")), None);
     }
 
     #[test]

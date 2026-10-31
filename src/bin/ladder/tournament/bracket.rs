@@ -16,6 +16,7 @@ pub enum Side {
 pub struct Match {
     pub id: String,
     pub side: Side,
+    #[cfg_attr(not(test), expect(dead_code, reason = "publication pas encore branchée"))]
     pub round: u32,
     pub sources: [Source; 2],
     pub best_of: u32,
@@ -177,6 +178,7 @@ impl Bracket {
         out
     }
 
+    #[cfg_attr(not(test), expect(dead_code, reason = "publication, étape 7"))]
     pub fn placements(&self, statuses: &[Status]) -> Option<Vec<usize>> {
         let Status::Done {
             winner: Some(champion),

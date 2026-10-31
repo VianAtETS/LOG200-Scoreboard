@@ -135,7 +135,7 @@ fn frozen_dir(cfg: &Config, id: &str) -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
         assert_eq!(seeds[3].1, START);
     }
 
-    fn setup(teams: &[&str]) -> (PathBuf, Config) {
+    pub(crate) fn setup(teams: &[&str]) -> (PathBuf, Config) {
         let dir = std::env::temp_dir().join(format!("isolation-draw-{}-{}", std::process::id(), teams.len()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();

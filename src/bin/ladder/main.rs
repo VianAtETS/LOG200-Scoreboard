@@ -10,7 +10,6 @@ mod remote;
 mod schedule;
 mod standings;
 mod submit;
-#[cfg_attr(not(test), expect(dead_code, reason = "pas encore branché"))]
 mod tournament;
 
 use std::collections::HashSet;
@@ -24,13 +23,15 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use rand::RngExt;
 
+use isolation::board::Color;
 use isolation::board::Move;
 use isolation::notation;
-use isolation::record::{GameRecord, Jsonl};
+use isolation::record::{GameRecord, Jsonl, TournamentGame};
 use isolation::rules::random_opening;
 
-use arena::{Arena, GameError};
+use arena::{Arena, Fixture, GameError};
 use config::{Config, Team};
 use journal::append_jsonl;
 use live::Live;
@@ -38,6 +39,7 @@ use remote::Registry;
 use schedule::Scheduler;
 use standings::Standings;
 use submit::TeamId;
+use tournament::{Organizer, Pending};
 
 /// Pause après une partie annulée : une config cassée ne doit pas faire tourner le ladder à vide.
 const RETRY_DELAY: Duration = Duration::from_secs(5);
@@ -100,6 +102,7 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut scheduler = Scheduler::from_history(&history.games, &cfg.session);
     let mut standings = Standings::from_history(cfg.data_dir(), &history.games, &history.at)
         .with_context(|| cfg.data_dir().display().to_string())?;
+    let mut tournaments = Organizer::new(&cfg, rounds.is_none(), &history.games)?;
     drop(history);
     let mut live = Live::new(cfg.data_dir().to_path_buf()).with_context(|| cfg.data_dir().display().to_string())?;
 
@@ -118,14 +121,20 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut running = [0; 2];
     let mut busy = HashSet::new();
     loop {
+        tournaments.tick(cfg, &standings, rng.random());
         if rounds.is_none_or(|n| round < n) {
+            launch_tournament(&arena, &mut tournaments, &mut busy, &mut running, &reports);
             if running.iter().sum::<usize>() < cfg.slots() {
                 let teams = roster(cfg, remote.as_ref(), &mut warned);
+                let waiting_teams = tournaments.waiting();
+                let unavailable: HashSet<String> = busy.union(&waiting_teams).cloned().collect();
                 let fits = |a: &Team, b: &Team| {
                     let multithread = cfg.multithread_game(a, b);
                     running[usize::from(multithread)] < cfg.slots_of(multithread)
                 };
-                if let Some((a, b)) = scheduler.next_pair(&teams, &busy, fits, |id| standings.rating(id), &mut rng) {
+                if let Some((a, b)) =
+                    scheduler.next_pair(&teams, &unavailable, fits, |id| standings.rating(id), &mut rng)
+                {
                     waiting = false;
                     round += 1;
                     running[usize::from(cfg.multithread_game(a, b))] += 1;
@@ -159,25 +168,18 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
                     eprintln!("   parties en cours non publiées : {e}");
                 }
             }
-            Report::Played { red, black, outcome } => {
+            Report::Played {
+                red,
+                black,
+                outcome,
+                game,
+            } => {
                 if let Err(e) = live.end(&red, &black) {
                     eprintln!("   parties en cours non publiées : {e}");
                 }
-                match outcome {
-                    Ok(record) => {
-                        let at = append_jsonl(&cfg.out, &record).with_context(|| cfg.out.display().to_string())?;
-                        if let Err(e) = standings.record(&record, at) {
-                            eprintln!("   classement non publié : {e}");
-                        }
-                        let result = &record.result;
-                        eprintln!(
-                            "   {red} (rouge) contre {black} (noir) : {} gagne ({:?}, {} coups)",
-                            result.winner,
-                            result.reason,
-                            result.moves.len()
-                        );
-                    }
-                    Err(e) => eprintln!("   partie {red} contre {black} annulée : {e}"),
+                let winner = save(cfg, &mut standings, outcome, &red, &black)?;
+                if let Some(game) = game {
+                    tournaments.record(&game, winner.as_deref());
                 }
             }
             Report::Done { pair, multithread } => {
@@ -192,6 +194,57 @@ fn run(path: &PathBuf, rounds: Option<u64>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Le gagnant, `None` pour une partie annulée.
+fn save(
+    cfg: &Config,
+    standings: &mut Standings,
+    outcome: Result<GameRecord, GameError>,
+    red: &str,
+    black: &str,
+) -> anyhow::Result<Option<String>> {
+    let record = match outcome {
+        Ok(record) => record,
+        Err(e) => {
+            eprintln!("   partie {red} contre {black} annulée : {e}");
+            return Ok(None);
+        }
+    };
+    let at = append_jsonl(&cfg.out, &record).with_context(|| cfg.out.display().to_string())?;
+    if let Err(e) = standings.record(&record, at) {
+        eprintln!("   classement non publié : {e}");
+    }
+    let result = &record.result;
+    eprintln!(
+        "   {red} (rouge) contre {black} (noir) : {} gagne ({:?}, {} coups)",
+        result.winner,
+        result.reason,
+        result.moves.len()
+    );
+    Ok(Some(match result.winner {
+        Color::Red => record.red.team,
+        Color::Black => record.black.team,
+    }))
+}
+
+fn launch_tournament(
+    arena: &Arc<Arena>,
+    tournaments: &mut Organizer,
+    busy: &mut HashSet<String>,
+    running: &mut [usize; 2],
+    reports: &Sender<Report>,
+) {
+    let cfg = arena.config();
+    for p in tournaments.pending(busy) {
+        let multithread = cfg.multithread_game(&p.red, &p.black);
+        if running[usize::from(multithread)] < cfg.slots_of(multithread) {
+            running[usize::from(multithread)] += 1;
+            busy.extend([p.red.id.clone(), p.black.id.clone()]);
+            tournaments.start(&p);
+            spawn_game(Arc::clone(arena), p, reports.clone());
+        }
+    }
+}
+
 /// Compte rendu d'un thread de paire, ou réveil à l'arrivée d'une équipe distante.
 #[expect(clippy::large_enum_variant, reason = "cinq messages par paire")]
 enum Report {
@@ -204,6 +257,7 @@ enum Report {
         red: String,
         black: String,
         outcome: Result<GameRecord, GameError>,
+        game: Option<TournamentGame>,
     },
     Done {
         pair: [String; 2],
@@ -233,12 +287,13 @@ fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: 
                 red: red.id.clone(),
                 black: black.id.clone(),
             });
-            let outcome = arena.play(red, black, &opening);
+            let outcome = arena.play(red, black, &opening, None);
             let failed = outcome.is_err();
             let _ = reports.send(Report::Played {
                 red: red.id.clone(),
                 black: black.id.clone(),
                 outcome,
+                game: None,
             });
             if failed {
                 thread::sleep(RETRY_DELAY);
@@ -248,6 +303,35 @@ fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: 
         let multithread = arena.config().multithread_game(&a, &b);
         let _ = reports.send(Report::Done {
             pair: [a.id, b.id],
+            multithread,
+        });
+    });
+}
+
+fn spawn_game(arena: Arc<Arena>, p: Pending, reports: Sender<Report>) {
+    thread::spawn(move || {
+        let _ = reports.send(Report::Started {
+            red: p.red.id.clone(),
+            black: p.black.id.clone(),
+        });
+        let fixture = Fixture {
+            game: p.game.clone(),
+            time_ms: p.time_ms,
+        };
+        let outcome = arena.play(&p.red, &p.black, &p.opening, Some(&fixture));
+        let failed = outcome.is_err();
+        let _ = reports.send(Report::Played {
+            red: p.red.id.clone(),
+            black: p.black.id.clone(),
+            outcome,
+            game: Some(p.game),
+        });
+        if failed {
+            thread::sleep(RETRY_DELAY);
+        }
+        let multithread = arena.config().multithread_game(&p.red, &p.black);
+        let _ = reports.send(Report::Done {
+            pair: [p.red.id, p.black.id],
             multithread,
         });
     });

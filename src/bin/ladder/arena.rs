@@ -15,7 +15,7 @@ use thiserror::Error;
 use isolation::board::{Color, Move};
 use isolation::digest::short_hash;
 use isolation::notation;
-use isolation::record::{GameRecord, GameResult, Player, ValidationError, now_rfc3339};
+use isolation::record::{GameRecord, GameResult, Player, TournamentGame, ValidationError, now_rfc3339};
 
 use crate::config::{Config, Team, Vars};
 use crate::journal::compact_timestamp;
@@ -42,6 +42,12 @@ pub enum GameError {
     BadResult { json: String, error: serde_json::Error },
     #[error("résultat incohérent : {0}")]
     Inconsistent(#[from] ValidationError),
+}
+
+/// Partie de tournoi : son temps par coup et sa session remplacent ceux du ladder.
+pub struct Fixture {
+    pub game: TournamentGame,
+    pub time_ms: u64,
 }
 
 /// Joue au plus une partie par slot, ladder et smoke tests confondus : pas de port ni de coeur partagé.
@@ -89,12 +95,20 @@ impl Arena {
             slot: 0,
             opening: String::new(),
             game: "",
+            time_ms: self.cfg.time_ms,
         };
         drop(CleanupGuard::new(&vars));
     }
 
-    pub fn play(&self, red: &Team, black: &Team, opening: &[Move]) -> Result<GameRecord, GameError> {
+    pub fn play(
+        &self,
+        red: &Team,
+        black: &Team,
+        opening: &[Move],
+        fixture: Option<&Fixture>,
+    ) -> Result<GameRecord, GameError> {
         let cfg = &self.cfg;
+        let time_ms = fixture.map_or(cfg.time_ms, |f| f.time_ms);
         let slot = self.take_slot(cfg.multithread_game(red, black));
         let ts = now_rfc3339();
         let id = format!("{}-{}-{}", compact_timestamp(&ts), red.id, black.id);
@@ -111,6 +125,7 @@ impl Arena {
             slot: slot.index,
             opening: notation::join(opening),
             game: &id,
+            time_ms,
         };
         // Déclaré avant les processus : détruit après eux.
         let _cleanup = CleanupGuard::new(&vars);
@@ -124,7 +139,7 @@ impl Arena {
                 return Ok(Contestant::Remote(seat.sit(GameSpec {
                     id: id.clone(),
                     side,
-                    time_ms: cfg.time_ms,
+                    time_ms,
                     connect: connect.unwrap_or_default(),
                     log,
                 })));
@@ -145,16 +160,16 @@ impl Arena {
                 players.push(spawn_player(black, Color::Black)?);
             }
         }
-        let result = referee.finish(cfg.game_timeout())?;
+        let result = referee.finish(cfg.game_timeout(time_ms))?;
         drop(players);
 
         Ok(GameRecord {
             id,
-            session: cfg.session.clone(),
+            session: fixture.map_or_else(|| cfg.session.clone(), |f| f.game.id.clone()),
             ts,
             red: red_entry,
             black: black_entry,
-            tournament: None,
+            tournament: fixture.map(|f| f.game.clone()),
             result,
         })
     }

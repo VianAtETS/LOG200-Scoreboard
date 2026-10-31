@@ -105,7 +105,7 @@ pub fn smoke_test(arena: &Arena, submit: &SubmitConfig, id: &TeamId, jar: &Path)
         (&opponent, &candidate, Color::Black),
     ] {
         let opening = random_opening(cfg.opening_plies, &mut rand::rng());
-        match arena.play(red, black, &opening) {
+        match arena.play(red, black, &opening, None) {
             Err(e) => return Verdict::Error(e),
             Ok(record) => {
                 if let Some(forfeit) = Forfeit::of(&record.result, side) {

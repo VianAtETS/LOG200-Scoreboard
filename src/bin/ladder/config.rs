@@ -170,8 +170,8 @@ impl Config {
         if self.slots_of(wanted) > 0 { wanted } else { !wanted }
     }
 
-    pub fn game_timeout(&self) -> Duration {
-        Duration::from_secs(self.game_timeout_s.unwrap_or(MAX_PLIES * self.time_ms / 1000 + 120))
+    pub fn game_timeout(&self, time_ms: u64) -> Duration {
+        Duration::from_secs(self.game_timeout_s.unwrap_or(MAX_PLIES * time_ms / 1000 + 120))
     }
 
     pub fn team_with_jar(&self, id: &TeamId, jar: &Path, multithread: bool) -> Team {
@@ -337,13 +337,14 @@ pub struct Vars<'a> {
     pub slot: usize,
     pub opening: String,
     pub game: &'a str,
+    pub time_ms: u64,
 }
 
 impl Vars<'_> {
     /// `side` remplace `{side}` ; vide pour l'arbitre et `cleanup`.
     pub fn substitute(&self, arg: &str, side: Option<Color>) -> String {
         arg.replace("{port}", &self.cfg.port.to_string())
-            .replace("{time_ms}", &self.cfg.time_ms.to_string())
+            .replace("{time_ms}", &self.time_ms.to_string())
             .replace("{opening}", &self.opening)
             .replace("{game}", self.game)
             .replace("{side}", side.map_or("", Color::name))
@@ -438,7 +439,7 @@ mod tests {
     #[test]
     fn defaults_and_substitution() {
         let cfg: Config = MINIMAL.parse().unwrap();
-        assert_eq!(cfg.game_timeout(), Duration::from_secs(264));
+        assert_eq!(cfg.game_timeout(cfg.time_ms), Duration::from_secs(264));
         let id: TeamId = "eq07".parse().unwrap();
         let team = cfg.team_with_jar(&id, Path::new("jars/eq07/current.jar"), false);
         assert_eq!(team.build_file(), Some(PathBuf::from("jars/eq07/current.jar")));
@@ -447,6 +448,7 @@ mod tests {
             slot: 0,
             opening: "G1-G4-F9".into(),
             game: "g1",
+            time_ms: cfg.time_ms,
         };
         let command = vars.command(&cfg.referee, None).unwrap();
         let args: Vec<_> = command.get_args().collect();
@@ -455,6 +457,23 @@ mod tests {
         assert!(player.get_args().any(|a| a == "black"));
         assert!(player.get_args().any(|a| a == "jars/eq07/current.jar"));
         assert_eq!(cfg.slots(), 1);
+    }
+
+    #[test]
+    fn tournament_time_replaces_the_ladder_time() {
+        let cfg: Config = "referee = [\"r\", \"{time_ms}\"]\ntime_ms = 500\nsession = \"s\"\n"
+            .parse()
+            .unwrap();
+        let vars = Vars {
+            cfg: &cfg,
+            slot: 0,
+            opening: String::new(),
+            game: "g1",
+            time_ms: 5000,
+        };
+        let command = vars.command(&cfg.referee, None).unwrap();
+        assert_eq!(command.get_args().collect::<Vec<_>>(), ["5000"]);
+        assert_eq!(cfg.game_timeout(5000), Duration::from_mins(14));
     }
 
     #[test]
@@ -471,6 +490,7 @@ mod tests {
                 slot,
                 opening: String::new(),
                 game: "g1",
+                time_ms: cfg.time_ms,
             };
             let command = vars.command(&cfg.referee, None).unwrap();
             let port = command.get_args().next().unwrap().to_string_lossy().into_owned();
@@ -503,6 +523,7 @@ mod tests {
             slot: 1,
             opening: String::new(),
             game: "g1",
+            time_ms: cfg.time_ms,
         };
         let command = vars.command(&cfg.referee, None).unwrap();
         let keys: Vec<_> = command
