@@ -1,0 +1,14 @@
+# Contributors also compete on the ladder: changes to the rules, the referee, the rating, the
+# submissions, the sandbox and the deployment need a maintainer's review.
+/src/rules.rs            @Vianpyro
+/src/board.rs            @Vianpyro
+/src/protocol.rs         @Vianpyro
+/src/record.rs           @Vianpyro
+/src/bin/referee.rs      @Vianpyro
+/src/bin/ladder/         @Vianpyro
+/sandbox/                @Vianpyro
+/deploy/                 @Vianpyro
+/.github/                @Vianpyro
+/Cargo.toml              @Vianpyro
+/Cargo.lock              @Vianpyro
+/rust-toolchain.toml     @Vianpyro

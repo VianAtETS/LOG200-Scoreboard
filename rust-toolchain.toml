@@ -1,0 +1,4 @@
+# Same version as deploy/ladder.Dockerfile, so CI, local builds and the image agree.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
