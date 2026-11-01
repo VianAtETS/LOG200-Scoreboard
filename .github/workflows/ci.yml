@@ -15,7 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The runner's rustup installs the toolchain of rust-toolchain.toml on first use.
   rust:
     runs-on: ubuntu-latest
     steps:
