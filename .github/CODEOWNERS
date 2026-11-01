@@ -1,5 +1,4 @@
-# Contributors also compete on the ladder: changes to the rules, the referee, the rating, the
-# submissions, the sandbox and the deployment need a maintainer's review.
+# Changes to the rules, the referee, the rating, the submissions, the sandbox and the deployment need a maintainer's review.
 /src/rules.rs            @Vianpyro
 /src/board.rs            @Vianpyro
 /src/protocol.rs         @Vianpyro
