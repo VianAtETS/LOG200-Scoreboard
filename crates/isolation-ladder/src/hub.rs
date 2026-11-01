@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -13,6 +13,8 @@ use serde::Serialize;
 use isolation_core::board::{Color, Move};
 use isolation_core::record::{Reason, RefereeEvent, TournamentGame};
 use isolation_core::rules::Replay;
+
+use crate::sync::lock;
 
 pub const LIVE_VERSION: u32 = 1;
 const QUEUE: usize = 64;
@@ -147,7 +149,7 @@ impl Hub {
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+        lock(&self.state)
     }
 
     pub fn start(&self, start: &Start) {

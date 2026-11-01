@@ -11,9 +11,10 @@ use isolation_core::record::{GameRecord, TournamentGame};
 use super::admin::{self, Request};
 use super::calendar::{Calendar, now};
 use super::draw::Entrant;
-use super::{Pending, Tournament, discard_jars, draw_path, preview, resume, start, tournament_id, write_atomic};
+use super::{Pending, Tournament, discard_jars, draw_path, preview, resume, start, tournament_id};
 use crate::config::{Config, TournamentConfig};
 use crate::standings::Standings;
+use crate::store::write_atomic;
 
 #[derive(Deserialize)]
 struct Listed {
@@ -52,7 +53,7 @@ impl Organizer {
     pub fn new(cfg: &Config, enabled: bool, games: &[GameRecord]) -> anyhow::Result<Self> {
         let mut organizer = Self {
             enabled,
-            settings: cfg.tournament.clone().unwrap_or_default(),
+            settings: cfg.tournament_settings(),
             current: None,
             calendar: None,
             due: None,

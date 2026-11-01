@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use isolation_core::board::Color;
 use isolation_core::record::{GameRecord, Reason};
 
+use crate::store::write_atomic;
+
 /// Parties entre deux ajustements.
 const REFIT_EVERY: u32 = 25;
 /// Pénalité L2 sur les forces : une équipe qui n'a jamais perdu garde une force finie.
@@ -339,9 +341,7 @@ impl Model {
                 history: &self.history,
             },
         };
-        let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, serde_json::to_vec(&view)?)?;
-        fs::rename(tmp, &self.path)
+        write_atomic(&self.path, &serde_json::to_vec(&view)?)
     }
 }
 

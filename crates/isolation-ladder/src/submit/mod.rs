@@ -13,12 +13,13 @@ use std::thread;
 
 use anyhow::anyhow;
 
-pub use auth::{DEFAULT_TEAMS, RegistryError, TeamId, add_team, find_team, load_teams};
+pub use auth::{DEFAULT_TEAMS, RegistryError, add_team, bearer, find_team, load_teams};
 use handler::{Request, Submissions};
 pub use smoke::SMOKE_OPPONENT;
 
 use crate::arena::Arena;
-use crate::config::{Config, Team};
+use crate::config::Config;
+use crate::roster::Team;
 
 /// Équipes inscrites dont un jar a été accepté.
 pub fn active_teams(cfg: &Config) -> Result<Vec<Team>, RegistryError> {
@@ -30,7 +31,7 @@ pub fn active_teams(cfg: &Config) -> Result<Vec<Team>, RegistryError> {
         .filter_map(|registered| {
             let jar = submit.current_jar(&registered.id);
             jar.exists()
-                .then(|| cfg.team_with_jar(&registered.id, &jar, manifest::multithread_file(&jar)))
+                .then(|| Team::with_jar(cfg, &registered.id, &jar, manifest::multithread_file(&jar)))
         })
         .collect())
 }

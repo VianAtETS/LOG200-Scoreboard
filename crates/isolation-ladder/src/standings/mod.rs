@@ -1,6 +1,8 @@
 //! Classement Elo tenu à jour partie par partie, publié pour la page dans `summary.json`,
 //! `teams/<équipe>.jsonl` et `timeline.jsonl` (format dans docs/formats.md).
 
+mod view;
+
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs::{self, File};
@@ -8,13 +10,12 @@ use std::io::{self, BufWriter, ErrorKind, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
-
 use isolation_core::board::{ByColor, Color};
-use isolation_core::record::{GameRecord, Player, Reason, TournamentGame};
+use isolation_core::record::{GameRecord, Player};
 
-use crate::journal::append_jsonl;
 use crate::model::Model;
+use crate::store::{append_jsonl, write_atomic};
+use view::{PaceView, RatingRow, Row, ScopeView, Side, Summary, Verified};
 
 pub const START: f64 = 1500.0;
 const K_PROVISIONAL: f64 = 40.0;
@@ -235,120 +236,6 @@ impl Scope {
     }
 }
 
-#[derive(Serialize, Clone)]
-struct Side {
-    team: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    build: Option<String>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    remote: bool,
-    /// Rating après la partie et variation, toutes sessions puis dans la session.
-    all: [f64; 2],
-    session: [f64; 2],
-    /// Les mêmes sans les parties distantes, s'ils diffèrent. Absent d'une partie distante.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    verified: Option<Verified>,
-}
-
-#[derive(Serialize, Clone, PartialEq, Debug)]
-struct Verified {
-    all: [f64; 2],
-    session: [f64; 2],
-}
-
-/// Une partie telle que la page l'affiche, sans les coups : `at` donne ses octets dans `games.jsonl`.
-#[derive(Serialize, Clone)]
-struct Row {
-    v: u32,
-    id: String,
-    ts: String,
-    session: String,
-    time_ms: u64,
-    winner: Color,
-    reason: Reason,
-    moves: usize,
-    duration_ms: u64,
-    red: Side,
-    black: Side,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tournament: Option<TournamentGame>,
-    at: [u64; 2],
-}
-
-/// Ligne de `timeline.jsonl` : le strict nécessaire pour rejouer les ratings de toutes les équipes.
-#[derive(Serialize)]
-struct Tick<'a> {
-    v: u32,
-    id: &'a str,
-    ts: &'a str,
-    session: &'a str,
-    red: &'a Side,
-    black: &'a Side,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    tournament: bool,
-}
-
-impl Row {
-    fn tick(&self) -> Tick<'_> {
-        Tick {
-            v: self.v,
-            id: &self.id,
-            ts: &self.ts,
-            session: &self.session,
-            red: &self.red,
-            black: &self.black,
-            tournament: self.tournament.is_some(),
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct PaceView {
-    mean: u64,
-    p50: u64,
-    p95: u64,
-    p99: u64,
-    max: u64,
-    count: u64,
-    limit: u64,
-}
-
-#[derive(Serialize)]
-struct RatingRow<'a> {
-    team: &'a str,
-    rating: f64,
-    games: u32,
-    wins: u32,
-    losses: u32,
-    build_games: u32,
-    build_wins: u32,
-    anchor: bool,
-    provisional: bool,
-    remote: bool,
-    build: Option<&'a str>,
-    last: &'a str,
-    pace: Option<PaceView>,
-}
-
-#[derive(Serialize)]
-struct ScopeView<'a> {
-    games: u64,
-    time_ms: &'a BTreeSet<u64>,
-    ratings: Vec<RatingRow<'a>>,
-    recent: &'a VecDeque<Row>,
-}
-
-#[derive(Serialize)]
-struct Summary<'a> {
-    v: u32,
-    sessions: Vec<&'a str>,
-    builds: &'a BTreeMap<String, Vec<String>>,
-    scopes: BTreeMap<&'a str, ScopeView<'a>>,
-    /// Mêmes clés que `scopes`, sans les parties distantes ; absent tant qu'il n'y en a pas eu.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    verified: Option<BTreeMap<&'a str, ScopeView<'a>>>,
-}
-
 /// Toutes les sessions, puis une par session.
 #[derive(Default)]
 struct Scopes {
@@ -565,17 +452,14 @@ impl Standings {
         }
     }
 
-    /// Écrit à côté puis renomme : un lecteur ne voit jamais un résumé à moitié écrit.
     fn write_summary(&self) -> io::Result<()> {
-        let tmp = self.dir.join("summary.json.tmp");
-        fs::write(&tmp, serde_json::to_vec(&self.summary())?)?;
-        fs::rename(tmp, self.dir.join("summary.json"))
+        write_atomic(&self.dir.join("summary.json"), &serde_json::to_vec(&self.summary())?)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use isolation_core::record::{GameResult, InvalidCounts, RECORD_VERSION};
+    use isolation_core::record::{GameResult, InvalidCounts, RECORD_VERSION, Reason, TournamentGame};
 
     use super::*;
 

@@ -3,16 +3,20 @@
 //! accepté ou une session distante ouverte ; la liste est relue avant chaque paire.
 
 mod arena;
+mod command;
 mod config;
 mod hub;
-mod journal;
 mod live;
 mod model;
 mod remote;
+mod roster;
 mod schedule;
 mod spectate;
 mod standings;
+mod store;
 mod submit;
+mod sync;
+mod team_id;
 mod tournament;
 mod ws;
 
@@ -36,14 +40,15 @@ use isolation_core::record::{GameRecord, Jsonl, TournamentGame};
 use isolation_core::rules::random_opening;
 
 use arena::{Arena, Fixture, GameError};
-use config::{Config, Team};
+use config::Config;
 use hub::Hub;
-use journal::append_jsonl;
 use live::Live;
 use remote::Registry;
+use roster::{Team, multithread_game, roster};
 use schedule::Scheduler;
 use standings::Standings;
-use submit::TeamId;
+use store::append_jsonl;
+use team_id::TeamId;
 use tournament::admin::{self, Request};
 use tournament::{Organizer, Pending};
 
@@ -176,7 +181,7 @@ fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
                 let waiting_teams = tournaments.waiting();
                 let unavailable: HashSet<String> = busy.union(&waiting_teams).cloned().collect();
                 let fits = |a: &Team, b: &Team| {
-                    let multithread = cfg.multithread_game(a, b);
+                    let multithread = multithread_game(cfg, a, b);
                     running[usize::from(multithread)] < cfg.slots_of(multithread)
                 };
                 if let Some((a, b)) =
@@ -184,7 +189,7 @@ fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
                 {
                     waiting = false;
                     round += 1;
-                    running[usize::from(cfg.multithread_game(a, b))] += 1;
+                    running[usize::from(multithread_game(cfg, a, b))] += 1;
                     scheduler.record(&a.id, &b.id, 2);
                     busy.extend([a.id.clone(), b.id.clone()]);
                     let opening = random_opening(cfg.opening_plies, &mut rng);
@@ -281,7 +286,7 @@ fn launch_tournament(
 ) {
     let cfg = arena.config();
     for p in tournaments.pending(busy) {
-        let multithread = cfg.multithread_game(&p.red, &p.black);
+        let multithread = multithread_game(cfg, &p.red, &p.black);
         if running[usize::from(multithread)] < cfg.slots_of(multithread) {
             running[usize::from(multithread)] += 1;
             busy.extend([p.red.id.clone(), p.black.id.clone()]);
@@ -352,19 +357,7 @@ fn serve_live(cfg: &Config, reports: &Sender<Report>) -> anyhow::Result<Arc<Hub>
 fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: Sender<Report>) {
     thread::spawn(move || {
         for (red, black) in [(&a, &b), (&b, &a)] {
-            let _ = reports.send(Report::Started {
-                red: red.id.clone(),
-                black: black.id.clone(),
-                game: None,
-            });
-            let outcome = arena.play(red, black, &opening, None, !(red.is_bot() && black.is_bot()));
-            let failed = outcome.is_err();
-            let _ = reports.send(Report::Played {
-                red: red.id.clone(),
-                black: black.id.clone(),
-                outcome,
-                game: None,
-            });
+            let failed = play_and_report(&arena, &reports, red, black, &opening, None);
             if arena.draining() {
                 break;
             }
@@ -375,73 +368,55 @@ fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: 
         if !arena.draining() {
             thread::sleep(Duration::from_secs(arena.config().pause_s));
         }
-        let multithread = arena.config().multithread_game(&a, &b);
-        let _ = reports.send(Report::Done {
-            pair: [a.id, b.id],
-            multithread,
-        });
+        report_done(&arena, &reports, a, b);
     });
 }
 
 fn spawn_game(arena: Arc<Arena>, p: Pending, reports: Sender<Report>) {
     thread::spawn(move || {
-        let _ = reports.send(Report::Started {
-            red: p.red.id.clone(),
-            black: p.black.id.clone(),
-            game: Some(p.game.clone()),
-        });
         let fixture = Fixture {
-            game: p.game.clone(),
+            game: p.game,
             time_ms: p.time_ms,
         };
-        let outcome = arena.play(&p.red, &p.black, &p.opening, Some(&fixture), true);
-        let failed = outcome.is_err();
-        let _ = reports.send(Report::Played {
-            red: p.red.id.clone(),
-            black: p.black.id.clone(),
-            outcome,
-            game: Some(p.game),
-        });
-        if failed {
+        if play_and_report(&arena, &reports, &p.red, &p.black, &p.opening, Some(&fixture)) {
             thread::sleep(RETRY_DELAY);
         }
-        let multithread = arena.config().multithread_game(&p.red, &p.black);
-        let _ = reports.send(Report::Done {
-            pair: [p.red.id, p.black.id],
-            multithread,
-        });
+        report_done(&arena, &reports, p.red, p.black);
     });
 }
 
-/// Équipes de `[[team]]`, puis les équipes inscrites qui n'y figurent pas. Une équipe connectée en
-/// distant joue à la place de son jar.
-fn roster(cfg: &Config, remote: Option<&Arc<Registry>>, warned: &mut HashSet<String>) -> Vec<Team> {
-    let mut teams = cfg.teams.clone();
-    let mut registered = submit::active_teams(cfg).unwrap_or_else(|e| {
-        eprintln!("équipes inscrites ignorées : {e}");
-        Vec::new()
+/// `true` si la partie a échoué.
+fn play_and_report(
+    arena: &Arena,
+    reports: &Sender<Report>,
+    red: &Team,
+    black: &Team,
+    opening: &[Move],
+    fixture: Option<&Fixture>,
+) -> bool {
+    let game = fixture.map(|f| f.game.clone());
+    let _ = reports.send(Report::Started {
+        red: red.id.clone(),
+        black: black.id.clone(),
+        game: game.clone(),
     });
-    for online in remote.map(Registry::online).unwrap_or_default() {
-        registered.retain(|team| team.id != online.id);
-        registered.push(online);
-    }
-    for team in registered {
-        let fixed = teams.iter().any(|t| t.id == team.id);
-        if (fixed || team.id == submit::SMOKE_OPPONENT) && warned.insert(team.id.clone()) {
-            if fixed {
-                eprintln!(
-                    "équipe inscrite {} ignorée : une équipe fixe de la config a le même id",
-                    team.id
-                );
-            } else {
-                eprintln!("équipe inscrite {} : même id que l'adversaire du smoke test", team.id);
-            }
-        }
-        if !fixed {
-            teams.push(team);
-        }
-    }
-    teams
+    let outcome = arena.play(red, black, opening, fixture, !(red.is_bot() && black.is_bot()));
+    let failed = outcome.is_err();
+    let _ = reports.send(Report::Played {
+        red: red.id.clone(),
+        black: black.id.clone(),
+        outcome,
+        game,
+    });
+    failed
+}
+
+fn report_done(arena: &Arena, reports: &Sender<Report>, a: Team, b: Team) {
+    let multithread = multithread_game(arena.config(), &a, &b);
+    let _ = reports.send(Report::Done {
+        pair: [a.id, b.id],
+        multithread,
+    });
 }
 
 /// Supprime les journaux plus vieux que `retention`. Un échec ne doit pas arrêter le ladder.

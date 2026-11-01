@@ -10,7 +10,7 @@ use rand::{Rng, RngExt};
 
 use isolation_core::record::GameRecord;
 
-use crate::config::Team;
+use crate::roster::Team;
 use queue::FairQueue;
 
 const MAX_GAP: f64 = 600.0;
@@ -189,7 +189,7 @@ mod tests {
     use isolation_core::board::Color;
     use isolation_core::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason};
 
-    use crate::config::CommandTemplate;
+    use crate::command::CommandTemplate;
 
     fn team(id: &str) -> Team {
         Team {

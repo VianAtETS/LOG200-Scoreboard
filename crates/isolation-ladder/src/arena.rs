@@ -20,10 +20,13 @@ use isolation_core::record::{
     GameRecord, GameResult, Player, Reason, RefereeEvent, TournamentGame, ValidationError, now_rfc3339,
 };
 
-use crate::config::{Config, Team, Vars};
+use crate::command::Vars;
+use crate::config::Config;
 use crate::hub::{self, Hub};
-use crate::journal::compact_timestamp;
 use crate::remote::{GameSpec, Seat, Seated};
+use crate::roster::{Team, multithread_game};
+use crate::store::compact_timestamp;
+use crate::sync::lock;
 
 /// Au-delà, le journal d'un joueur est tronqué : un jar ne doit pas pouvoir remplir le disque.
 const LOG_CAP: usize = 1 << 20;
@@ -131,7 +134,7 @@ impl Arena {
     /// Attend un slot libre de ce genre, celui de plus petit index.
     fn take_slot(&self, multithread: bool) -> Slot<'_> {
         let fits = |&index: &usize| self.cfg.multithread_slot(index) == multithread;
-        let free = self.free.lock().unwrap_or_else(PoisonError::into_inner);
+        let free = lock(&self.free);
         let mut free = self
             .freed
             .wait_while(free, |free| !free.iter().any(fits))
@@ -167,7 +170,7 @@ impl Arena {
     ) -> Result<GameRecord, GameError> {
         let cfg = &self.cfg;
         let time_ms = fixture.map_or(cfg.time_ms, |f| f.time_ms);
-        let slot = self.take_slot(cfg.multithread_game(red, black));
+        let slot = self.take_slot(multithread_game(cfg, red, black));
         let ts = now_rfc3339();
         let id = format!("{}-{}-{}", compact_timestamp(&ts), red.id, black.id);
         let entry = |team: &Team| Player {
@@ -268,7 +271,7 @@ struct Slot<'a> {
 
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
-        let mut free = self.arena.free.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut free = lock(&self.arena.free);
         free.push(self.index);
         free.sort_unstable_by(|a, b| b.cmp(a));
         self.arena.freed.notify_all();

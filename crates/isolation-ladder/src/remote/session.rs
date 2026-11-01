@@ -21,8 +21,9 @@ use tungstenite::{Bytes, Error as WsError, Message as Frame, WebSocket};
 use isolation_core::remote::{Message, PATH, PROTOCOL_VERSION, is_build};
 
 use super::stream::RefereeStream;
-use super::{GameSpec, Registry, lock};
-use crate::submit::{find_team, load_teams};
+use super::{GameSpec, Registry};
+use crate::submit::{bearer, find_team, load_teams};
+use crate::sync::lock;
 use crate::ws::{goodbye, refusal};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -190,8 +191,7 @@ fn accept(stream: TcpStream, teams: &Path) -> Result<(WebSocket<TcpStream>, Stri
             .headers()
             .get(AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
-            .and_then(|header| header.strip_prefix("Bearer "))
-            .map(str::trim);
+            .and_then(bearer);
         let registered = load_teams(teams).map_err(|e| {
             refusal(
                 StatusCode::INTERNAL_SERVER_ERROR,

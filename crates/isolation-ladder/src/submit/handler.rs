@@ -5,7 +5,7 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Cursor, Read};
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -15,12 +15,14 @@ use tiny_http::Method;
 use isolation_core::digest::short_hash;
 use isolation_core::record::now_rfc3339;
 
-use super::auth::{RegistryError, TeamId, find_team, load_teams};
+use super::auth::{RegistryError, bearer, find_team, load_teams};
 use super::manifest::{self, BadThreads};
 use super::smoke::{Forfeit, Verdict, smoke_test};
 use crate::arena::{Arena, GameError};
 use crate::config::SubmitConfig;
-use crate::journal::append_jsonl;
+use crate::store::append_jsonl;
+use crate::sync::lock;
+use crate::team_id::TeamId;
 
 pub struct Request<'a, B> {
     pub method: &'a Method,
@@ -167,14 +169,11 @@ impl Submissions {
 
     /// Tenu le temps d'un `acquire` ou d'un `release` : les smoke tests attendent leur tour dans `Arena`.
     fn limiter(&self) -> MutexGuard<'_, RateLimiter> {
-        self.limiter.lock().unwrap_or_else(PoisonError::into_inner)
+        lock(&self.limiter)
     }
 
     fn authenticate(&self, authorization: Option<&str>) -> Result<TeamId, SubmitError> {
-        let token = authorization
-            .and_then(|header| header.strip_prefix("Bearer "))
-            .map(str::trim)
-            .ok_or(SubmitError::Unauthorized)?;
+        let token = authorization.and_then(bearer).ok_or(SubmitError::Unauthorized)?;
         let teams = load_teams(&self.submit.teams).map_err(SubmitError::Registry)?;
         find_team(&teams, token)
             .map(|team| team.id.clone())

@@ -1,11 +1,9 @@
 //! Registre des équipes inscrites. Le token d'une équipe n'est stocké nulle part en clair : seul
 //! son sha256 l'est.
 
-use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
@@ -13,54 +11,13 @@ use thiserror::Error;
 
 use isolation_core::digest::{hex, sha256_hex};
 
+use crate::store::write_atomic;
+use crate::team_id::TeamId;
+
 pub const DEFAULT_TEAMS: &str = "jars/teams.toml";
 
-/// Sert de nom de dossier et de conteneur : `a-z`, `0-9`, `-` et `_`, 32 caractères au plus,
-/// commençant par une lettre ou un chiffre.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct TeamId(String);
-
-#[derive(Debug, Error)]
-#[error("id invalide : {0:?} (a-z, 0-9, - et _, 32 caractères au plus)")]
-pub struct InvalidTeamId(String);
-
-impl TryFrom<String> for TeamId {
-    type Error = InvalidTeamId;
-
-    fn try_from(id: String) -> Result<Self, InvalidTeamId> {
-        let allowed = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
-        let valid = (1..=32).contains(&id.len())
-            && id.starts_with(allowed)
-            && id.chars().all(|c| allowed(c) || c == '-' || c == '_');
-        if valid { Ok(Self(id)) } else { Err(InvalidTeamId(id)) }
-    }
-}
-
-impl FromStr for TeamId {
-    type Err = InvalidTeamId;
-
-    fn from_str(id: &str) -> Result<Self, InvalidTeamId> {
-        id.to_string().try_into()
-    }
-}
-
-impl From<TeamId> for String {
-    fn from(id: TeamId) -> Self {
-        id.0
-    }
-}
-
-impl TeamId {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for TeamId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self.0)
-    }
+pub fn bearer(authorization: &str) -> Option<&str> {
+    authorization.strip_prefix("Bearer ").map(str::trim)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -122,12 +79,7 @@ pub fn add_team(path: &Path, id: TeamId) -> Result<String, RegistryError> {
         id,
         token_sha256: sha256_hex(token.as_bytes()),
     });
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, toml::to_string(&file)?)?;
-    fs::rename(&tmp, path)?;
+    write_atomic(path, toml::to_string(&file)?.as_bytes())?;
     Ok(token)
 }
 

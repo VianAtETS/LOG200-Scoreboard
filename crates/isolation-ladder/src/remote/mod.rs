@@ -11,7 +11,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -19,7 +19,10 @@ use anyhow::Context;
 use isolation_core::board::Color;
 use isolation_core::remote::PATH;
 
-use crate::config::{CommandTemplate, Config, Team};
+use crate::command::CommandTemplate;
+use crate::config::Config;
+use crate::roster::Team;
+use crate::sync::lock;
 use session::{Session, Start};
 
 /// Le relais écrit encore son diagnostic quand l'arène le libère.
@@ -105,10 +108,6 @@ impl Registry {
             sessions.remove(&session.team);
         }
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Place d'une équipe distante dans une partie.
@@ -198,7 +197,8 @@ mod tests {
     use isolation_core::remote::{Message, PROTOCOL_VERSION};
 
     use super::*;
-    use crate::submit::{TeamId, add_team, test_support::temp_dir};
+    use crate::submit::{add_team, test_support::temp_dir};
+    use crate::team_id::TeamId;
 
     const BUILD: &str = "3fa9c2d1e0b4a7f6";
 

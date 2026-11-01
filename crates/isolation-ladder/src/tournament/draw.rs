@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Context;
 use jiff::civil::Date;
@@ -9,9 +9,11 @@ use serde::{Deserialize, Serialize};
 use isolation_core::digest::short_hash;
 use isolation_core::record::now_rfc3339;
 
-use crate::config::{Config, Team};
+use crate::config::Config;
+use crate::roster::Team;
 use crate::standings::{START, Standings};
-use crate::submit::{self, TeamId};
+use crate::submit;
+use crate::team_id::TeamId;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Entrant {
@@ -63,7 +65,7 @@ fn seeded(cfg: &Config, standings: &Standings) -> anyhow::Result<Option<Vec<(Tea
         .into_iter()
         .map(|t| (t.id.clone(), t))
         .collect();
-    if teams.len() < cfg.tournament.clone().unwrap_or_default().min_teams {
+    if teams.len() < cfg.tournament_settings().min_teams {
         return Ok(None);
     }
     let seeds = seeding(
@@ -81,7 +83,7 @@ fn seeded(cfg: &Config, standings: &Standings) -> anyhow::Result<Option<Vec<(Tea
 }
 
 fn new_draw(cfg: &Config, standings: &Standings, id: &str, seed: u64, entrants: Vec<Entrant>) -> Draw {
-    let time_ms = cfg.tournament.clone().unwrap_or_default().time_ms;
+    let time_ms = cfg.tournament_settings().time_ms;
     Draw {
         v: 1,
         id: id.to_string(),
@@ -131,7 +133,7 @@ pub fn draw(cfg: &Config, standings: &Standings, id: &str, seed: u64) -> anyhow:
     }
     let draw = new_draw(cfg, standings, id, seed, entrants);
     let path = draw_path(cfg, id);
-    write_atomic(&path, &serde_json::to_vec(&draw)?).with_context(|| path.display().to_string())?;
+    crate::store::write_atomic(&path, &serde_json::to_vec(&draw)?).with_context(|| path.display().to_string())?;
     Ok(Some(draw))
 }
 
@@ -148,7 +150,12 @@ impl Draw {
             .iter()
             .map(|e| {
                 let id: TeamId = e.team.parse()?;
-                Ok(cfg.team_with_jar(&id, &frozen.join(format!("{}.jar", e.team)), e.multithread))
+                Ok(Team::with_jar(
+                    cfg,
+                    &id,
+                    &frozen.join(format!("{}.jar", e.team)),
+                    e.multithread,
+                ))
             })
             .collect()
     }
@@ -159,15 +166,6 @@ pub fn discard_jars(cfg: &Config, id: &str) -> std::io::Result<()> {
         Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
     }
-}
-
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, bytes)?;
-    fs::rename(tmp, path)
 }
 
 pub fn draw_path(cfg: &Config, id: &str) -> PathBuf {

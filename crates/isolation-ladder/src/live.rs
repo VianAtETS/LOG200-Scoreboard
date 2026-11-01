@@ -1,12 +1,13 @@
 //! Parties en cours, publiées pour la page dans `live.json` (format dans docs/formats.md).
 
-use std::fs;
 use std::io;
 use std::path::PathBuf;
 
 use serde::Serialize;
 
 use isolation_core::record::{TournamentGame, now_rfc3339};
+
+use crate::store::write_atomic;
 
 #[derive(Serialize)]
 struct Running {
@@ -65,20 +66,18 @@ impl Live {
     }
 
     fn write(&self) -> io::Result<()> {
-        let tmp = self.dir.join("live.json.tmp");
-        fs::write(
-            &tmp,
-            serde_json::to_vec(&LiveFile {
-                v: 1,
-                games: &self.games,
-            })?,
-        )?;
-        fs::rename(tmp, self.dir.join("live.json"))
+        let file = LiveFile {
+            v: 1,
+            games: &self.games,
+        };
+        write_atomic(&self.dir.join("live.json"), &serde_json::to_vec(&file)?)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use serde_json::Value;
 
     use super::*;

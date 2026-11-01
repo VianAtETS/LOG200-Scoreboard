@@ -7,9 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use isolation_core::record::now_rfc3339;
 
-use super::write_atomic;
 use crate::config::Config;
-use crate::journal::compact_timestamp;
+use crate::store::{compact_timestamp, write_atomic};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]

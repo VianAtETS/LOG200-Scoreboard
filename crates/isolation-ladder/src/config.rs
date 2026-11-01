@@ -2,19 +2,15 @@
 //! `[table]` y serait sinon ignorée sans bruit.
 
 use std::collections::BTreeMap;
-use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::time::Duration;
 
 use serde::Deserialize;
 use thiserror::Error;
 
-use isolation_core::board::Color;
-
-use crate::remote::Seat;
-use crate::submit::TeamId;
+use crate::command::CommandTemplate;
+use crate::team_id::TeamId;
 use crate::tournament::calendar::Weekly;
 
 /// Une partie détruit au plus une case par coup.
@@ -67,7 +63,7 @@ pub struct Config {
     pub live: Option<LiveConfig>,
     pub tournament: Option<TournamentConfig>,
     #[serde(default, rename = "team")]
-    pub teams: Vec<Team>,
+    pub teams: Vec<TeamConfig>,
 }
 
 fn default_port() -> u16 {
@@ -165,26 +161,21 @@ impl Config {
             .count()
     }
 
-    /// Genre de slot où se joue la partie : multithread dès qu'une des équipes l'est. Faute de slot
-    /// de ce genre, l'autre, pour qu'aucune partie n'attende un slot qui n'existe pas.
-    pub fn multithread_game(&self, a: &Team, b: &Team) -> bool {
-        let wanted = a.multithread || b.multithread;
-        if self.slots_of(wanted) > 0 { wanted } else { !wanted }
+    /// Faute de slot du genre voulu, l'autre, pour qu'aucune partie n'attende un slot qui n'existe pas.
+    pub fn slot_kind(&self, multithread: bool) -> bool {
+        if self.slots_of(multithread) > 0 {
+            multithread
+        } else {
+            !multithread
+        }
+    }
+
+    pub fn tournament_settings(&self) -> TournamentConfig {
+        self.tournament.clone().unwrap_or_default()
     }
 
     pub fn game_timeout(&self, time_ms: u64) -> Duration {
         Duration::from_secs(self.game_timeout_s.unwrap_or(MAX_PLIES * time_ms / 1000 + 120))
-    }
-
-    pub fn team_with_jar(&self, id: &TeamId, jar: &Path, multithread: bool) -> Team {
-        Team {
-            id: id.to_string(),
-            cmd: self.team_cmd.with_jar(&jar.to_string_lossy()),
-            build: Some(jar.to_path_buf()),
-            anchor: false,
-            multithread,
-            remote: None,
-        }
     }
 }
 
@@ -199,7 +190,7 @@ pub struct Slot {
 
 #[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct Team {
+pub struct TeamConfig {
     pub id: String,
     /// `{port}`, `{game}` et `{side}` (red ou black) sont remplacés.
     pub cmd: CommandTemplate,
@@ -210,20 +201,6 @@ pub struct Team {
     /// Ses parties se jouent dans les slots `multithread`, adversaire compris.
     #[serde(default)]
     pub multithread: bool,
-    /// Équipe connectée depuis sa machine : elle joue à la place de `cmd`.
-    #[serde(skip)]
-    pub remote: Option<Seat>,
-}
-
-impl Team {
-    pub fn build_file(&self) -> Option<PathBuf> {
-        self.build.clone().or_else(|| self.cmd.jar().map(PathBuf::from))
-    }
-
-    /// Adversaire de référence, sans soumission.
-    pub fn is_bot(&self) -> bool {
-        self.remote.is_none() && self.build_file().is_none()
-    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -316,78 +293,11 @@ impl SubmitConfig {
     }
 }
 
-/// Commande dont les arguments contiennent des `{variables}`.
-#[derive(Deserialize, Clone, Default, Debug)]
-#[serde(transparent)]
-pub struct CommandTemplate(Vec<String>);
-
-impl CommandTemplate {
-    pub fn new<const N: usize>(args: [&str; N]) -> Self {
-        Self(args.map(String::from).to_vec())
-    }
-
-    pub const fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    fn jar(&self) -> Option<&str> {
-        self.0
-            .iter()
-            .map(String::as_str)
-            .find(|a| Path::new(a).extension().is_some_and(|e| e.eq_ignore_ascii_case("jar")))
-    }
-
-    fn with_jar(&self, jar: &str) -> Self {
-        Self(self.0.iter().map(|a| a.replace("{jar}", jar)).collect())
-    }
-
-    #[cfg(test)]
-    pub fn args(&self) -> &[String] {
-        &self.0
-    }
-}
-
-/// Valeurs d'une partie, substituées dans les gabarits.
-pub struct Vars<'a> {
-    pub cfg: &'a Config,
-    pub slot: usize,
-    pub opening: String,
-    pub game: &'a str,
-    pub time_ms: u64,
-}
-
-impl Vars<'_> {
-    /// `side` remplace `{side}` ; vide pour l'arbitre et `cleanup`.
-    pub fn substitute(&self, arg: &str, side: Option<Color>) -> String {
-        arg.replace("{port}", &self.cfg.port.to_string())
-            .replace("{time_ms}", &self.time_ms.to_string())
-            .replace("{opening}", &self.opening)
-            .replace("{game}", self.game)
-            .replace("{side}", side.map_or("", Color::name))
-    }
-
-    pub fn command(&self, template: &CommandTemplate, side: Option<Color>) -> io::Result<Command> {
-        let mut args = template.0.iter().map(|arg| self.substitute(arg, side));
-        let program = args.next().ok_or_else(|| io::Error::other("commande vide"))?;
-        let mut command = Command::new(program);
-        command.args(args).stdin(Stdio::null());
-        let overrides = self.cfg.slots.get(self.slot).into_iter().flat_map(|s| &s.sandbox);
-        for (key, value) in self.cfg.sandbox.iter().chain(overrides) {
-            let value = match value {
-                toml::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            };
-            command.env(format!("SANDBOX_{}", key.to_uppercase()), value);
-        }
-        Ok(command)
-    }
-}
-
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
 
-    const MINIMAL: &str = "referee = [\"r\", \"{port}\", \"{opening}\"]\ntime_ms = 1000\nsession = \"s\"\n";
+    pub const MINIMAL: &str = "referee = [\"r\", \"{port}\", \"{opening}\"]\ntime_ms = 1000\nsession = \"s\"\n";
 
     #[test]
     fn example_config_parses() {
@@ -450,107 +360,5 @@ mod tests {
     fn odd_opening_is_rejected() {
         let text = format!("opening_plies = 3\n{MINIMAL}");
         assert!(matches!(text.parse::<Config>(), Err(ConfigError::OddOpening(3))));
-    }
-
-    #[test]
-    fn defaults_and_substitution() {
-        let cfg: Config = MINIMAL.parse().unwrap();
-        assert_eq!(cfg.game_timeout(cfg.time_ms), Duration::from_secs(264));
-        let id: TeamId = "eq07".parse().unwrap();
-        let team = cfg.team_with_jar(&id, Path::new("jars/eq07/current.jar"), false);
-        assert_eq!(team.build_file(), Some(PathBuf::from("jars/eq07/current.jar")));
-        let vars = Vars {
-            cfg: &cfg,
-            slot: 0,
-            opening: "G1-G4-F9".into(),
-            game: "g1",
-            time_ms: cfg.time_ms,
-        };
-        let command = vars.command(&cfg.referee, None).unwrap();
-        let args: Vec<_> = command.get_args().collect();
-        assert_eq!(args, ["8888", "G1-G4-F9"]);
-        let player = vars.command(&team.cmd, Some(Color::Black)).unwrap();
-        assert!(player.get_args().any(|a| a == "black"));
-        assert!(player.get_args().any(|a| a == "jars/eq07/current.jar"));
-        assert_eq!(cfg.slots(), 1);
-    }
-
-    #[test]
-    fn tournament_time_replaces_the_ladder_time() {
-        let cfg: Config = "referee = [\"r\", \"{time_ms}\"]\ntime_ms = 500\nsession = \"s\"\n"
-            .parse()
-            .unwrap();
-        let vars = Vars {
-            cfg: &cfg,
-            slot: 0,
-            opening: String::new(),
-            game: "g1",
-            time_ms: 5000,
-        };
-        let command = vars.command(&cfg.referee, None).unwrap();
-        assert_eq!(command.get_args().collect::<Vec<_>>(), ["5000"]);
-        assert_eq!(cfg.game_timeout(5000), Duration::from_mins(14));
-    }
-
-    #[test]
-    fn slot_overrides_sandbox_but_keeps_port() {
-        let text = format!(
-            "{MINIMAL}[sandbox]\ncpuset_red = \"2\"\nmemory = \"512m\"\n\
-             [[slot]]\ncpuset_red = \"2\"\n[[slot]]\ncpuset_red = \"4\"\n"
-        );
-        let cfg: Config = text.parse().unwrap();
-        assert_eq!(cfg.slots(), 2);
-        let env = |slot| {
-            let vars = Vars {
-                cfg: &cfg,
-                slot,
-                opening: String::new(),
-                game: "g1",
-                time_ms: cfg.time_ms,
-            };
-            let command = vars.command(&cfg.referee, None).unwrap();
-            let port = command.get_args().next().unwrap().to_string_lossy().into_owned();
-            let var = |key: &str| {
-                command
-                    .get_envs()
-                    .find(|&(k, _)| k == key)
-                    .and_then(|(_, v)| v)
-                    .map(|v| v.to_string_lossy().into_owned())
-            };
-            (port, var("SANDBOX_CPUSET_RED"), var("SANDBOX_MEMORY"))
-        };
-        assert_eq!(env(0), ("8888".into(), Some("2".into()), Some("512m".into())));
-        assert_eq!(env(1), ("8888".into(), Some("4".into()), Some("512m".into())));
-    }
-
-    #[test]
-    fn multithread_slots_host_every_game_of_a_multithread_team() {
-        let text = format!("{MINIMAL}[[slot]]\ncpus = \"1\"\n[[slot]]\nmultithread = true\ncpus = \"2\"\n");
-        let cfg: Config = text.parse().unwrap();
-        assert_eq!((cfg.slots_of(false), cfg.slots_of(true)), (1, 1));
-        let id: TeamId = "eq07".parse().unwrap();
-        let jar = Path::new("current.jar");
-        let (single, multi) = (cfg.team_with_jar(&id, jar, false), cfg.team_with_jar(&id, jar, true));
-        assert!(!cfg.multithread_game(&single, &single));
-        assert!(cfg.multithread_game(&single, &multi));
-        assert!(cfg.multithread_game(&multi, &single));
-        let vars = Vars {
-            cfg: &cfg,
-            slot: 1,
-            opening: String::new(),
-            game: "g1",
-            time_ms: cfg.time_ms,
-        };
-        let command = vars.command(&cfg.referee, None).unwrap();
-        let keys: Vec<_> = command
-            .get_envs()
-            .map(|(k, _)| k.to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(keys, ["SANDBOX_CPUS"]);
-
-        let ordinary_only: Config = MINIMAL.parse().unwrap();
-        assert!(!ordinary_only.multithread_game(&multi, &single));
-        let multithread_only: Config = format!("{MINIMAL}[[slot]]\nmultithread = true\n").parse().unwrap();
-        assert!(multithread_only.multithread_game(&single, &single));
     }
 }

@@ -17,10 +17,11 @@ use isolation_core::board::{Color, Move};
 use isolation_core::record::{GameRecord, TournamentGame};
 use isolation_core::rules::random_opening;
 
-use crate::config::{Config, Team};
+use crate::config::Config;
+use crate::roster::Team;
 use crate::standings::Standings;
 use bracket::{Bracket, Side, Slot, Source, Status};
-pub use draw::{Draw, discard_jars, draw, draw_path, preview, tournament_id, write_atomic};
+pub use draw::{Draw, discard_jars, draw, draw_path, preview, tournament_id};
 pub use organizer::Organizer;
 
 /// `None` : trop peu d'équipes.
@@ -52,7 +53,7 @@ pub fn resume(cfg: &Config, games: &[GameRecord]) -> anyhow::Result<Option<Tourn
 }
 
 fn retries(cfg: &Config) -> u32 {
-    cfg.tournament.clone().unwrap_or_default().retries
+    cfg.tournament_settings().retries
 }
 
 /// `places` : une place par équipe, dans l'ordre des têtes de série.
@@ -310,7 +311,7 @@ pub(super) mod tests {
     use isolation_core::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason};
 
     use super::*;
-    use crate::config::CommandTemplate;
+    use crate::command::CommandTemplate;
 
     use draw::Entrant;
 

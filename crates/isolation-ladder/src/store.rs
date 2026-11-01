@@ -1,6 +1,4 @@
-//! Fichiers en ajout seul : parties jouées et soumissions.
-
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::ops::Range;
 use std::path::Path;
@@ -17,6 +15,16 @@ pub fn append_jsonl(path: &Path, value: &impl Serialize) -> io::Result<Range<u64
     file.write_all(&line)?;
     file.sync_data()?;
     Ok(start..start + line.len() as u64)
+}
+
+/// Écrit à côté puis renomme : un lecteur ne voit jamais un fichier à moitié écrit.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_added_extension("tmp");
+    fs::write(&tmp, bytes)?;
+    fs::rename(tmp, path)
 }
 
 /// Horodatage RFC 3339 sans `:` ni `-`, utilisable dans un nom de fichier.

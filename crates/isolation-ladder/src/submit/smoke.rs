@@ -8,9 +8,10 @@ use isolation_core::board::Color;
 use isolation_core::record::{GameResult, Reason};
 use isolation_core::rules::random_opening;
 
-use super::auth::TeamId;
 use crate::arena::{Arena, GameError};
-use crate::config::{SubmitConfig, Team};
+use crate::config::SubmitConfig;
+use crate::roster::Team;
+use crate::team_id::TeamId;
 
 /// Fin de la sortie d'erreur renvoyée à l'équipe : de quoi voir l'exception, pas tout le journal.
 const STDERR_TAIL_LINES: usize = 20;
@@ -91,7 +92,7 @@ pub const SMOKE_OPPONENT: &str = "test-aleatoire";
 
 pub fn smoke_test(arena: &Arena, submit: &SubmitConfig, id: &TeamId, jar: &Path) -> Verdict {
     let cfg = arena.config();
-    let candidate = cfg.team_with_jar(id, jar, false);
+    let candidate = Team::with_jar(cfg, id, jar, false);
     let opponent = Team {
         id: SMOKE_OPPONENT.into(),
         cmd: submit.opponent.clone(),
