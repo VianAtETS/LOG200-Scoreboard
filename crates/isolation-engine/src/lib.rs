@@ -4,3 +4,6 @@
 pub mod cpu;
 pub mod engine;
 pub mod strategy;
+
+#[cfg(test)]
+mod golden;

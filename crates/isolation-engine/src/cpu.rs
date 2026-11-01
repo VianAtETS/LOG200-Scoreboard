@@ -608,4 +608,25 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn search_matches_golden() {
+        use std::fmt::Write;
+
+        let mut lines = String::new();
+        for level in [Level::One, Level::Two, Level::Three] {
+            for (index, (mut board, color)) in positions(7, 10, 30).into_iter().enumerate() {
+                let mut search = Search::new(&board, color, level, None);
+                let moves = rules::legal_moves(&board, color);
+                for depth in 2..=level.max_depth().min(3) {
+                    let found = search
+                        .root(&mut board, &moves, depth)
+                        .map_or_else(|| "none".to_owned(), |(mv, value)| format!("{mv} {value}"));
+                    let nodes = search.nodes;
+                    writeln!(lines, "{level:?} position {index} depth {depth}: {found} nodes {nodes}").unwrap();
+                }
+            }
+        }
+        crate::golden::check("cpu", &lines);
+    }
 }

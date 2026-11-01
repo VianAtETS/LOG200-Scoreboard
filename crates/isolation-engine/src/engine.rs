@@ -1508,4 +1508,38 @@ mod tests {
             println!("{eval:?} : {nodes} nœuds en {elapsed:.2?}, {rate:.0} k nœuds/s");
         }
     }
+
+    #[test]
+    fn search_matches_golden() {
+        use std::fmt::Write;
+
+        let mut lines = String::new();
+        for eval in [Eval::LevelThree, Eval::Territory] {
+            for (game, plies) in (0..10).flat_map(|game| [4, 14, 24].map(|plies| (game, plies))) {
+                let opening = rules::random_opening(plies, &mut StdRng::seed_from_u64(game));
+                let Ok(replay) = rules::Replay::from_moves(opening) else {
+                    continue;
+                };
+                if replay.winner.is_some() {
+                    continue;
+                }
+                let mut board = replay.board;
+                let mut search = Search::new(&board, replay.turn, eval, far());
+                let mut moves = rules::legal_moves(&board, replay.turn);
+                for depth in 1..=3 {
+                    search.age_history();
+                    let found = search
+                        .root(&mut board, &mut moves, depth)
+                        .map_or_else(|| "none".to_owned(), |(mv, value)| format!("{mv} {value}"));
+                    let nodes = search.nodes;
+                    writeln!(
+                        lines,
+                        "{eval:?} game {game} plies {plies} depth {depth}: {found} nodes {nodes}"
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        crate::golden::check("engine", &lines);
+    }
 }
