@@ -1,0 +1,183 @@
+//! Stratégies des bots : bots de test, répliques du CPU du serveur officiel (`cpu`) et moteurs des
+//! niveaux 4 et 5 (`engine`).
+
+use std::time::Instant;
+
+use rand::Rng;
+use rand::seq::IndexedRandom;
+
+use isolation_core::board::{Board, Color, Move};
+use isolation_core::rules::{self, mobility};
+
+use crate::cpu::{self, Choice, Level};
+use crate::engine::{self, Engine, Eval};
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum Strategy {
+    /// Un coup légal au hasard.
+    Random,
+    /// Gagne tout de suite si possible, sinon maximise sa mobilité moins celle de l'adversaire ;
+    /// hasard entre les ex aequo.
+    Greedy,
+    /// CPU "Aléatoire" du serveur officiel : un coup légal au hasard, comme `random`.
+    #[cfg_attr(feature = "clap", value(name = "aleatoire"))]
+    Aleatoire,
+    /// CPU "Niveau 1" du serveur officiel : minimax alpha-bêta, deux demi-coups après le sien.
+    #[cfg_attr(feature = "clap", value(name = "niveau-1"))]
+    Niveau1,
+    /// CPU "Niveau 2" du serveur officiel : le même minimax, approfondi tant que le temps le permet.
+    #[cfg_attr(feature = "clap", value(name = "niveau-2"))]
+    Niveau2,
+    /// CPU "Niveau 3" du serveur officiel : negamax avec table de transposition, approfondi tant que
+    /// le temps le permet ; tient aussi compte du bord et des cases voisines libres.
+    #[cfg_attr(feature = "clap", value(name = "niveau-3"))]
+    Niveau3,
+    /// L'évaluation du niveau 3 avec un negamax PVS, une table de transposition et des coups
+    /// ordonnés ; pas une réplique du serveur officiel.
+    #[cfg_attr(feature = "clap", value(name = "niveau-4"))]
+    Niveau4,
+    /// La recherche du niveau 4, mais évalue les cases que chaque pion atteint en un et en deux
+    /// coups ; avec `Bot`, garde sa table d'un coup à l'autre.
+    #[cfg_attr(feature = "clap", value(name = "niveau-5"))]
+    Niveau5,
+}
+
+impl Strategy {
+    pub fn choose(self, board: &Board, color: Color, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
+        let unsearched = |mv| Choice { mv, depth: None };
+        match self {
+            Self::Random | Self::Aleatoire => rules::legal_moves(board, color).choose(rng).copied().map(unsearched),
+            Self::Greedy => greedy(board, color, &rules::legal_moves(board, color), rng).map(unsearched),
+            Self::Niveau1 => cpu::choose(board, color, Level::One, deadline, rng),
+            Self::Niveau2 => cpu::choose(board, color, Level::Two, deadline, rng),
+            Self::Niveau3 => cpu::choose(board, color, Level::Three, deadline, rng),
+            Self::Niveau4 => engine::choose(board, color, Eval::LevelThree, deadline, rng),
+            Self::Niveau5 => engine::choose(board, color, Eval::Territory, deadline, rng),
+        }
+    }
+}
+
+/// Une stratégie et ce qu'elle retient d'un coup à l'autre : la table du niveau 5, cherchée avec
+/// `threads` fils. Un par partie.
+pub struct Bot {
+    strategy: Strategy,
+    threads: usize,
+    engine: Option<Engine>,
+}
+
+impl Bot {
+    pub const fn new(strategy: Strategy, threads: usize) -> Self {
+        Self {
+            strategy,
+            threads,
+            engine: None,
+        }
+    }
+
+    pub fn choose(&mut self, board: &Board, color: Color, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
+        match self.strategy {
+            Strategy::Niveau5 => self.engine().choose(board, color, deadline, rng),
+            strategy => strategy.choose(board, color, deadline, rng),
+        }
+    }
+
+    /// Réfléchit pendant que `side` cherche son coup, jusqu'au prochain `choose`
+    pub fn ponder(&mut self, board: &Board, side: Color) {
+        if self.strategy == Strategy::Niveau5 {
+            self.engine().ponder(board, side);
+        }
+    }
+
+    fn engine(&mut self) -> &mut Engine {
+        let threads = self.threads;
+        self.engine.get_or_insert_with(|| Engine::new(Eval::Territory, threads))
+    }
+}
+
+fn greedy(board: &Board, color: Color, moves: &[Move], rng: &mut impl Rng) -> Option<Move> {
+    let mut board = board.clone();
+    let mut best = Vec::new();
+    let mut best_score = i32::MIN;
+    for &mv in moves {
+        board.apply(mv);
+        let won = !rules::has_moves(&board, color.other());
+        let score = mobility(&board, color) - mobility(&board, color.other());
+        board.undo(mv);
+        if won {
+            return Some(mv);
+        }
+        if score > best_score {
+            best_score = score;
+            best.clear();
+        }
+        if score == best_score {
+            best.push(mv);
+        }
+    }
+    best.choose(rng).copied()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use isolation_core::board::test_support::diagram;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    #[test]
+    fn greedy_takes_immediate_win() {
+        // Noir en A12 n'a qu'une sortie (B11) : rouge gagne en la détruisant.
+        let b = diagram(
+            "B#..........
+             #...........
+             ............
+             ............
+             ............
+             ......R.....
+             ############
+             ############
+             ############
+             ............
+             ............
+             ............",
+        );
+        let mut rng = StdRng::seed_from_u64(1);
+        let m = Strategy::Greedy
+            .choose(&b, Color::Red, Instant::now(), &mut rng)
+            .unwrap()
+            .mv;
+        let mut after = b.clone();
+        after.apply(m);
+        assert_eq!(rules::winner_after(&after, Color::Red), Some(Color::Red), "{m}");
+    }
+
+    #[test]
+    fn greedy_beats_random() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut greedy_wins = 0;
+        for game in 0..20 {
+            let greedy_color = if game % 2 == 0 { Color::Red } else { Color::Black };
+            let mut b = Board::initial();
+            let mut turn = Color::Red;
+            let winner = loop {
+                let s = if turn == greedy_color {
+                    Strategy::Greedy
+                } else {
+                    Strategy::Random
+                };
+                let m = s
+                    .choose(&b, turn, Instant::now(), &mut rng)
+                    .expect("le joueur au trait a toujours un coup")
+                    .mv;
+                b.apply(m);
+                if let Some(w) = rules::winner_after(&b, turn) {
+                    break w;
+                }
+                turn = turn.other();
+            };
+            greedy_wins += u32::from(winner == greedy_color);
+        }
+        assert!(greedy_wins >= 16, "glouton : {greedy_wins}/20");
+    }
+}

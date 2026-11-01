@@ -68,9 +68,9 @@ The relay starts the jar for every game and keeps reconnecting until stopped. Th
 
 | Path | Role |
 | --- | --- |
-| `src/rules.rs` | Game rules as applied by the official server (see `docs/rules.md`) |
+| `crates/isolation-core` | Board, game rules as applied by the official server (see `docs/rules.md`), protocol and record formats |
 | `isolation-referee` | Headless referee for one game; speaks the official protocol, prints one JSON result (plus one line per move for the ladder's live view when its output is not a terminal) |
-| `isolation-bot` | Protocol client used for tests and conformance checks; its strategies `aleatoire` and `niveau-1` to `niveau-3` replicate the official server's CPU levels (`src/cpu.rs`); `niveau-4` and `niveau-5` are our own stronger engines (`src/engine.rs`) |
+| `isolation-bot` | Protocol client used for tests and conformance checks; its strategies `aleatoire` and `niveau-1` to `niveau-3` replicate the official server's CPU levels (`crates/isolation-engine/src/cpu.rs`); `niveau-4` and `niveau-5` are our own stronger engines (`crates/isolation-engine/src/engine.rs`) |
 | `isolation-ladder` | Schedules games between teams, appends to `data/games.jsonl`, publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`), streams the games in progress (`/api/live`, `[live]` in `ladder.toml`) and runs the weekly tournament (`[tournament]` in `ladder.toml`, `data/tournaments/`, see `docs/spec-tournoi-hebdo.md`) |
 | `isolation-check` | Replays and validates a JSONL file or an official save (`BOARDGAME 1`) |
 | `isolation-remote` | Relay for a team that plays from its own machine: starts the jar for each game and forwards its lines to the ladder (`/api/remote`, see `docs/formats.md`) |
@@ -96,7 +96,7 @@ npx http-server . -p 8000            # then open http://localhost:8000/web/
 
 Optional for local-only builds: `export RUSTFLAGS="-C target-cpu=native"` before building, then `unset RUSTFLAGS` afterward. Do not distribute these CPU-specific binaries or images.
 
-Tests: `cargo test` and `node --test web/*.test.mjs`.
+Tests: `cargo test --workspace` and `node --test web/*.test.mjs`.
 
 ## Conformance against the official server
 

@@ -1,0 +1,21 @@
+[package]
+name = "isolation-engine"
+description = "Search engines and CPU replicas for Isolation"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+isolation-core.workspace = true
+clap = { workspace = true, optional = true }
+rand.workspace = true
+
+[dev-dependencies]
+isolation-core = { workspace = true, features = ["test-support"] }
+
+[[example]]
+name = "duel"
+required-features = ["clap"]
+
+[lints]
+workspace = true

@@ -8,7 +8,7 @@ FROM rust:1.99.1-alpine3.24 AS compile
 RUN apk add --no-cache musl-dev
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
-COPY src src
+COPY crates crates
 RUN cargo build --release --locked \
     --bin isolation-ladder --bin isolation-referee --bin isolation-check
 RUN cargo build --profile bot --locked --bin isolation-bot

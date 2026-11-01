@@ -1,0 +1,15 @@
+[package]
+name = "isolation-remote"
+description = "Relay for a team that plays the ladder from its own machine"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+isolation-core.workspace = true
+clap.workspace = true
+rustls.workspace = true
+tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
+
+[lints]
+workspace = true

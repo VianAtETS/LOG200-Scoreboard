@@ -1,0 +1,19 @@
+[package]
+name = "isolation-bot"
+description = "Protocol client and reference bots for Isolation"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+isolation-core.workspace = true
+isolation-engine = { workspace = true, features = ["clap"] }
+anyhow.workspace = true
+clap.workspace = true
+rand.workspace = true
+
+[dev-dependencies]
+isolation-core = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

@@ -44,7 +44,7 @@ jobs:
 
       - name: Test
         if: ${{ !matrix.cross }}
-        run: cargo test --release --locked --target ${{ matrix.target }}
+        run: cargo test --workspace --release --locked --target ${{ matrix.target }}
 
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-referee --bin isolation-check --bin isolation-remote

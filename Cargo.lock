@@ -379,23 +379,82 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
-name = "isolation"
+name = "isolation-bot"
 version = "0.23.1"
 dependencies = [
  "anyhow",
  "clap",
- "jiff",
+ "isolation-core",
+ "isolation-engine",
  "rand",
- "rustls",
+]
+
+[[package]]
+name = "isolation-check"
+version = "0.23.1"
+dependencies = [
+ "clap",
+ "isolation-core",
+ "thiserror",
+]
+
+[[package]]
+name = "isolation-core"
+version = "0.23.1"
+dependencies = [
+ "rand",
  "serde",
  "serde_json",
  "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "isolation-engine"
+version = "0.23.1"
+dependencies = [
+ "clap",
+ "isolation-core",
+ "rand",
+]
+
+[[package]]
+name = "isolation-ladder"
+version = "0.23.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "isolation-core",
+ "jiff",
+ "rand",
+ "serde",
+ "serde_json",
  "signal-hook",
  "thiserror",
  "tiny_http",
  "toml",
  "tungstenite",
  "zip",
+]
+
+[[package]]
+name = "isolation-referee"
+version = "0.23.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "isolation-core",
+ "serde_json",
+]
+
+[[package]]
+name = "isolation-remote"
+version = "0.23.1"
+dependencies = [
+ "clap",
+ "isolation-core",
+ "rustls",
+ "tungstenite",
 ]
 
 [[package]]

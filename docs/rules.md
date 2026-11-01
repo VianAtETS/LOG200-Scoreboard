@@ -1,6 +1,6 @@
 # Isolation 12x12 : règles du serveur officiel
 
-L'énoncé du lab laisse plusieurs points ouverts. Voici comment le serveur officiel les tranche ; `src/rules.rs` implémente exactement ça. Ces règles restent à confirmer par la conformance contre le serveur (`isolation-bot --probe-illegal`, voir le README).
+L'énoncé du lab laisse plusieurs points ouverts. Voici comment le serveur officiel les tranche ; `crates/isolation-core/src/rules.rs` implémente exactement ça. Ces règles restent à confirmer par la conformance contre le serveur (`isolation-bot --probe-illegal`, voir le README).
 
 ## Plateau et notation
 
