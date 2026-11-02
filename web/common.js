@@ -2,6 +2,7 @@
 // sert la page. Données : ?data=URL du dossier, sinon <serveur>/data.
 
 import { parseJsonl } from './elo.js'
+import { releaseState } from './version.js'
 
 export const params = new URLSearchParams(location.search)
 export const SERVER = document.querySelector('meta[name="scoreboard-server"]')?.content || '..'
@@ -82,6 +83,42 @@ export function pageUrl(href, extra = {}) {
     for (const [key, value] of Object.entries(extra)) if (value) url.searchParams.set(key, value)
     url.search = url.searchParams.toString().replaceAll('%2C', ',')
     return url.href
+}
+
+const LATEST_RELEASE = 'https://api.github.com/repos/VianAtETS/LOG200-Scoreboard/releases/latest'
+const RELEASE_TITLES = {
+    current: (tag) => `À jour : dernière release ${tag}`,
+    behind: (tag) => `${tag} disponible`,
+    ahead: (tag) => `Plus récente que la dernière release (${tag})`,
+}
+
+// GitHub limite à 60 appels anonymes par heure et par adresse : un par visite
+async function latestRelease() {
+    try {
+        const cached = sessionStorage.getItem('latest-release')
+        if (cached) return cached
+    } catch {}
+    const response = await fetch(LATEST_RELEASE)
+    if (!response.ok) return undefined
+    const { tag_name: tag } = await response.json()
+    try {
+        sessionStorage.setItem('latest-release', tag)
+    } catch {}
+    return tag
+}
+
+export async function showVersion() {
+    const response = await fetch(`${SERVER}/api/version`).catch(() => null)
+    if (!response?.ok) return
+    const version = `v${(await response.text()).trim()}`
+    const badge = el('span', { class: 'version', title: 'Version du ladder' }, version)
+    document.querySelector('.masthead .title').append(badge)
+    const tag = await latestRelease().catch(() => undefined)
+    const state = releaseState(version, tag)
+    if (state === 'unknown') return
+    badge.dataset.release = state
+    badge.title = RELEASE_TITLES[state](tag)
+    badge.setAttribute('aria-label', `Ladder ${version} : ${badge.title}`)
 }
 
 // Liens de l'en-tête : complétés au clic, avec les choix du moment.

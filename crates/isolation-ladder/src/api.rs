@@ -37,6 +37,10 @@ pub fn serve(arena: &Arc<Arena>) -> anyhow::Result<Option<Api>> {
 fn router(submissions: Arc<Submissions>) -> Router {
     Router::new()
         .route("/api/health", get(async || "ok\n").fallback(not_found))
+        .route(
+            "/api/version",
+            get(async || concat!(env!("CARGO_PKG_VERSION"), "\n")).fallback(not_found),
+        )
         .route("/api/submit", put(submit).post(submit).fallback(not_found))
         .fallback(not_found)
         .layer(DefaultBodyLimit::disable())

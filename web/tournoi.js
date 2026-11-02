@@ -1,7 +1,7 @@
 // Page Tournoi : tableau à double élimination d'un tournoi hebdomadaire, lu dans data/tournaments/, ou
 // aperçu du prochain (data/tournament-preview.json). ?tournament= suit le tableau affiché.
 
-import { $, DATA, el, fullFormat, linkPages, liveLink, pageUrl, params, pulse, REFRESH_MS, setParam, timeFormat } from './common.js'
+import { $, DATA, el, fullFormat, linkPages, liveLink, pageUrl, params, pulse, REFRESH_MS, setParam, showVersion, timeFormat } from './common.js'
 import { correction, tournamentDuration } from './estimate.js'
 import { fetchModel, percent, winProbability } from './predict.js'
 
@@ -296,3 +296,4 @@ addEventListener('resize', () => requestAnimationFrame(drawLinks))
 refresh()
 setInterval(refresh, REFRESH_MS)
 linkPages()
+showVersion()

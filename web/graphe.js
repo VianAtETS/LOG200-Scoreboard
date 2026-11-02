@@ -21,6 +21,7 @@ import {
     REFRESH_MS,
     scopesOf,
     setParam,
+    showVersion,
     tail,
     timeFormat,
     WINDOWS,
@@ -421,6 +422,7 @@ new ResizeObserver(() => {
     if (hover.col !== null) showAt(hover.col)
 }).observe($('bump-plot'))
 linkPages()
+showVersion()
 
 refresh()
 setInterval(refresh, REFRESH_MS)

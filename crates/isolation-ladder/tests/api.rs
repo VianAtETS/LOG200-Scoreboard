@@ -133,6 +133,10 @@ fn submit_answers_with_the_status_and_reason_the_teams_ci_reads() {
 
     assert_eq!(ladder.request("GET", "/api/health", None, &[]), (200, "ok".into()));
     assert_eq!(
+        ladder.request("GET", "/api/version", None, &[]),
+        (200, env!("CARGO_PKG_VERSION").into())
+    );
+    assert_eq!(
         ladder.request("GET", "/api/submit", None, &[]),
         (404, "inconnu : seul PUT /api/submit existe".into())
     );

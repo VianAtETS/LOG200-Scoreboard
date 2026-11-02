@@ -22,6 +22,7 @@ import {
     scopesOf,
     SERVER,
     setParam,
+    showVersion,
     signed,
     tail,
     timeFormat,
@@ -827,3 +828,4 @@ refresh()
 setInterval(refresh, REFRESH_MS)
 setupSubmit()
 linkPages()
+showVersion()

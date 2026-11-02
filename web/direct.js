@@ -2,7 +2,7 @@
 // dans le replay de la page Classement, qui la suit en direct.
 
 import { renderBoard } from './board.js'
-import { $, DATA, el, linkPages, pageUrl, REFRESH_MS, SERVER } from './common.js'
+import { $, DATA, el, linkPages, pageUrl, REFRESH_MS, SERVER, showVersion } from './common.js'
 import { connectLive, ENDED_KEEP_MS, forget, liveUrl, mover } from './live.js'
 import { fetchModel, percent, winProbability } from './predict.js'
 import { positions } from './replay.js'
@@ -102,3 +102,4 @@ render()
 setInterval(refresh, REFRESH_MS)
 setInterval(tick, TICK_MS)
 linkPages()
+showVersion()
