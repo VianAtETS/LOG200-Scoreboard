@@ -2,8 +2,7 @@
 //! de la session est le seul à lire et écrire sa WebSocket ; l'arène lui confie chaque partie.
 
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, ErrorKind, Write};
-use std::net::TcpStream;
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
@@ -11,20 +10,18 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tungstenite::handshake::server::{Request, Response};
-use tungstenite::http::StatusCode;
-use tungstenite::http::header::AUTHORIZATION;
-use tungstenite::protocol::WebSocketConfig;
-use tungstenite::protocol::frame::coding::CloseCode;
-use tungstenite::{Bytes, Error as WsError, Message as Frame, WebSocket};
+use axum::body::Bytes;
+use axum::extract::ws::{CloseFrame, Message as Frame, WebSocket, close_code};
+use axum::http::StatusCode;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::time::timeout;
 
-use isolation_core::remote::{Message, PATH, PROTOCOL_VERSION, is_build};
+use isolation_core::remote::{Message, PROTOCOL_VERSION, is_build};
 
 use super::stream::RefereeStream;
 use super::{GameSpec, Registry};
 use crate::submit::{bearer, find_team, load_teams};
 use crate::sync::lock;
-use crate::ws::{goodbye, refusal};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const IDLE_POLL: Duration = Duration::from_millis(50);
@@ -38,7 +35,10 @@ const SILENCE_LIMIT: Duration = Duration::from_secs(30);
 const FRESH: Duration = Duration::from_secs(15);
 /// Dernières lignes de l'arbitre encore en route quand l'arène termine la partie.
 const END_GRACE: Duration = Duration::from_millis(500);
-const MAX_MESSAGE: usize = 64 << 10;
+pub const MAX_MESSAGE: usize = 64 << 10;
+/// Close reasons travel in one control frame.
+const MAX_REASON: usize = 123;
+const CLOSE_WAIT: Duration = Duration::from_secs(1);
 /// Une partie dure quelques minutes, à un ping toutes les 10 s.
 const MAX_RTT_SAMPLES: usize = 64;
 /// Texte du client repris dans les journaux.
@@ -97,27 +97,19 @@ impl Session {
     }
 }
 
-/// Toute la vie d'une connexion.
-pub fn run(stream: TcpStream, registry: &Arc<Registry>, teams: &Path, time_ms: u64) {
-    let peer = stream.peer_addr().map_or_else(|_| "?".into(), |a| a.to_string());
-    let (mut ws, team) = match accept(stream, teams) {
-        Ok(accepted) => accepted,
-        Err(e) => {
-            eprintln!("distant {peer} refusé : {e}");
-            return;
-        }
-    };
-    let build = match hello(&mut ws) {
+/// Toute la vie d'une connexion authentifiée.
+pub fn run(socket: Socket, registry: &Arc<Registry>, team: &str, peer: &str, time_ms: u64) {
+    let build = match hello(&socket) {
         Ok(build) => build,
         Err(reason) => {
             eprintln!("distant {team} refusé : {reason}");
-            goodbye(&mut ws, CloseCode::Policy, &reason);
+            socket.goodbye(&reason);
             return;
         }
     };
     let (starts, games) = mpsc::channel();
     let session = Arc::new(Session {
-        team: team.clone(),
+        team: team.to_string(),
         starts,
         state: Mutex::new(State {
             playing: false,
@@ -127,14 +119,14 @@ pub fn run(stream: TcpStream, registry: &Arc<Registry>, teams: &Path, time_ms: u
     });
     if let Err(reason) = registry.open(&session, &build) {
         eprintln!("distant {team} refusé : {reason}");
-        goodbye(&mut ws, CloseCode::Policy, &reason);
+        socket.goodbye(&reason);
         return;
     }
     eprintln!("distant : {team} connecté depuis {peer} (build {build})");
-    let mut link = Link::new(ws, Arc::clone(&session));
+    let mut link = Link::new(socket, Arc::clone(&session));
     let reason = if link
         .send(&Message::Welcome {
-            team: team.clone(),
+            team: team.to_string(),
             time_ms,
         })
         .is_ok()
@@ -148,7 +140,7 @@ pub fn run(stream: TcpStream, registry: &Arc<Registry>, teams: &Path, time_ms: u
     match reason {
         Some(reason) => {
             eprintln!("distant : {team} déconnecté ({reason})");
-            goodbye(&mut link.ws, CloseCode::Policy, &reason);
+            link.socket.goodbye(&reason);
         }
         None => eprintln!("distant : {team} déconnecté"),
     }
@@ -176,54 +168,99 @@ fn serve_games(link: &mut Link, session: &Session, games: &Receiver<Start>) -> O
     }
 }
 
-fn accept(stream: TcpStream, teams: &Path) -> Result<(WebSocket<TcpStream>, String), String> {
-    stream
-        .set_read_timeout(Some(HANDSHAKE_TIMEOUT))
-        .and_then(|()| stream.set_nodelay(true))
-        .map_err(|e| e.to_string())?;
-    let mut team = None;
-    #[expect(clippy::result_large_err, reason = "type d'erreur imposé par tungstenite")]
-    let check = |request: &Request, response: Response| {
-        if request.uri().path() != PATH {
-            return Err(refusal(StatusCode::NOT_FOUND, &format!("seul {PATH} est servi ici")));
-        }
-        let token = request
-            .headers()
-            .get(AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            .and_then(bearer);
-        let registered = load_teams(teams).map_err(|e| {
-            refusal(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("registre des équipes : {e}"),
-            )
-        })?;
-        match token.and_then(|token| find_team(&registered, token)) {
-            Some(found) => {
-                team = Some(found.id.as_str().to_string());
-                Ok(response)
-            }
-            None => Err(refusal(
+/// Team of the bearer token, checked before the upgrade.
+pub fn authenticate(teams: &Path, authorization: Option<&str>) -> Result<String, (StatusCode, String)> {
+    let registered =
+        load_teams(teams).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("registre des équipes : {e}")))?;
+    authorization
+        .and_then(bearer)
+        .and_then(|token| find_team(&registered, token))
+        .map(|found| found.id.as_str().to_string())
+        .ok_or_else(|| {
+            (
                 StatusCode::UNAUTHORIZED,
-                "token d'équipe absent ou inconnu (en-tête Authorization: Bearer <token>)",
-            )),
+                "token d'équipe absent ou inconnu (en-tête Authorization: Bearer <token>)".into(),
+            )
+        })
+}
+
+/// The session thread's end of the client's WebSocket, which an async pump serves.
+pub struct Socket {
+    incoming: Receiver<Frame>,
+    outgoing: UnboundedSender<Frame>,
+}
+
+impl Socket {
+    fn read(&self, wait: Duration) -> Result<Option<Frame>, Gone> {
+        match self.incoming.recv_timeout(wait) {
+            Ok(frame) => Ok(Some(frame)),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err(Gone),
         }
-    };
-    let config = WebSocketConfig::default()
-        .max_message_size(Some(MAX_MESSAGE))
-        .max_frame_size(Some(MAX_MESSAGE));
-    let ws = tungstenite::accept_hdr_with_config(stream, check, Some(config)).map_err(|e| e.to_string())?;
-    let team = team.ok_or("poignée de main sans équipe")?;
-    Ok((ws, team))
+    }
+
+    fn send(&self, frame: Frame) -> Result<(), Gone> {
+        self.outgoing.send(frame).map_err(|_| Gone)
+    }
+
+    fn goodbye(&self, reason: &str) {
+        let mut end = reason.len().min(MAX_REASON);
+        while !reason.is_char_boundary(end) {
+            end -= 1;
+        }
+        let frame = CloseFrame {
+            code: close_code::POLICY,
+            reason: reason[..end].into(),
+        };
+        let _ = self.send(Frame::Close(Some(frame)));
+    }
+}
+
+pub fn connect(socket: WebSocket) -> (Socket, impl Future<Output = ()>) {
+    let (incoming_tx, incoming) = mpsc::channel();
+    let (outgoing, outgoing_rx) = unbounded_channel();
+    (Socket { incoming, outgoing }, pump(socket, incoming_tx, outgoing_rx))
+}
+
+/// Lives until the client or the session leaves; after a close frame, waits briefly for the client's.
+async fn pump(mut socket: WebSocket, incoming: Sender<Frame>, mut outgoing: UnboundedReceiver<Frame>) {
+    loop {
+        tokio::select! {
+            frame = outgoing.recv() => match frame {
+                Some(frame @ Frame::Close(_)) => {
+                    if socket.send(frame).await.is_ok() {
+                        let _ = timeout(CLOSE_WAIT, async { while let Some(Ok(_)) = socket.recv().await {} }).await;
+                    }
+                    return;
+                }
+                Some(frame) => {
+                    if socket.send(frame).await.is_err() {
+                        return;
+                    }
+                }
+                None => return,
+            },
+            frame = socket.recv() => match frame {
+                Some(Ok(frame)) => {
+                    if incoming.send(frame).is_err() {
+                        return;
+                    }
+                }
+                Some(Err(_)) | None => return,
+            },
+        }
+    }
 }
 
 /// Build déclaré par le client.
-fn hello(ws: &mut WebSocket<TcpStream>) -> Result<String, String> {
+fn hello(socket: &Socket) -> Result<String, String> {
+    let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
     loop {
-        let text = match ws.read() {
-            Ok(Frame::Text(text)) => text,
-            Ok(Frame::Close(_)) | Err(_) => return Err("hello jamais reçu".into()),
-            Ok(_) => continue,
+        let wait = deadline.saturating_duration_since(Instant::now());
+        let text = match socket.read(wait) {
+            Ok(Some(Frame::Text(text))) => text,
+            Ok(Some(Frame::Close(_)) | None) | Err(Gone) => return Err("hello jamais reçu".into()),
+            Ok(Some(_)) => continue,
         };
         return match Message::from_json(text.as_str()) {
             Ok(Message::Hello { v, .. }) if v != PROTOCOL_VERSION => Err(format!(
@@ -250,27 +287,25 @@ struct Gone;
 
 /// La WebSocket d'une session : pings, silence du client, temps d'aller-retour.
 struct Link {
-    ws: WebSocket<TcpStream>,
+    socket: Socket,
     session: Arc<Session>,
     since: Instant,
     pinged: Instant,
     /// Charge du ping sans réponse : un pong qui ne la reprend pas est ignoré.
     awaiting: Option<[u8; 8]>,
-    wait: Option<Duration>,
     /// Allers-retours mesurés pendant la partie en cours.
     rtt: Vec<Duration>,
 }
 
 impl Link {
-    fn new(ws: WebSocket<TcpStream>, session: Arc<Session>) -> Self {
+    fn new(socket: Socket, session: Arc<Session>) -> Self {
         let now = Instant::now();
         Self {
-            ws,
+            socket,
             session,
             since: now,
             pinged: now,
             awaiting: None,
-            wait: None,
             rtt: Vec::new(),
         }
     }
@@ -286,21 +321,14 @@ impl Link {
                 .unwrap_or(u64::MAX)
                 .to_be_bytes();
             self.awaiting = Some(sent);
-            self.ws
-                .send(Frame::Ping(Bytes::copy_from_slice(&sent)))
-                .map_err(|_| Gone)?;
+            self.socket.send(Frame::Ping(Bytes::copy_from_slice(&sent)))?;
         }
-        if self.wait != Some(wait) {
-            self.ws.get_ref().set_read_timeout(Some(wait)).map_err(|_| Gone)?;
-            self.wait = Some(wait);
-        }
-        match self.ws.read() {
-            Ok(frame) => {
+        match self.socket.read(wait)? {
+            Some(frame) => {
                 self.session.heard();
                 self.frame(frame)
             }
-            Err(WsError::Io(e)) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => Ok(None),
-            Err(_) => Err(Gone),
+            None => Ok(None),
         }
     }
 
@@ -324,7 +352,7 @@ impl Link {
     }
 
     fn send(&mut self, message: &Message) -> Result<(), Gone> {
-        self.ws.send(Frame::text(message.to_json())).map_err(|_| Gone)
+        self.socket.send(Frame::Text(message.to_json().into()))
     }
 }
 

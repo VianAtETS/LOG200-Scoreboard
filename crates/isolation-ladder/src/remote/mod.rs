@@ -7,27 +7,31 @@ mod stream;
 
 use std::collections::HashMap;
 use std::fs;
-use std::net::TcpListener;
+use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
+use axum::extract::ws::WebSocketUpgrade;
+use axum::extract::{ConnectInfo, State};
+use axum::http::header::AUTHORIZATION;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 
 use isolation_core::board::Color;
-use isolation_core::remote::PATH;
 
+use crate::api::blocking;
 use crate::command::CommandTemplate;
-use crate::config::Config;
 use crate::roster::Team;
 use crate::sync::lock;
 use session::{Session, Start};
 
 /// Le relais écrit encore son diagnostic quand l'arène le libère.
 const FINISH_WAIT: Duration = Duration::from_secs(2);
-/// Connexions simultanées, poignées de main comprises : au-delà, fermées aussitôt. Une session par
+/// Connexions simultanées, poignées de main comprises : au-delà, refusées par un 503. Une session par
 /// équipe suffit, la marge absorbe les reconnexions.
 const MAX_CONNECTIONS: usize = 256;
 
@@ -166,35 +170,84 @@ impl Drop for Seated {
     }
 }
 
-/// Écoute `/api/remote` dans un thread, si `[remote]` est configuré.
-pub fn serve(registry: &Arc<Registry>, cfg: &Config) -> anyhow::Result<()> {
-    let (Some(remote), Some(submit)) = (&cfg.remote, &cfg.submit) else {
-        return Ok(());
-    };
-    let listener = TcpListener::bind(&remote.listen)
-        .with_context(|| format!("écoute des équipes distantes sur {}", remote.listen))?;
-    eprintln!("équipes distantes : ws://{}{PATH}", listener.local_addr()?);
-    listen(Arc::clone(registry), listener, submit.teams.clone(), cfg.time_ms);
-    Ok(())
+pub struct Remote {
+    registry: Arc<Registry>,
+    teams: PathBuf,
+    time_ms: u64,
+    open: AtomicUsize,
 }
 
-fn listen(registry: Arc<Registry>, listener: TcpListener, teams: PathBuf, time_ms: u64) {
-    crate::ws::listen(listener, MAX_CONNECTIONS, move |stream| {
-        session::run(stream, &registry, &teams, time_ms);
-    });
+impl Remote {
+    pub fn new(registry: Arc<Registry>, teams: PathBuf, time_ms: u64) -> Arc<Self> {
+        Arc::new(Self {
+            registry,
+            teams,
+            time_ms,
+            open: AtomicUsize::new(0),
+        })
+    }
+}
+
+struct Open(Arc<Remote>);
+
+impl Drop for Open {
+    fn drop(&mut self) {
+        self.0.open.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// `/api/remote`: one std thread per session, fed by the socket's async pump.
+pub async fn upgrade(
+    State(remote): State<Arc<Remote>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    let open = Open(Arc::clone(&remote));
+    if remote.open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "trop de connexions : réessayer plus tard\n",
+        )
+            .into_response();
+    }
+    let authorization = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let teams = remote.teams.clone();
+    let team = match blocking(move || session::authenticate(&teams, authorization.as_deref())).await {
+        Ok(team) => team,
+        Err((status, reason)) => {
+            eprintln!("distant {peer} refusé : {reason}");
+            return (status, format!("{reason}\n")).into_response();
+        }
+    };
+    upgrade
+        .max_message_size(session::MAX_MESSAGE)
+        .max_frame_size(session::MAX_MESSAGE)
+        .on_upgrade(move |socket| async move {
+            let _open = open;
+            let (socket, pump) = session::connect(socket);
+            let remote = Arc::clone(&remote);
+            thread::spawn(move || session::run(socket, &remote.registry, &team, &peer.to_string(), remote.time_ms));
+            pump.await;
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use std::io::{BufRead, BufReader, Write};
-    use std::net::TcpStream;
-    use std::thread;
+    use std::net::{TcpListener, TcpStream};
 
+    use axum::Router;
+    use axum::routing::get;
+    use tokio::runtime::Runtime;
     use tungstenite::client::IntoClientRequest;
     use tungstenite::http::HeaderValue;
     use tungstenite::{Error as WsError, Message as Frame, WebSocket};
 
-    use isolation_core::remote::{Message, PROTOCOL_VERSION};
+    use isolation_core::remote::{Message, PATH, PROTOCOL_VERSION};
 
     use super::*;
     use crate::submit::{add_team, test_support::temp_dir};
@@ -207,6 +260,7 @@ mod tests {
         addr: String,
         token: String,
         dir: PathBuf,
+        _runtime: Runtime,
     }
 
     fn fixture(name: &str) -> Fixture {
@@ -219,14 +273,19 @@ mod tests {
         let teams = dir.join("teams.toml");
         let token = add_team(&teams, "eq07".parse::<TeamId>().unwrap()).unwrap();
         let registry = Registry::new(build_interval, || {});
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let runtime = Runtime::new().unwrap();
+        let listener = runtime.block_on(tokio::net::TcpListener::bind("127.0.0.1:0")).unwrap();
         let addr = listener.local_addr().unwrap().to_string();
-        listen(Arc::clone(&registry), listener, teams, 500);
+        let router = Router::new()
+            .route(PATH, get(upgrade))
+            .with_state(Remote::new(Arc::clone(&registry), teams, 500));
+        runtime.spawn(axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future());
         Fixture {
             registry,
             addr,
             token,
             dir,
+            _runtime: runtime,
         }
     }
 
@@ -423,17 +482,14 @@ mod tests {
     }
 
     #[test]
-    fn connections_beyond_the_cap_are_closed_at_once() {
-        use std::io::Read;
-
+    fn connections_beyond_the_cap_are_refused_before_the_upgrade() {
         let f = fixture("cap");
-        let idle: Vec<TcpStream> = (0..MAX_CONNECTIONS)
-            .map(|_| TcpStream::connect(&f.addr).unwrap())
-            .collect();
-        let mut extra = TcpStream::connect(&f.addr).unwrap();
-        extra.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        assert_eq!(extra.read(&mut [0; 1]).unwrap(), 0, "fermée sans réponse");
-        drop(idle);
+        let open: Vec<_> = (0..MAX_CONNECTIONS).map(|_| connect(&f, &f.token).unwrap()).collect();
+        match connect(&f, &f.token) {
+            Err(WsError::Http(response)) => assert_eq!(response.status(), 503),
+            other => panic!("503 attendu : {:?}", other.map(|_| ())),
+        }
+        drop(open);
         eventually("place libérée", || connect(&f, &f.token).is_ok());
     }
 }

@@ -23,11 +23,11 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
-tungstenite.workspace = true
 zip.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros"] }
+tungstenite.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 signal-hook.workspace = true

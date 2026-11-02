@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -13,8 +14,11 @@ use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 use tokio::task::spawn_blocking;
 
+use isolation_core::remote::PATH as REMOTE_PATH;
+
 use crate::arena::Arena;
 use crate::hub::Hub;
+use crate::remote::{self, Registry, Remote};
 use crate::spectate;
 use crate::submit::{Submissions, SubmitError};
 
@@ -24,7 +28,7 @@ pub struct Api {
 }
 
 /// One router on every configured address: the existing reverse proxies keep their routes.
-pub fn serve(arena: &Arc<Arena>, hub: &Arc<Hub>) -> anyhow::Result<Option<Api>> {
+pub fn serve(arena: &Arc<Arena>, hub: &Arc<Hub>, registry: Option<&Arc<Registry>>) -> anyhow::Result<Option<Api>> {
     let cfg = arena.config();
     let mut router = Router::new();
     let mut announced: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
@@ -49,6 +53,14 @@ pub fn serve(arena: &Arc<Arena>, hub: &Arc<Hub>) -> anyhow::Result<Option<Api>> 
             .or_default()
             .push("direct : ws://{}/api/live");
     }
+    if let (Some(remote), Some(submit), Some(registry)) = (&cfg.remote, &cfg.submit, registry) {
+        let state = Remote::new(Arc::clone(registry), submit.teams.clone(), cfg.time_ms);
+        router = router.merge(Router::new().route(REMOTE_PATH, get(remote::upgrade)).with_state(state));
+        announced
+            .entry(&remote.listen)
+            .or_default()
+            .push("équipes distantes : ws://{}/api/remote");
+    }
     if announced.is_empty() {
         return Ok(None);
     }
@@ -62,7 +74,13 @@ pub fn serve(arena: &Arc<Arena>, hub: &Arc<Hub>) -> anyhow::Result<Option<Api>> 
         for service in services {
             eprintln!("{}", service.replace("{}", &local));
         }
-        runtime.spawn(axum::serve(listener, router.clone()).into_future());
+        runtime.spawn(
+            axum::serve(
+                listener,
+                router.clone().into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .into_future(),
+        );
     }
     Ok(Some(Api { _runtime: runtime }))
 }
@@ -114,7 +132,7 @@ fn body_error(error: axum::Error, max_mb: u64) -> SubmitError {
 }
 
 /// The registry is a file and the smoke test plays two games: neither may block the runtime.
-async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+pub async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
     spawn_blocking(work)
         .await
         .unwrap_or_else(|error| std::panic::resume_unwind(error.into_panic()))

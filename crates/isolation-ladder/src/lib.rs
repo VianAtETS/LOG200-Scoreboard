@@ -19,7 +19,6 @@ mod submit;
 mod sync;
 mod team_id;
 mod tournament;
-mod ws;
 
 use std::collections::HashSet;
 use std::fs;
@@ -159,12 +158,12 @@ fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
 
     let (reports, received) = mpsc::channel();
     let hub = live_hub(&reports);
+    let remote = remote_registry(&cfg, &reports);
     let arena = Arc::new(Arena::new(cfg, Arc::clone(&hub)));
     arena.drain_on(sigterm);
     arena.sweep();
-    let _api = api::serve(&arena, &hub)?;
+    let _api = api::serve(&arena, &hub, remote.as_ref())?;
     let cfg = arena.config();
-    let remote = serve_remote(cfg, &reports)?;
 
     let mut rng = rand::rng();
     let mut round = 0;
@@ -326,17 +325,13 @@ enum Report {
 }
 
 /// Registre des équipes distantes, si `[remote]` est configuré : il réveille la boucle à chaque arrivée.
-fn serve_remote(cfg: &Config, reports: &Sender<Report>) -> anyhow::Result<Option<Arc<Registry>>> {
-    if cfg.remote.is_none() {
-        return Ok(None);
-    }
+fn remote_registry(cfg: &Config, reports: &Sender<Report>) -> Option<Arc<Registry>> {
+    cfg.remote.as_ref()?;
     let wake = reports.clone();
     let interval = cfg.submit.as_ref().map_or(0, |submit| submit.min_interval_s);
-    let registry = Registry::new(Duration::from_secs(interval), move || {
+    Some(Registry::new(Duration::from_secs(interval), move || {
         let _ = wake.send(Report::Wake);
-    });
-    remote::serve(&registry, cfg)?;
-    Ok(Some(registry))
+    }))
 }
 
 /// `live.json` apprend l'id de chaque partie lancée.
