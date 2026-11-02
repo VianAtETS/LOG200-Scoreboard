@@ -1,29 +1,23 @@
 //! Spectateurs de `/api/live` : l'état des parties en cours, puis chaque changement (protocole dans
 //! docs/formats.md). Le client n'a rien à dire : une trame de données de sa part ferme le flux.
 
-use std::io::ErrorKind;
-use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
-use std::sync::mpsc::RecvTimeoutError;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use anyhow::Context;
-use tungstenite::handshake::server::{Request, Response};
-use tungstenite::http::StatusCode;
-use tungstenite::protocol::WebSocketConfig;
-use tungstenite::protocol::frame::coding::CloseCode;
-use tungstenite::{Bytes, Error as WsError, Message as Frame, WebSocket};
+use axum::body::Bytes;
+use axum::extract::State;
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade, close_code};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use tokio::time::{Instant, MissedTickBehavior, interval_at, timeout};
 
-use crate::config::Config;
 use crate::hub::{Hub, Subscription};
-use crate::ws::{goodbye, listen, refusal};
 
 pub const PATH: &str = "/api/live";
 /// Séparé du plafond de `/api/remote` : une salle pleine ne bloque pas les équipes.
 const MAX_SPECTATORS: usize = 512;
 const MAX_MESSAGE: usize = 1 << 10;
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-/// Un client qui ne lit plus libère son thread en au plus ce délai.
+/// Un client qui ne lit plus libère sa place en au plus ce délai.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Cloudflare coupe une WebSocket muette après 100 s.
 const PING_EVERY: Duration = Duration::from_secs(10);
@@ -31,104 +25,99 @@ const SILENCE_LIMIT: Duration = Duration::from_secs(30);
 /// Au-delà, le client se reconnecte : une connexion ne garde pas sa place indéfiniment.
 const MAX_LIFETIME: Duration = Duration::from_hours(2);
 
-/// Écoute `/api/live` dans un thread, si `[live]` est configuré.
-pub fn serve(hub: &Arc<Hub>, cfg: &Config) -> anyhow::Result<()> {
-    let Some(live) = &cfg.live else {
-        return Ok(());
-    };
-    let listener = TcpListener::bind(&live.listen).with_context(|| format!("écoute du direct sur {}", live.listen))?;
-    eprintln!("direct : ws://{}{PATH}", listener.local_addr()?);
-    watch_on(listener, Arc::clone(hub));
-    Ok(())
-}
-
-fn watch_on(listener: TcpListener, hub: Arc<Hub>) {
-    listen(listener, MAX_SPECTATORS, move |stream| watch(stream, &hub));
-}
-
-fn watch(stream: TcpStream, hub: &Arc<Hub>) {
-    let Ok(mut ws) = accept(stream) else {
-        return;
-    };
-    let ending = match hub.subscribe() {
-        Some(subscription) => relay(&mut ws, &subscription),
-        None => Some((CloseCode::Away, "arrêt du ladder")),
-    };
-    if let Some((code, reason)) = ending {
-        goodbye(&mut ws, code, reason);
+pub async fn watch(State(hub): State<Arc<Hub>>, upgrade: WebSocketUpgrade) -> Response {
+    if hub.watching() >= MAX_SPECTATORS {
+        return (StatusCode::SERVICE_UNAVAILABLE, "salle pleine : réessayer plus tard\n").into_response();
     }
+    upgrade
+        .max_message_size(MAX_MESSAGE)
+        .max_frame_size(MAX_MESSAGE)
+        .on_upgrade(move |mut socket| async move {
+            let ending = match hub.subscribe() {
+                Some(subscription) => relay(&mut socket, subscription).await,
+                None => Some((close_code::AWAY, "arrêt du ladder")),
+            };
+            if let Some((code, reason)) = ending {
+                let frame = CloseFrame {
+                    code,
+                    reason: reason.into(),
+                };
+                send(&mut socket, Message::Close(Some(frame))).await;
+            }
+        })
 }
 
-fn accept(stream: TcpStream) -> Result<WebSocket<TcpStream>, WsError> {
-    let _ = stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
-    let _ = stream.set_nodelay(true);
-    #[expect(clippy::result_large_err, reason = "type d'erreur imposé par tungstenite")]
-    let check = |request: &Request, response: Response| {
-        if request.uri().path() == PATH {
-            Ok(response)
-        } else {
-            Err(refusal(StatusCode::NOT_FOUND, &format!("seul {PATH} est servi ici")))
-        }
-    };
-    let config = WebSocketConfig::default()
-        .max_message_size(Some(MAX_MESSAGE))
-        .max_frame_size(Some(MAX_MESSAGE));
-    tungstenite::accept_hdr_with_config(stream, check, Some(config)).map_err(|e| match e {
-        tungstenite::HandshakeError::Failure(e) => e,
-        tungstenite::HandshakeError::Interrupted(_) => WsError::ConnectionClosed,
-    })
-}
-
-fn relay(ws: &mut WebSocket<TcpStream>, subscription: &Subscription) -> Option<(CloseCode, &'static str)> {
+/// Pinged on a clock of its own: a busy stream sends no ping, and its pongs would stop.
+async fn relay(socket: &mut WebSocket, mut subscription: Subscription) -> Option<(u16, &'static str)> {
     let since = Instant::now();
     let mut heard = since;
-    ws.send(Frame::text(subscription.snapshot.to_string())).ok()?;
+    send(socket, Message::Text(subscription.snapshot.as_ref().into())).await?;
+    let mut ping = interval_at(since + PING_EVERY, PING_EVERY);
+    ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
-        let frame = match subscription.events.recv_timeout(PING_EVERY) {
-            Ok(message) => Frame::text(message.to_string()),
-            Err(RecvTimeoutError::Timeout) => Frame::Ping(Bytes::new()),
-            Err(RecvTimeoutError::Disconnected) => return Some((CloseCode::Away, "flux interrompu")),
-        };
-        ws.send(frame).ok()?;
-        ws.get_ref().set_nonblocking(true).ok()?;
-        loop {
-            match ws.read() {
-                Ok(Frame::Pong(_) | Frame::Ping(_)) => heard = Instant::now(),
-                Ok(Frame::Text(_) | Frame::Binary(_)) => {
-                    return Some((CloseCode::Policy, "ce flux n'accepte aucun message"));
+        tokio::select! {
+            event = subscription.events.recv() => match event {
+                Some(message) => send(socket, Message::Text(message.as_ref().into())).await?,
+                None => return Some((close_code::AWAY, "flux interrompu")),
+            },
+            _ = ping.tick() => {
+                if heard.elapsed() > SILENCE_LIMIT {
+                    return None;
                 }
-                Ok(Frame::Frame(_)) => {}
-                Err(WsError::Io(e)) if e.kind() == ErrorKind::WouldBlock => break,
-                Ok(Frame::Close(_)) | Err(_) => return None,
+                if since.elapsed() > MAX_LIFETIME {
+                    return Some((close_code::NORMAL, "durée maximale atteinte : se reconnecter"));
+                }
+                send(socket, Message::Ping(Bytes::new())).await?;
             }
-        }
-        ws.get_ref().set_nonblocking(false).ok()?;
-        if heard.elapsed() > SILENCE_LIMIT {
-            return None;
-        }
-        if since.elapsed() > MAX_LIFETIME {
-            return Some((CloseCode::Normal, "durée maximale atteinte : se reconnecter"));
+            frame = socket.recv() => match frame {
+                Some(Ok(Message::Pong(_) | Message::Ping(_))) => heard = Instant::now(),
+                Some(Ok(Message::Text(_) | Message::Binary(_))) => {
+                    return Some((close_code::POLICY, "ce flux n'accepte aucun message"));
+                }
+                Some(Ok(Message::Close(_)) | Err(_)) | None => return None,
+            },
         }
     }
+}
+
+async fn send(socket: &mut WebSocket, message: Message) -> Option<()> {
+    timeout(WRITE_TIMEOUT, socket.send(message)).await.ok()?.ok()
 }
 
 #[cfg(test)]
 mod tests {
+    use std::net::TcpStream;
+
+    use axum::Router;
+    use axum::routing::get;
     use serde_json::Value;
-    use tungstenite::client::IntoClientRequest;
+    use tokio::runtime::Runtime;
+    use tungstenite::protocol::frame::coding::CloseCode;
+    use tungstenite::{Message as Frame, WebSocket as Client};
 
     use isolation_core::record::RefereeEvent;
 
     use super::*;
     use crate::hub;
 
-    fn fixture() -> (Arc<Hub>, String) {
+    struct Fixture {
+        hub: Arc<Hub>,
+        addr: String,
+        _runtime: Runtime,
+    }
+
+    fn fixture() -> Fixture {
         let hub = Hub::new(|_, _, _| {});
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let runtime = Runtime::new().unwrap();
+        let listener = runtime.block_on(tokio::net::TcpListener::bind("127.0.0.1:0")).unwrap();
         let addr = listener.local_addr().unwrap().to_string();
-        watch_on(listener, Arc::clone(&hub));
-        (hub, addr)
+        let router = Router::new().route(PATH, get(watch)).with_state(Arc::clone(&hub));
+        runtime.spawn(async move { axum::serve(listener, router).await });
+        Fixture {
+            hub,
+            addr,
+            _runtime: runtime,
+        }
     }
 
     fn start(hub: &Hub) {
@@ -143,19 +132,11 @@ mod tests {
         });
     }
 
-    fn connect(addr: &str, path: &str) -> Result<WebSocket<TcpStream>, WsError> {
-        let stream = TcpStream::connect(addr).unwrap();
-        stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        let request = format!("ws://{addr}{path}").into_client_request().unwrap();
-        tungstenite::client(request, stream)
-            .map(|(ws, _)| ws)
-            .map_err(|e| match e {
-                tungstenite::HandshakeError::Failure(e) => e,
-                tungstenite::HandshakeError::Interrupted(_) => unreachable!("flux bloquant"),
-            })
+    fn connect(addr: &str) -> Client<tungstenite::stream::MaybeTlsStream<TcpStream>> {
+        tungstenite::connect(format!("ws://{addr}{PATH}")).unwrap().0
     }
 
-    fn recv(ws: &mut WebSocket<TcpStream>) -> Result<Value, Option<CloseCode>> {
+    fn recv(ws: &mut Client<tungstenite::stream::MaybeTlsStream<TcpStream>>) -> Result<Value, Option<CloseCode>> {
         loop {
             match ws.read() {
                 Ok(Frame::Text(text)) => return Ok(serde_json::from_str(text.as_str()).unwrap()),
@@ -167,19 +148,10 @@ mod tests {
     }
 
     #[test]
-    fn another_path_is_refused_before_the_upgrade() {
-        let (_hub, addr) = fixture();
-        match connect(&addr, "/api/remote") {
-            Err(WsError::Http(response)) => assert_eq!(response.status(), StatusCode::NOT_FOUND),
-            other => panic!("refus attendu, pas {:?}", other.map(|_| ())),
-        }
-    }
-
-    #[test]
     fn a_spectator_gets_the_snapshot_then_the_moves() {
-        let (hub, addr) = fixture();
-        start(&hub);
-        let mut ws = connect(&addr, PATH).unwrap();
+        let live = fixture();
+        start(&live.hub);
+        let mut ws = connect(&live.addr);
         let snapshot = recv(&mut ws).unwrap();
         assert_eq!(snapshot["type"], "snapshot");
         assert_eq!(snapshot["games"][0]["id"], "g1");
@@ -187,28 +159,26 @@ mod tests {
             mv: "G1-G4-F9".into(),
             ms: 7,
         };
-        hub.event("g1", mv);
+        live.hub.event("g1", mv);
         let moved = recv(&mut ws).unwrap();
         assert_eq!((moved["type"].as_str(), moved["n"].as_u64()), (Some("move"), Some(0)));
     }
 
     #[test]
     fn a_message_from_the_spectator_closes_the_stream() {
-        let (hub, addr) = fixture();
-        let mut ws = connect(&addr, PATH).unwrap();
+        let live = fixture();
+        let mut ws = connect(&live.addr);
         recv(&mut ws).unwrap();
         ws.send(Frame::text("bonjour")).unwrap();
-        start(&hub);
-        assert_eq!(recv(&mut ws).unwrap()["type"], "started");
         assert_eq!(recv(&mut ws), Err(Some(CloseCode::Policy)));
     }
 
     #[test]
     fn shutdown_says_goodbye() {
-        let (hub, addr) = fixture();
-        let mut ws = connect(&addr, PATH).unwrap();
+        let live = fixture();
+        let mut ws = connect(&live.addr);
         recv(&mut ws).unwrap();
-        hub.shutdown();
+        live.hub.shutdown();
         assert_eq!(recv(&mut ws), Err(Some(CloseCode::Away)));
     }
 }

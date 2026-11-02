@@ -158,11 +158,11 @@ fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
     let mut live = Live::new(cfg.data_dir().to_path_buf()).with_context(|| cfg.data_dir().display().to_string())?;
 
     let (reports, received) = mpsc::channel();
-    let hub = serve_live(&cfg, &reports)?;
+    let hub = live_hub(&reports);
     let arena = Arc::new(Arena::new(cfg, Arc::clone(&hub)));
     arena.drain_on(sigterm);
     arena.sweep();
-    let _api = api::serve(&arena)?;
+    let _api = api::serve(&arena, &hub)?;
     let cfg = arena.config();
     let remote = serve_remote(cfg, &reports)?;
 
@@ -339,19 +339,16 @@ fn serve_remote(cfg: &Config, reports: &Sender<Report>) -> anyhow::Result<Option
     Ok(Some(registry))
 }
 
-/// Direct des parties : `live.json` apprend l'id de chaque partie lancée, et `/api/live` écoute si
-/// `[live]` est configuré.
-fn serve_live(cfg: &Config, reports: &Sender<Report>) -> anyhow::Result<Arc<Hub>> {
+/// `live.json` apprend l'id de chaque partie lancée.
+fn live_hub(reports: &Sender<Report>) -> Arc<Hub> {
     let assigned = reports.clone();
-    let hub = Hub::new(move |id, red, black| {
+    Hub::new(move |id, red, black| {
         let _ = assigned.send(Report::Assigned {
             red: red.into(),
             black: black.into(),
             id: id.into(),
         });
-    });
-    spectate::serve(&hub, cfg)?;
-    Ok(hub)
+    })
 }
 
 /// Joue la paire dans les deux couleurs, avec la même ouverture. L'arène attribue un slot à chaque

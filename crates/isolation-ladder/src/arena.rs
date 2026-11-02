@@ -555,7 +555,7 @@ mod tests {
             opening: &[],
             tournament: None,
         });
-        let watcher = hub.subscribe().unwrap();
+        let mut watcher = hub.subscribe().unwrap();
         let stdout = "{\"event\":\"ready\"}\nbruit\n{\"event\":\"move\",\"move\":\"G1-G4-F9\",\"ms\":3}\n\
                       {\"event\":\"futur\"}\n{\"v\":1}\n{\"v\":2}\n";
         assert_eq!(result_of(stdout, Some(Arc::clone(&hub))), "{\"v\":1}");

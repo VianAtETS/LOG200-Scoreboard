@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -13,6 +14,8 @@ use tokio::runtime::Runtime;
 use tokio::task::spawn_blocking;
 
 use crate::arena::Arena;
+use crate::hub::Hub;
+use crate::spectate;
 use crate::submit::{Submissions, SubmitError};
 
 /// Serves the API while it lives.
@@ -20,21 +23,51 @@ pub struct Api {
     _runtime: Runtime,
 }
 
-pub fn serve(arena: &Arc<Arena>) -> anyhow::Result<Option<Api>> {
-    let Some(submit) = arena.config().submit.clone() else {
+/// One router on every configured address: the existing reverse proxies keep their routes.
+pub fn serve(arena: &Arc<Arena>, hub: &Arc<Hub>) -> anyhow::Result<Option<Api>> {
+    let cfg = arena.config();
+    let mut router = Router::new();
+    let mut announced: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    if let Some(submit) = &cfg.submit {
+        router = router.merge(submit_routes(Arc::new(Submissions::new(
+            Arc::clone(arena),
+            submit.clone(),
+        ))));
+        announced
+            .entry(&submit.listen)
+            .or_default()
+            .push("soumissions : PUT http://{}/api/submit");
+    }
+    if let Some(live) = &cfg.live {
+        router = router.merge(
+            Router::new()
+                .route(spectate::PATH, get(spectate::watch))
+                .with_state(Arc::clone(hub)),
+        );
+        announced
+            .entry(&live.listen)
+            .or_default()
+            .push("direct : ws://{}/api/live");
+    }
+    if announced.is_empty() {
         return Ok(None);
-    };
+    }
+    let router = router.fallback(not_found).layer(DefaultBodyLimit::disable());
     let runtime = Runtime::new()?;
-    let listener = runtime
-        .block_on(TcpListener::bind(&submit.listen))
-        .with_context(|| format!("écoute des soumissions sur {}", submit.listen))?;
-    eprintln!("soumissions : PUT http://{}/api/submit", listener.local_addr()?);
-    let router = router(Arc::new(Submissions::new(Arc::clone(arena), submit)));
-    runtime.spawn(async move { axum::serve(listener, router).await });
+    for (address, services) in announced {
+        let listener = runtime
+            .block_on(TcpListener::bind(address))
+            .with_context(|| format!("écoute de l'API sur {address}"))?;
+        let local = listener.local_addr()?.to_string();
+        for service in services {
+            eprintln!("{}", service.replace("{}", &local));
+        }
+        runtime.spawn(axum::serve(listener, router.clone()).into_future());
+    }
     Ok(Some(Api { _runtime: runtime }))
 }
 
-fn router(submissions: Arc<Submissions>) -> Router {
+fn submit_routes(submissions: Arc<Submissions>) -> Router {
     Router::new()
         .route("/api/health", get(async || "ok\n").fallback(not_found))
         .route(
@@ -42,8 +75,6 @@ fn router(submissions: Arc<Submissions>) -> Router {
             get(async || concat!(env!("CARGO_PKG_VERSION"), "\n")).fallback(not_found),
         )
         .route("/api/submit", put(submit).post(submit).fallback(not_found))
-        .fallback(not_found)
-        .layer(DefaultBodyLimit::disable())
         .with_state(submissions)
 }
 

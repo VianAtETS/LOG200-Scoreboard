@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.24.3"
+version = "0.24.4"
 edition = "2024"
 publish = false
 
@@ -11,7 +11,7 @@ publish = false
 isolation-core = { path = "crates/isolation-core" }
 isolation-engine = { path = "crates/isolation-engine" }
 anyhow = "1"
-axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio", "ws"] }
 clap = { version = "4", features = ["derive", "env"] }
 jiff = { version = "0.2.38", features = ["tzdb-bundle-always"] }
 rand = "0.10.3"

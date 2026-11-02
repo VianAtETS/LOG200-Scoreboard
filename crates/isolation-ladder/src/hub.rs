@@ -230,6 +230,10 @@ impl Hub {
         state.publish(&message);
     }
 
+    pub fn watching(&self) -> usize {
+        self.watching.load(Ordering::SeqCst)
+    }
+
     pub fn subscribe(self: &Arc<Self>) -> Option<Subscription> {
         let mut state = self.lock();
         if state.closed {
@@ -305,7 +309,7 @@ mod tests {
         let hub = quiet();
         start(&hub, "g1", &[]);
         hub.event("g1", mv("G1-G4-F9"));
-        let watcher = hub.subscribe().unwrap();
+        let mut watcher = hub.subscribe().unwrap();
         let snapshot = json(&watcher.snapshot);
         assert_eq!(snapshot["v"], 1);
         assert_eq!(snapshot["type"], "snapshot");
@@ -330,7 +334,7 @@ mod tests {
         let hub = quiet();
         let opening: Vec<Move> = ["G1-G4-F9", "F12-F10-G7"].iter().map(|m| m.parse().unwrap()).collect();
         start(&hub, "g1", &opening);
-        let watcher = hub.subscribe().unwrap();
+        let mut watcher = hub.subscribe().unwrap();
         hub.event("g1", mv("G1-G2-A1"));
         hub.event("g1", mv("pas un coup"));
         hub.event("g1", mv("F10-F11-A2"));
@@ -349,27 +353,28 @@ mod tests {
             start(&hub, &format!("g{i}"), &[]);
         }
         assert!(hub.lock().spectators.is_empty());
-        assert_eq!(slow.events.try_iter().count(), QUEUE);
+        let mut events = slow.events;
+        assert_eq!(std::iter::from_fn(|| events.try_recv().ok()).count(), QUEUE);
     }
 
     #[test]
     fn starts_are_reported_and_unknown_games_ignored() {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel();
         let hub = Hub::new(move |id, red, black| tx.send(format!("{id} {red} {black}")).unwrap());
         start(&hub, "g1", &[]);
         assert_eq!(rx.try_recv().unwrap(), "g1 a b");
         hub.event("autre", mv("G1-G4-F9"));
         hub.end("autre", None);
-        let watcher = hub.subscribe().unwrap();
+        let mut watcher = hub.subscribe().unwrap();
         assert!(watcher.events.try_recv().is_err());
     }
 
     #[test]
     fn shutdown_closes_every_queue_and_refuses_newcomers() {
         let hub = quiet();
-        let watcher = hub.subscribe().unwrap();
+        let mut watcher = hub.subscribe().unwrap();
         let waiter = thread::spawn(move || {
-            let gone = watcher.events.recv().is_err();
+            let gone = watcher.events.blocking_recv().is_none();
             drop(watcher);
             gone
         });
