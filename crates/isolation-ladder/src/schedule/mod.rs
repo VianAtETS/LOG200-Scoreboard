@@ -16,6 +16,7 @@ use queue::FairQueue;
 const MAX_GAP: f64 = 600.0;
 const CATCH_UP: u32 = 20;
 const BOT_STRIDE: u32 = 2;
+const LATE: u32 = 8;
 
 /// Paire d'équipes, sans ordre.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -115,6 +116,23 @@ impl Scheduler {
         let near = |i: usize, j: usize| nearest[i] == Some(j) || nearest[j] == Some(i);
         let eligible = |i: usize, j: usize| i != j && (gap(i, j) <= MAX_GAP || (near(i, j) && !(bot[i] && bot[j])));
         let index: HashMap<&str, usize> = teams.iter().enumerate().map(|(i, t)| (t.id.as_str(), i)).collect();
+        let mut games = vec![0; teams.len()];
+        for (PairKey(a, b), n) in &self.games {
+            if let (Some(&i), Some(&j)) = (index.get(a.as_str()), index.get(b.as_str()))
+                && eligible(i, j)
+            {
+                games[i] += n;
+                games[j] += n;
+            }
+        }
+        let share: Vec<u32> = games
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                let rivals = (0..teams.len()).filter(|&j| eligible(i, j)).count();
+                n / u32::try_from(rivals).unwrap_or(u32::MAX).max(1)
+            })
+            .collect();
         let free: Vec<(u32, usize)> = self
             .queue
             .iter()
@@ -125,7 +143,11 @@ impl Scheduler {
             let mut tied = tied.to_vec();
             tied.shuffle(rng);
             for (_, i) in tied {
-                if let Some(j) = self.opponent(i, teams, busy, eligible, &fits, rng) {
+                let found = match self.late_rival(i, teams, eligible, &share) {
+                    Some(j) => (!busy.contains(&teams[j].id) && fits(&teams[i], &teams[j])).then_some(j),
+                    None => self.opponent(i, teams, busy, eligible, &fits, rng),
+                };
+                if let Some(j) = found {
                     let (a, b) = (&teams[i], &teams[j]);
                     return Some(if rng.random() { (a, b) } else { (b, a) });
                 }
@@ -174,6 +196,24 @@ impl Scheduler {
             .map(|(j, _)| j)
             .collect();
         best.choose(rng).copied()
+    }
+
+    fn late_rival(
+        &self,
+        i: usize,
+        teams: &[Team],
+        eligible: impl Fn(usize, usize) -> bool,
+        share: &[u32],
+    ) -> Option<usize> {
+        let me = &teams[i].id;
+        let rivals: Vec<usize> = (0..teams.len()).filter(|&j| eligible(i, j)).collect();
+        let only_choice = rivals.len() == 1;
+        let last = self.last.get(me);
+        let late = |j: usize| share[i].min(share[j]).saturating_sub(self.played(me, &teams[j].id));
+        rivals
+            .into_iter()
+            .filter(|&j| (only_choice || last != Some(&teams[j].id)) && late(j) >= LATE)
+            .max_by_key(|&j| late(j))
     }
 }
 
@@ -335,6 +375,35 @@ mod tests {
                 "{late} : {first:?}"
             );
         }
+    }
+
+    fn late_pair() -> Scheduler {
+        let mut scheduler = Scheduler::default();
+        scheduler.mark_bot("e", true);
+        for (a, b) in [("s0", "s1"), ("s0", "s2"), ("e", "s1"), ("e", "s2"), ("s1", "s2")] {
+            scheduler.record(a, b, 12);
+        }
+        scheduler
+    }
+
+    #[test]
+    fn meets_a_late_rival_ahead_in_the_queue() {
+        let teams = [team("s0"), team("s1"), team("s2"), bot("e")];
+        for seed in 0..20 {
+            let mut scheduler = late_pair();
+            let mut rng = StdRng::seed_from_u64(seed);
+            let first = play(&mut scheduler, &teams, &HashSet::new(), flat, &mut rng).unwrap();
+            assert_eq!(sorted(&first), pair("e", "s0"));
+        }
+    }
+
+    #[test]
+    fn late_rival_needs_a_gap_of_late() {
+        let scheduler = late_pair();
+        let teams = [team("s0"), team("s1"), team("s2"), bot("e")];
+        let all = |i: usize, j: usize| i != j;
+        assert_eq!(scheduler.late_rival(0, &teams, all, &[LATE, 16, 16, 16]), Some(3));
+        assert_eq!(scheduler.late_rival(0, &teams, all, &[LATE - 1, 16, 16, 16]), None);
     }
 
     #[test]
