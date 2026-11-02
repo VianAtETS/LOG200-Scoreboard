@@ -2,6 +2,7 @@
 # Demarre le Docker interne, (re)construit l'image des bacs a sable, puis lance le ladder. Les
 # arguments sont passes au ladder (ex. --rounds 10).
 set -euo pipefail
+trap 'exit 143' TERM
 
 # Socket local seulement : ni TLS ni port TCP pour le Docker interne.
 DOCKER_TLS_CERTDIR='' dockerd-entrypoint.sh dockerd --host=unix:///var/run/docker.sock \

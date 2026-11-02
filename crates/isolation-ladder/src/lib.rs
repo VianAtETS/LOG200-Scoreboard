@@ -40,7 +40,7 @@ use isolation_core::notation;
 use isolation_core::record::{GameRecord, Jsonl, TournamentGame};
 use isolation_core::rules::random_opening;
 
-use arena::{Arena, Fixture, GameError};
+use arena::{Arena, Fixture, GameError, Sigterm};
 use config::Config;
 use hub::Hub;
 use live::Live;
@@ -142,6 +142,7 @@ fn request(action: TournamentAction) -> anyhow::Result<()> {
 }
 
 fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
+    let sigterm = Sigterm::listen().context("écoute de SIGTERM")?;
     let cfg = load(path)?;
     let logs = cfg.logs_dir();
     fs::create_dir_all(&logs).with_context(|| logs.display().to_string())?;
@@ -159,7 +160,7 @@ fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
     let (reports, received) = mpsc::channel();
     let hub = serve_live(&cfg, &reports)?;
     let arena = Arc::new(Arena::new(cfg, Arc::clone(&hub)));
-    arena.drain_on_sigterm().context("écoute de SIGTERM")?;
+    arena.drain_on(sigterm);
     arena.sweep();
     let _api = api::serve(&arena)?;
     let cfg = arena.config();

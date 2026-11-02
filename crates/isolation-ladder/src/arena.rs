@@ -57,6 +57,21 @@ pub struct Fixture {
     pub time_ms: u64,
 }
 
+pub struct Sigterm(#[cfg(unix)] signal_hook::iterator::Signals);
+
+impl Sigterm {
+    #[cfg(unix)]
+    pub fn listen() -> io::Result<Self> {
+        signal_hook::iterator::Signals::new([signal_hook::consts::SIGTERM]).map(Self)
+    }
+
+    #[cfg(not(unix))]
+    #[expect(clippy::unnecessary_wraps, reason = "même signature que sous Unix")]
+    pub fn listen() -> io::Result<Self> {
+        Ok(Self())
+    }
+}
+
 /// Joue au plus une partie par slot, ladder et smoke tests confondus : pas de port ni de coeur partagé.
 pub struct Arena {
     cfg: Config,
@@ -85,28 +100,19 @@ impl Arena {
         &self.cfg
     }
 
-    /// SIGTERM, celui de `docker stop`, lance l'arrêt. SIGINT (Ctrl+C) reste immédiat.
     #[cfg(unix)]
-    pub fn drain_on_sigterm(self: &Arc<Self>) -> io::Result<()> {
-        let mut signals = signal_hook::iterator::Signals::new([signal_hook::consts::SIGTERM])?;
+    pub fn drain_on(self: &Arc<Self>, mut sigterm: Sigterm) {
         let arena = Arc::clone(self);
         thread::spawn(move || {
-            for _ in signals.forever() {
+            for _ in sigterm.0.forever() {
                 arena.drain();
             }
         });
-        Ok(())
     }
 
     #[cfg(not(unix))]
-    #[expect(
-        clippy::unnecessary_wraps,
-        clippy::unused_self,
-        reason = "même signature que sous Unix"
-    )]
-    pub fn drain_on_sigterm(self: &Arc<Self>) -> io::Result<()> {
-        Ok(())
-    }
+    #[expect(clippy::unused_self, reason = "même signature que sous Unix")]
+    pub fn drain_on(self: &Arc<Self>, _: Sigterm) {}
 
     #[cfg_attr(not(unix), allow(dead_code))]
     pub fn drain(&self) {
@@ -567,6 +573,21 @@ mod tests {
     fn without_a_result_the_last_line_is_kept_for_the_error() {
         assert_eq!(result_of("{\"event\":\"ready\"}\nplantage\n", None), "plantage");
         assert_eq!(result_of("", None), "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sigterm_before_the_arena_exists_still_drains_it() {
+        let sigterm = Sigterm::listen().unwrap();
+        signal_hook::low_level::raise(signal_hook::consts::SIGTERM).unwrap();
+        let cfg: Config = "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\n".parse().unwrap();
+        let arena = Arc::new(Arena::new(cfg, Hub::new(|_, _, _| {})));
+        arena.drain_on(sigterm);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !arena.draining() {
+            assert!(std::time::Instant::now() < deadline, "SIGTERM lost");
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]
