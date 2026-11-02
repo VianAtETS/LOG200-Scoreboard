@@ -501,7 +501,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "isolation-bot"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -512,7 +512,7 @@ dependencies = [
 
 [[package]]
 name = "isolation-check"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "clap",
  "isolation-core",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "isolation-core"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "rand",
  "serde",
@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "isolation-engine"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "clap",
  "isolation-core",
@@ -541,7 +541,7 @@ dependencies = [
 
 [[package]]
 name = "isolation-ladder"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "isolation-referee"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "isolation-remote"
-version = "0.24.2"
+version = "0.24.3"
 dependencies = [
  "clap",
  "isolation-core",
