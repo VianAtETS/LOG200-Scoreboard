@@ -3,12 +3,12 @@
 //! file est pleine est lâché.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use isolation_core::board::{Color, Move};
 use isolation_core::record::{Reason, RefereeEvent, TournamentGame};
@@ -31,7 +31,7 @@ pub struct Hub {
 #[derive(Default)]
 struct State {
     games: Vec<Running>,
-    spectators: Vec<SyncSender<Arc<str>>>,
+    spectators: Vec<Sender<Arc<str>>>,
     closed: bool,
 }
 
@@ -238,7 +238,7 @@ impl Hub {
         let snapshot = encode(Out::Snapshot {
             games: state.games.iter().map(Shown::from).collect(),
         });
-        let (tx, events) = mpsc::sync_channel(QUEUE);
+        let (tx, events) = mpsc::channel(QUEUE);
         state.spectators.push(tx);
         self.watching.fetch_add(1, Ordering::SeqCst);
         Some(Subscription {
