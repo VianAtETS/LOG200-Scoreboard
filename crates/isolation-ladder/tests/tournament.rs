@@ -3,9 +3,8 @@
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
-use std::net::TcpListener;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -13,21 +12,8 @@ mod support;
 
 const LADDER: &str = env!("CARGO_BIN_EXE_isolation-ladder");
 
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
-}
-
 fn read(path: &Path) -> Option<serde_json::Value> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()
-}
-
-struct Killed(Child);
-
-impl Drop for Killed {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
 }
 
 #[test]
@@ -47,7 +33,7 @@ fn a_started_tournament_is_played_to_its_winner() {
              [tournament]\ntime_ms = 100\n",
             referee = support::binary("isolation-referee"),
             bot = support::binary("isolation-bot"),
-            port = free_port(),
+            port = support::free_port(),
             out = dir.join("data/games.jsonl"),
             jars = dir.join("jars"),
         ),
@@ -65,7 +51,7 @@ fn a_started_tournament_is_played_to_its_winner() {
     }
 
     let log = fs::File::create(dir.join("ladder.log")).unwrap();
-    let _ladder = Killed(
+    let _ladder = support::Killed(
         Command::new(LADDER)
             .arg(&config)
             .stdout(Stdio::null())

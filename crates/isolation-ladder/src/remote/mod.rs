@@ -173,7 +173,7 @@ pub fn serve(registry: &Arc<Registry>, cfg: &Config) -> anyhow::Result<()> {
     };
     let listener = TcpListener::bind(&remote.listen)
         .with_context(|| format!("écoute des équipes distantes sur {}", remote.listen))?;
-    eprintln!("équipes distantes : ws://{}{PATH}", remote.listen);
+    eprintln!("équipes distantes : ws://{}{PATH}", listener.local_addr()?);
     listen(Arc::clone(registry), listener, submit.teams.clone(), cfg.time_ms);
     Ok(())
 }

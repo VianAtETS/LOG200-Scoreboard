@@ -37,7 +37,7 @@ pub fn serve(hub: &Arc<Hub>, cfg: &Config) -> anyhow::Result<()> {
         return Ok(());
     };
     let listener = TcpListener::bind(&live.listen).with_context(|| format!("écoute du direct sur {}", live.listen))?;
-    eprintln!("direct : ws://{}{PATH}", live.listen);
+    eprintln!("direct : ws://{}{PATH}", listener.local_addr()?);
     watch_on(listener, Arc::clone(hub));
     Ok(())
 }

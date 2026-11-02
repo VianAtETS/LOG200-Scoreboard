@@ -13,16 +13,21 @@ doc = false
 [dependencies]
 isolation-core.workspace = true
 anyhow.workspace = true
+axum.workspace = true
 clap.workspace = true
+http-body-util.workspace = true
 jiff.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tiny_http.workspace = true
+tokio.workspace = true
 toml.workspace = true
 tungstenite.workspace = true
 zip.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook.workspace = true

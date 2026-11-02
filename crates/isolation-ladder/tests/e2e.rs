@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used)]
 
-use std::net::TcpListener;
 use std::process::{Command, Stdio};
 
 use isolation_core::board::{Board, Color};
@@ -11,12 +10,8 @@ use isolation_core::rules::legal_moves;
 
 mod support;
 
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
-}
-
 fn play(bot_args: &[&str], opening: &str) -> GameResult {
-    let port = free_port().to_string();
+    let port = support::free_port().to_string();
     let bot_exe = support::binary("isolation-bot");
     let referee = Command::new(support::binary("isolation-referee"))
         .args(["--port", &port, "--time-ms", "2000", "--opening", opening])

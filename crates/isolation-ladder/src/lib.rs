@@ -2,6 +2,7 @@
 //! JSONL. Les équipes sont celles de `ladder.toml` plus les équipes inscrites qui ont un jar
 //! accepté ou une session distante ouverte ; la liste est relue avant chaque paire.
 
+mod api;
 mod arena;
 mod command;
 mod config;
@@ -160,7 +161,7 @@ fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
     let arena = Arc::new(Arena::new(cfg, Arc::clone(&hub)));
     arena.drain_on_sigterm().context("écoute de SIGTERM")?;
     arena.sweep();
-    submit::serve(Arc::clone(&arena))?;
+    let _api = api::serve(&arena)?;
     let cfg = arena.config();
     let remote = serve_remote(cfg, &reports)?;
 

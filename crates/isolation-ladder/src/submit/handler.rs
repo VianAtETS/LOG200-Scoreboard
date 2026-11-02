@@ -1,16 +1,15 @@
-//! Une requête de soumission, du routage à l'installation du jar, sans dépendre du serveur HTTP.
-
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use std::io::{self, Cursor, Read};
+use std::io::{self, Cursor};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use thiserror::Error;
-use tiny_http::Method;
 
 use isolation_core::digest::short_hash;
 use isolation_core::record::now_rfc3339;
@@ -24,16 +23,8 @@ use crate::store::append_jsonl;
 use crate::sync::lock;
 use crate::team_id::TeamId;
 
-pub struct Request<'a, B> {
-    pub method: &'a Method,
-    pub url: &'a str,
-    pub authorization: Option<&'a str>,
-    pub body: B,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum Accepted {
-    Health,
     AlreadyActive(String),
     Installed { hash: String, multithread: bool },
 }
@@ -41,7 +32,6 @@ pub enum Accepted {
 impl fmt::Display for Accepted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Health => f.write_str("ok"),
             Self::AlreadyActive(hash) => write!(f, "déjà actif : ce jar ({hash}) est celui qui joue"),
             Self::Installed { hash, multithread } => {
                 write!(f, "accepté : version {hash}, en jeu dès la prochaine partie")?;
@@ -85,17 +75,25 @@ pub enum SubmitError {
 }
 
 impl SubmitError {
-    pub const fn status(&self) -> u16 {
+    pub const fn status(&self) -> StatusCode {
         match self {
-            Self::NotFound => 404,
-            Self::Unauthorized => 401,
-            Self::Read(_) | Self::NotAJar | Self::BadThreads(_) => 400,
-            Self::TooLarge { .. } => 413,
-            Self::TooSoon(_) => 429,
-            Self::Rejected(_) => 422,
-            Self::Registry(_) | Self::Stage(_) | Self::Ladder(_) | Self::Install(_) => 500,
-            Self::Draining => 503,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Read(_) | Self::NotAJar | Self::BadThreads(_) => StatusCode::BAD_REQUEST,
+            Self::TooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::TooSoon(_) => StatusCode::TOO_MANY_REQUESTS,
+            Self::Rejected(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Registry(_) | Self::Stage(_) | Self::Ladder(_) | Self::Install(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            Self::Draining => StatusCode::SERVICE_UNAVAILABLE,
         }
+    }
+}
+
+impl IntoResponse for SubmitError {
+    fn into_response(self) -> Response {
+        (self.status(), format!("{self}\n")).into_response()
     }
 }
 
@@ -143,26 +141,29 @@ impl Submissions {
         Self { arena, submit, limiter }
     }
 
-    pub fn handle(&self, request: Request<'_, impl Read>) -> Result<Accepted, SubmitError> {
-        match (request.method, request.url) {
-            (Method::Get, "/api/health") => return Ok(Accepted::Health),
-            (Method::Put | Method::Post, "/api/submit") => {}
-            _ => return Err(SubmitError::NotFound),
-        }
-        let team = self.authenticate(request.authorization)?;
-        let jar = read_jar(request.body, self.submit.max_jar_mb)?;
-        let multithread = manifest::multithread(Cursor::new(&jar))?;
-        let hash = short_hash(&jar);
-        if fs::read(self.submit.current_jar(&team)).is_ok_and(|active| short_hash(&active) == hash) {
+    /// One byte over the limit tells an oversized body apart from a full one.
+    pub fn max_body(&self) -> usize {
+        usize::try_from(max_bytes(self.submit.max_jar_mb) + 1).unwrap_or(usize::MAX)
+    }
+
+    pub const fn max_jar_mb(&self) -> u64 {
+        self.submit.max_jar_mb
+    }
+
+    pub fn submit(&self, team: &TeamId, jar: &[u8]) -> Result<Accepted, SubmitError> {
+        check_jar(jar, self.submit.max_jar_mb)?;
+        let multithread = manifest::multithread(Cursor::new(jar))?;
+        let hash = short_hash(jar);
+        if fs::read(self.submit.current_jar(team)).is_ok_and(|active| short_hash(&active) == hash) {
             return Ok(Accepted::AlreadyActive(hash));
         }
         let _hold = self.arena.hold().ok_or(SubmitError::Draining)?;
         self.limiter()
-            .acquire(&team, Instant::now())
+            .acquire(team, Instant::now())
             .map_err(SubmitError::TooSoon)?;
-        let outcome = self.test_and_install(&team, &hash, &jar, multithread);
+        let outcome = self.test_and_install(team, &hash, jar, multithread);
         if matches!(outcome, Err(SubmitError::Ladder(_))) {
-            self.limiter().release(&team);
+            self.limiter().release(team);
         }
         outcome
     }
@@ -172,7 +173,7 @@ impl Submissions {
         lock(&self.limiter)
     }
 
-    fn authenticate(&self, authorization: Option<&str>) -> Result<TeamId, SubmitError> {
+    pub fn authenticate(&self, authorization: Option<&str>) -> Result<TeamId, SubmitError> {
         let token = authorization.and_then(bearer).ok_or(SubmitError::Unauthorized)?;
         let teams = load_teams(&self.submit.teams).map_err(SubmitError::Registry)?;
         find_team(&teams, token)
@@ -256,17 +257,18 @@ struct LogLine<'a> {
     detail: &'a str,
 }
 
-fn read_jar(body: impl Read, max_mb: u64) -> Result<Vec<u8>, SubmitError> {
-    let max = max_mb * 1024 * 1024;
-    let mut jar = Vec::new();
-    body.take(max + 1).read_to_end(&mut jar).map_err(SubmitError::Read)?;
-    if u64::try_from(jar.len()).map_or(true, |len| len > max) {
+const fn max_bytes(max_mb: u64) -> u64 {
+    max_mb * 1024 * 1024
+}
+
+fn check_jar(jar: &[u8], max_mb: u64) -> Result<(), SubmitError> {
+    if u64::try_from(jar.len()).map_or(true, |len| len > max_bytes(max_mb)) {
         return Err(SubmitError::TooLarge { max_mb });
     }
     if !jar.starts_with(b"PK\x03\x04") {
         return Err(SubmitError::NotAJar);
     }
-    Ok(jar)
+    Ok(())
 }
 
 /// Remplace atomiquement le jar actif ; l'ancien n'est pas gardé.
@@ -301,72 +303,64 @@ mod tests {
         )
     }
 
-    fn put<'a>(token: &'a str, body: &'a [u8]) -> Request<'a, &'a [u8]> {
-        Request {
-            method: &Method::Put,
-            url: "/api/submit",
-            authorization: Some(token),
-            body,
+    fn team() -> TeamId {
+        "eq07".parse().unwrap()
+    }
+
+    #[test]
+    fn only_a_registered_bearer_token_authenticates() {
+        let (_, stranger) = submissions("auth-stranger");
+        let (submissions, token) = submissions("auth");
+        assert_eq!(
+            submissions.authenticate(Some(&format!("Bearer {token}"))).unwrap(),
+            team()
+        );
+        for header in [None, Some(token.as_str()), Some(&format!("Bearer {stranger}"))] {
+            let error = submissions.authenticate(header).unwrap_err();
+            assert_eq!(error.status(), StatusCode::UNAUTHORIZED, "{header:?}");
         }
     }
 
     #[test]
-    fn routing_and_authentication() {
-        let (submissions, token) = submissions("routing");
-        let health = Request {
-            method: &Method::Get,
-            url: "/api/health",
-            authorization: None,
-            body: &[][..],
-        };
-        assert_eq!(submissions.handle(health).unwrap(), Accepted::Health);
-        let unknown = Request {
-            method: &Method::Get,
-            url: "/api/submit",
-            authorization: None,
-            body: &[][..],
-        };
-        assert_eq!(submissions.handle(unknown).unwrap_err().status(), 404);
-        let bearer = format!("Bearer {token}");
-        assert_eq!(submissions.handle(put(&token, JAR)).unwrap_err().status(), 401);
-        assert_eq!(submissions.handle(put("Bearer faux", JAR)).unwrap_err().status(), 401);
+    fn a_body_that_is_not_a_jar_or_too_large_is_refused() {
+        let (submissions, _) = submissions("checks");
+        let not_a_jar = submissions.submit(&team(), &JAR[1..]).unwrap_err();
+        assert_eq!(not_a_jar.status(), StatusCode::BAD_REQUEST);
+        let huge = [JAR, &vec![0; submissions.max_body()]].concat();
         assert_eq!(
-            submissions.handle(put(&bearer, b"pas un jar")).unwrap_err().status(),
-            400
+            submissions.submit(&team(), &huge).unwrap_err().status(),
+            StatusCode::PAYLOAD_TOO_LARGE
         );
-        let huge = [JAR, &vec![0; 1024 * 1024]].concat();
-        assert_eq!(submissions.handle(put(&bearer, &huge)).unwrap_err().status(), 413);
     }
 
     #[test]
     fn unknown_thread_count_is_refused_before_the_smoke_test() {
-        let (submissions, token) = submissions("threads");
+        let (submissions, _) = submissions("threads");
         let jar = manifest::tests::jar_with_manifest("Main-Class: Client\nLadder-Threads: 8\n");
-        let error = submissions.handle(put(&format!("Bearer {token}"), &jar)).unwrap_err();
+        let error = submissions.submit(&team(), &jar).unwrap_err();
         assert!(matches!(error, SubmitError::BadThreads(_)), "{error}");
-        assert_eq!(error.status(), 400);
+        assert_eq!(error.status(), StatusCode::BAD_REQUEST);
         assert!(!submissions.submit.jars.join("submissions.jsonl").exists());
     }
 
     #[test]
     fn active_jar_is_not_tested_again() {
-        let (submissions, token) = submissions("active");
+        let (submissions, _) = submissions("active");
         let id: TeamId = "eq07".parse().unwrap();
         let current = submissions.submit.current_jar(&id);
         fs::create_dir_all(current.parent().unwrap()).unwrap();
         fs::write(&current, JAR).unwrap();
-        let reply = submissions.handle(put(&format!("Bearer {token}"), JAR)).unwrap();
+        let reply = submissions.submit(&team(), JAR).unwrap();
         assert_eq!(reply, Accepted::AlreadyActive(short_hash(JAR)));
     }
 
     #[test]
     fn ladder_failure_is_logged_and_does_not_count_against_the_team() {
-        let (submissions, token) = submissions("ladder-error");
-        let bearer = format!("Bearer {token}");
+        let (submissions, _) = submissions("ladder-error");
         for _ in 0..2 {
-            let error = submissions.handle(put(&bearer, JAR)).unwrap_err();
+            let error = submissions.submit(&team(), JAR).unwrap_err();
             assert!(matches!(error, SubmitError::Ladder(GameError::Spawn { .. })), "{error}");
-            assert_eq!(error.status(), 500);
+            assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
         }
         let id: TeamId = "eq07".parse().unwrap();
         let dir = submissions.submit.team_dir(&id);
@@ -378,11 +372,11 @@ mod tests {
 
     #[test]
     fn a_draining_ladder_refuses_without_using_the_team_slot() {
-        let (submissions, token) = submissions("draining");
+        let (submissions, _) = submissions("draining");
         submissions.arena.drain();
-        let error = submissions.handle(put(&format!("Bearer {token}"), JAR)).unwrap_err();
+        let error = submissions.submit(&team(), JAR).unwrap_err();
         assert!(matches!(error, SubmitError::Draining), "{error}");
-        assert_eq!(error.status(), 503);
+        assert_eq!(error.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(submissions.arena.smoke_tests(), 0);
         assert!(!submissions.submit.jars.join("submissions.jsonl").exists());
         let team: TeamId = "eq07".parse().unwrap();
