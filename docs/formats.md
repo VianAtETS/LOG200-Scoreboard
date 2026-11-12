@@ -161,6 +161,7 @@ Le schéma est dans [`crates/isolation-ladder/src/sql/schema.sql`](../crates/iso
 La page ne lit jamais toutes les parties : en fin de session, elles pèsent des centaines de Mo. Le ladder calcule le classement Elo et les temps par coup, et publie dans `data/` :
 
 - `summary.json`, réécrit après chaque partie (fichier temporaire puis renommage) :
+  - `archives: true` : filtres de versions archivées activés par `--archives` ; absent par défaut. Ne change ni les ratings ni le matchmaking.
   - `sessions` : la plus récente d'abord ;
   - `builds` : builds de chaque équipe dans l'ordre d'apparition, pour le badge vN ;
   - `scopes` : `""` pour toutes les sessions, puis une clé par session. Chacune donne `games` (nombre), `time_ms` (temps alloués), `ratings` (classement, meilleur d'abord) et `recent` (50 dernières parties).

@@ -2579,3 +2579,15 @@ p.graph-link:hover {
 .panel.swagger .swagger-ui {
     background: transparent;
 }
+
+/* Optional archived-build filters. */
+.archive-filter[hidden] { display: none; }
+.archive-filter { margin: 8px 0; flex: 0 0 auto; font-size: 0.8125rem; }
+.archive-filter summary { cursor: pointer; color: var(--muted); }
+.archive-tools { display: flex; gap: 8px; margin: 8px 0; }
+.archive-tools input { min-width: 0; flex: 1; }
+.archive-filter fieldset { max-height: 11rem; overflow: auto; border: 1px solid var(--line); }
+.archive-filter label { display: flex; align-items: center; gap: 7px; padding: 5px; }
+.archive-help, .archive-status { color: var(--muted); margin: 6px 0; }
+.badge.archived { border-style: dashed; white-space: nowrap; }
+.archived-row { opacity: 0.8; }

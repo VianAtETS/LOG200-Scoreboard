@@ -122,6 +122,9 @@ pub(super) struct ScopeView<'a> {
 #[derive(Serialize)]
 pub(super) struct Summary<'a> {
     pub(super) v: u32,
+    /// Filtres de versions archivées activés au démarrage ; absent par défaut.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) archives: bool,
     pub(super) sessions: Vec<&'a str>,
     pub(super) builds: &'a BTreeMap<String, Vec<String>>,
     pub(super) scopes: BTreeMap<&'a str, ScopeView<'a>>,

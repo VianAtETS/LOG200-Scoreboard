@@ -290,6 +290,7 @@ pub struct Standings {
     any_remote: bool,
     builds: BTreeMap<String, Vec<String>>,
     model: Model,
+    archives: bool,
 }
 
 impl Standings {
@@ -301,6 +302,7 @@ impl Standings {
             any_remote: false,
             builds: BTreeMap::new(),
             model: Model::new(dir),
+            archives: false,
         }
     }
 
@@ -343,6 +345,12 @@ impl Standings {
             .model
             .publish(|team| full.all.teams.get(team).map_or(START, |s| s.rating))?;
         Ok(standings)
+    }
+
+    /// Active uniquement la présentation des archives ; les ratings et matchs restent inchangés.
+    pub fn set_archives(&mut self, enabled: bool) -> io::Result<()> {
+        self.archives = enabled;
+        self.write_summary()
     }
 
     /// Rating toutes sessions, `START` pour une équipe qui n'a pas encore joué.
@@ -460,6 +468,7 @@ impl Standings {
             verified: self.any_remote.then(|| self.verified.views(&sessions)),
             sessions,
             builds: &self.builds,
+            archives: self.archives,
         }
     }
 
@@ -507,6 +516,24 @@ mod tests {
 
     fn rating<'a>(ratings: &'a [RatingRow<'a>], team: &str) -> &'a RatingRow<'a> {
         ratings.iter().find(|r| r.team == team).unwrap()
+    }
+
+    #[test]
+    fn archive_flag_does_not_change_the_standings() {
+        let dir = crate::submit::test_support::temp_dir("archive-standings");
+        let mut standings = Standings::new(&dir);
+        standings.play(&game("a", "b", Color::Red));
+        let before = serde_json::to_value(standings.summary()).unwrap();
+        assert!(before.get("archives").is_none());
+        standings.set_archives(true).unwrap();
+        let mut enabled: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.join("summary.json")).unwrap()).unwrap();
+        assert_eq!(enabled.as_object_mut().unwrap().remove("archives"), Some(true.into()));
+        assert_eq!(before, enabled);
+        standings.set_archives(false).unwrap();
+        let disabled: serde_json::Value = serde_json::from_slice(&fs::read(dir.join("summary.json")).unwrap()).unwrap();
+        assert_eq!(before, disabled);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

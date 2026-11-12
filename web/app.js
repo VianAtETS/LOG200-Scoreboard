@@ -30,6 +30,7 @@ import {
 } from './common.js'
 import { BETWEEN, gamesOf, isRemote, ratingOf, record, since, versionStarts } from './elo.js'
 import { createPicker } from './picker.js'
+import { createArchiveFilter } from './archive-filter.js'
 import { fetchModel, percent, winProbability } from './predict.js'
 import { renderBoard } from './board.js'
 import { connectLive, liveUrl, pickLive } from './live.js'
@@ -131,6 +132,8 @@ async function refresh() {
             builds = new Map(Object.entries(summary.builds))
             renderSessions(first)
         }
+        archives.update(summary)
+        await archives.load()
         changed = (await follow()) || changed
         running = await fetchRunning().catch(() => [])
         if ($('queue').open) showQueue()
@@ -303,7 +306,7 @@ function render() {
     renderPaceHeader()
     renderRecordHeader()
     renderEloHeader()
-    renderRanking(scope.ratings)
+    renderRanking(scope.ratings, archives.rows({ session, verified }))
     picker.render(teams)
     renderDuel(teams, scope.ratings, rows, session, verified)
     $('match').hidden = teams.length < 2
@@ -372,7 +375,7 @@ function paceCell(pace) {
 function recordCell(r, v) {
     const all = `${r.wins}–${r.losses}`
     const build = `${r.build_wins}–${r.build_games - r.build_wins}`
-    const title = `Toutes versions ${all}, ${v || 'version actuelle'} ${build}`
+    const title = r.archived ? `${v}, version archivée uniquement : ${build}` : `Toutes versions ${all}, ${v || 'version actuelle'} ${build}`
     return el('td', { class: 'num record', title }, recordStat === 'build' ? build : all)
 }
 
@@ -432,7 +435,9 @@ function renderDuel(teams, ratings, rows, session, verified) {
     $('duel').title = "Version actuelle de chaque équipe, contre toutes les versions de l'autre"
 }
 
-function renderRanking(ratings) {
+function renderRanking(ratings, archived) {
+    const ranks = new Map(ratings.map((r, i) => [r.team, i + 1]))
+    ratings = ratings.filter((r) => !archives.isArchived(r.team, r.build)).concat(archived)
     $('ranking-empty').hidden = ratings.length > 0
     $('anchor-note').hidden = !ratings.some((r) => r.anchor)
     const isBot = (r) => !r.build
@@ -447,23 +452,25 @@ function renderRanking(ratings) {
     $('ranking')
         .querySelector('tbody')
         .replaceChildren(
-            ...ratings.map((r, i) => {
+            ...ratings.map((r) => {
                 const bot = isBot(r)
                 const line = el('div', { class: 'team-line' }, el('span', { class: 'team-name' }, r.team))
                 const team = el('td', { class: 'team', title: r.team }, line)
+                if (r.archived) line.append(el('span', { class: 'badge archived', title: 'Version archivée : ne joue plus de nouveaux matchs' }, 'Archivé'))
                 const v = version(r)
                 if (v) line.append(el('span', { class: 'badge', title: `Build ${r.build}` }, v))
                 if (r.remote) line.append(remoteBadge())
                 if (bot) line.append(el('span', { class: 'badge', title: 'Adversaire de référence' }, 'bot'))
                 if (r.anchor) line.append(el('span', { class: 'badge anchor' }, 'ancre'))
                 if (r.provisional) line.append(el('span', { class: 'badge' }, 'provisoire'))
-                const duel = duels.get(r.team)
+                const duel = !r.archived && duels.get(r.team)
                 if (duel) line.append(duelBadge(duel.opponent, duel.color, listed.has(duel.opponent), duel.chance))
                 if (duel?.id) line.append(liveLink(duel.id, 'Suivre la partie en direct'))
                 return el(
                     'tr',
-                    bot ? { class: 'bot', 'data-team': r.team } : { 'data-team': r.team },
-                    el('td', { class: 'num rank' }, String(i + 1)),
+                    { class: r.archived ? 'archived-row' : bot ? 'bot' : '', 'data-team': r.team,
+                        ...(r.archived ? { title: 'Dernier Elo de cette version, hors classement actuel' } : {}) },
+                    el('td', { class: 'num rank' }, r.archived ? '—' : String(ranks.get(r.team))),
                     team,
                     el('td', { class: 'num elo' }, String(Math.round(r[eloStat] ?? r.rating))),
                     recordCell(r, v),
@@ -769,6 +776,8 @@ function reselect() {
     render()
     follow().then(render, render)
 }
+
+const archives = createArchiveFilter(refresh)
 
 const picker = createPicker({
     ratings: () => (summary ? scopesOf(summary).scopes[$('session').value].ratings : []),

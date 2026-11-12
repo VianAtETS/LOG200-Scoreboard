@@ -22,6 +22,10 @@ struct Cli {
     config: Option<PathBuf>,
     #[arg(long)]
     rounds: Option<u64>,
+    /// Afficher les filtres de versions archivées dans le classement.
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", default_value_t = false,
+          require_equals = true, action = clap::ArgAction::Set)]
+    archives: bool,
 }
 
 #[derive(Subcommand)]
@@ -58,7 +62,7 @@ pub fn cli() -> ExitCode {
             .map(|token| println!("{token}"))
             .map_err(anyhow::Error::from),
         (Some(Command::Tournament { action }), _) => request(action),
-        (None, Some(path)) => ladder::run(&path, cli.rounds),
+        (None, Some(path)) => ladder::run(&path, cli.rounds, cli.archives),
         (None, None) => unreachable!("clap exige la configuration sans sous-commande"),
     };
     match result {
@@ -82,4 +86,34 @@ fn request(action: TournamentAction) -> anyhow::Result<()> {
         IDLE_DELAY.as_secs()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn archives_are_opt_in_and_can_be_explicitly_disabled() {
+        assert!(
+            !Cli::try_parse_from(["isolation-ladder", "ladder.toml"])
+                .unwrap()
+                .archives
+        );
+        assert!(
+            Cli::try_parse_from(["isolation-ladder", "ladder.toml", "--archives"])
+                .unwrap()
+                .archives
+        );
+        assert!(
+            Cli::try_parse_from(["isolation-ladder", "--archives=true", "ladder.toml"])
+                .unwrap()
+                .archives
+        );
+        assert!(
+            !Cli::try_parse_from(["isolation-ladder", "ladder.toml", "--archives=false"])
+                .unwrap()
+                .archives
+        );
+        assert!(Cli::try_parse_from(["isolation-ladder", "ladder.toml", "--archives=wrong"]).is_err());
+    }
 }
