@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { archiveKey, archiveOptions, archivedRows, currentBuilds } from './archives.js'
+import { archiveKey, archiveOptions, archivedRows, currentBuilds, withArchivedRows } from './archives.js'
 
 const summary = () => ({
     builds: { eq110: ['same', 'new110'], eq118: ['same', 'new118'] },
@@ -63,4 +63,13 @@ test('several archived versions of the same team can be selected independently',
     const both = archivedRows(rows, options)
     assert.deepEqual(both.map((r) => [r.build, r.games, r.rating]), [['same', 1, 1520], ['new118', 1, 1540]])
     assert.deepEqual(archivedRows(rows, [options[1]]).map((r) => r.build), ['new118'])
+})
+
+
+test('selected archive rows sit under their team without hiding historical-only teams', () => {
+    const active = [{ team: 'eq118', build: 'new' }, { team: 'eq110', build: 'new' }]
+    const old = [{ team: 'eq110', build: 'old', archived: true }, { team: 'eq120', build: 'old', archived: true }]
+    assert.deepEqual(withArchivedRows(active, old), [active[0], active[1], old[0], old[1]])
+    assert.deepEqual(withArchivedRows(active, []), active)
+    assert.equal(active.length, 2)
 })

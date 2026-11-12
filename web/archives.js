@@ -43,3 +43,10 @@ export function archivedRows(rows, selected, { session = '', verified = false } 
     }
     return [...out.values()]
 }
+
+// Garder une ancienne version près de son équipe, sans lui attribuer un rang actif.
+export function withArchivedRows(ratings, archived) {
+    const current = new Set(ratings.map((r) => r.team))
+    return ratings.flatMap((r) => [r, ...archived.filter((old) => old.team === r.team)])
+        .concat(archived.filter((old) => !current.has(old.team)))
+}

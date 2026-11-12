@@ -31,6 +31,7 @@ import {
 import { BETWEEN, gamesOf, isRemote, ratingOf, record, since, versionStarts } from './elo.js'
 import { createPicker } from './picker.js'
 import { createArchiveFilter } from './archive-filter.js'
+import { withArchivedRows } from './archives.js'
 import { fetchModel, percent, winProbability } from './predict.js'
 import { renderBoard } from './board.js'
 import { connectLive, liveUrl, pickLive } from './live.js'
@@ -437,7 +438,7 @@ function renderDuel(teams, ratings, rows, session, verified) {
 
 function renderRanking(ratings, archived) {
     const ranks = new Map(ratings.map((r, i) => [r.team, i + 1]))
-    ratings = ratings.filter((r) => !archives.isArchived(r.team, r.build)).concat(archived)
+    ratings = withArchivedRows(ratings.filter((r) => !archives.isArchived(r.team, r.build)), archived)
     $('ranking-empty').hidden = ratings.length > 0
     $('anchor-note').hidden = !ratings.some((r) => r.anchor)
     const isBot = (r) => !r.build
