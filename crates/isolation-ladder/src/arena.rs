@@ -96,10 +96,14 @@ pub struct Arena {
 impl Arena {
     pub fn new(cfg: Config, hub: Arc<Hub>) -> Self {
         let placement = Placement::new(&cfg);
+        // L'état des nœuds (noms d'hôtes internes, erreurs) va à côté de la base, jamais dans data/,
+        // que la page publie.
+        let state = cfg.db.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
         let nodes = cfg
             .nodes
             .as_ref()
-            .map(|nodes| NodeHub::new(Arc::clone(&placement), nodes.tokens.clone(), cfg.data_dir().into()));
+            .map(|nodes| NodeHub::new(Arc::clone(&placement), nodes.tokens.clone(), state));
+
         Self {
             placement,
             local: Arc::new(Local::new(cfg.exec.clone())),
@@ -328,8 +332,9 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("logs")).unwrap();
         let cfg: Config = format!(
-            "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\nout = {out:?}\n[nodes]\n",
-            out = dir.join("games.jsonl")
+            "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\nout = {out:?}\ndb = {db:?}\n[nodes]\n",
+            out = dir.join("games.jsonl"),
+            db = dir.join("state").join("ladder.db"),
         )
         .parse()
         .unwrap();
@@ -405,6 +410,12 @@ mod tests {
             .unwrap();
         node.join().unwrap();
         assert_eq!(record.node.as_deref(), Some("node-a"));
+        assert!(dir.join("state").join("nodes.json").exists(), "état des nœuds : privé");
+        assert!(
+            !dir.join("nodes.json").exists(),
+            "jamais dans data/, que la page publie"
+        );
+
         let local = arena.placement().try_lease(PairClass::Heavy).unwrap();
         assert!(local.slot().local());
         let _ = fs::remove_dir_all(&dir);

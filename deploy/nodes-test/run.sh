@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Banc d'essai des noeuds : inscrit node-a et node-b, puis demarre le ladder et les deux noeuds.
-# Ensuite : data/nodes.json, `docker compose logs -f`, http://127.0.0.1:18090/api/games, et
+# Ensuite : state/nodes.json, `docker compose logs -f`, http://127.0.0.1:18090/api/games, et
 # `docker compose kill node-a` en pleine partie. Arret : docker compose down -v.
 set -euo pipefail
 cd "$(dirname "$0")"

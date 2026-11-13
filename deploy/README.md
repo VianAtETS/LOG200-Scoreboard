@@ -103,7 +103,7 @@ D'autres machines du LAN peuvent jouer des parties pour le ladder : un nœud pre
 1. Sur le ladder, décommenter `[nodes]` dans `ladder.toml`, puis inscrire le nœud : `docker compose exec ladder isolation-ladder add-node node-a --nodes jars/nodes.toml`. Le token s'affiche une fois ; seul son sha256 est gardé.
 2. Publier `[nodes].listen` (8093 par défaut) **sur l'adresse LAN seulement** et limiter la source aux nœuds dans le pare-feu. Ce port ne passe jamais par Caddy ni par un proxy public.
 3. Sur le nœud, la même image que le ladder, en conteneur privilégié (Docker interne + gVisor), avec la commande `node`, `node.toml` (voir `node.example.toml`) et le token dans `token_file`.
-4. `docker compose restart ladder`. Le nœud joue d'abord une partie bot contre bot (la sonde), puis apporte ses slots ; `data/nodes.json` montre les nœuds connectés, prêts ou en quarantaine.
+4. `docker compose restart ladder`. Le nœud joue d'abord une partie bot contre bot (la sonde), puis apporte ses slots ; `state/nodes.json` (privé : la page ne le publie pas) montre les nœuds connectés, prêts ou en quarantaine.
 
 - Le nœud et le ladder doivent tourner la même version : un nœud d'une autre version est refusé jusqu'à sa mise à jour.
 - Un nœud qui tombe en pleine partie ne coûte rien à personne : la partie est annulée puis rejouée ailleurs. Trois échecs d'affilée le mettent en quarantaine 10 min.

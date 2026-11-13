@@ -114,7 +114,7 @@ impl NodeLink {
 pub struct NodeHub {
     placement: Arc<Placement>,
     tokens: PathBuf,
-    data_dir: PathBuf,
+    state_dir: PathBuf,
     links: Mutex<HashMap<String, Arc<NodeLink>>>,
     /// Jars des parties distantes en cours, par sha256 : ce que les nœuds peuvent demander.
     jars: Mutex<HashMap<String, PathBuf>>,
@@ -122,11 +122,11 @@ pub struct NodeHub {
 }
 
 impl NodeHub {
-    pub fn new(placement: Arc<Placement>, tokens: PathBuf, data_dir: PathBuf) -> Arc<Self> {
+    pub fn new(placement: Arc<Placement>, tokens: PathBuf, state_dir: PathBuf) -> Arc<Self> {
         Arc::new(Self {
             placement,
             tokens,
-            data_dir,
+            state_dir,
             links: Mutex::new(HashMap::new()),
             jars: Mutex::new(HashMap::new()),
             draining: AtomicBool::new(false),
@@ -189,12 +189,12 @@ impl NodeHub {
         }
     }
 
-    /// `nodes.json` pour la page et l'alerte « nœud absent ».
+    /// `state/nodes.json`, privé : pour l'opérateur et une alerte « nœud absent ».
     fn publish(&self) {
         let mut nodes: Vec<NodeInfo> = lock(&self.links).values().map(|l| lock(&l.info).clone()).collect();
         nodes.sort_by(|a, b| a.id.cmp(&b.id));
         let json = serde_json::json!({ "v": 1, "nodes": nodes });
-        if let Err(e) = write_atomic(&self.data_dir.join("nodes.json"), json.to_string().as_bytes()) {
+        if let Err(e) = write_atomic(&self.state_dir.join("nodes.json"), json.to_string().as_bytes()) {
             eprintln!("   nodes.json non publié : {e}");
         }
     }
