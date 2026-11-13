@@ -74,6 +74,8 @@ The relay starts the jar for every game and keeps reconnecting until stopped. Th
 | `isolation-ladder` | Schedules games between teams, records them in SQLite (`state/ladder.db`, served back by `/api/games` and `/api/stats`, see `docs/api.md`), publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`), streams the games in progress (`/api/live`, `[live]` in `ladder.toml`) and runs the weekly tournament (`[tournament]` in `ladder.toml`, `data/tournaments/`, see `docs/spec-tournoi-hebdo.md`) |
 | `isolation-check` | Replays and validates a JSONL file or an official save (`BOARDGAME 1`) |
 | `isolation-remote` | Relay for a team that plays from its own machine: starts the jar for each game and forwards its lines to the ladder (`/api/remote`, see `docs/formats.md`) |
+| `isolation-ladder node` | Compute node: another LAN machine that joins the ladder (`/api/node`, `[nodes]` in `ladder.toml`, `node.example.toml`) and plays its portable pairs with the same referee and sandbox; those games count like any other (see "Nœuds" in `docs/formats.md`) |
+
 | `sandbox/` | gVisor sandboxes for the referee and each player (see `docs/formats.md`) |
 | `web/` | Static pages (Astro + React, built to `web/dist`): Elo ranking, recent games, replay; rank graph of the chosen teams (`graphe.html`); weekly tournament bracket (`tournoi.html`); games in progress, move by move (`direct.html`) |
 | `templates/ladder.yml` | GitHub Actions workflow for the team repositories: builds the jar and submits it on every push to `main` |

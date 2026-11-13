@@ -96,7 +96,21 @@ L'équipe utilise son token habituel et l'adresse de la page : `isolation-remote
 - La latence compte dans le temps par coup de l'équipe. Comme pour `LADDER_URL`, un nom d'hôte non proxifié évite le détour par Cloudflare.
 - `docker compose logs ladder | grep distant` montre les connexions. Le diagnostic du relais de chaque partie est dans `data/logs/`.
 
+## Nœuds de calcul (optionnel)
+
+D'autres machines du LAN peuvent jouer des parties pour le ladder : un nœud prend les paires portables (bots `portable = true`, équipes dont le build actif répond en moins de 100 ms), qui comptent exactement comme les autres. Détails et protocole : "Nœuds" dans `docs/formats.md`.
+
+1. Sur le ladder, décommenter `[nodes]` dans `ladder.toml`, puis inscrire le nœud : `docker compose exec ladder isolation-ladder add-node node-a --nodes jars/nodes.toml`. Le token s'affiche une fois ; seul son sha256 est gardé.
+2. Publier `[nodes].listen` (8093 par défaut) **sur l'adresse LAN seulement** et limiter la source aux nœuds dans le pare-feu. Ce port ne passe jamais par Caddy ni par un proxy public.
+3. Sur le nœud, la même image que le ladder, en conteneur privilégié (Docker interne + gVisor), avec la commande `node`, `node.toml` (voir `node.example.toml`) et le token dans `token_file`.
+4. `docker compose restart ladder`. Le nœud joue d'abord une partie bot contre bot (la sonde), puis apporte ses slots ; `data/nodes.json` montre les nœuds connectés, prêts ou en quarantaine.
+
+- Le nœud et le ladder doivent tourner la même version : un nœud d'une autre version est refusé jusqu'à sa mise à jour.
+- Un nœud qui tombe en pleine partie ne coûte rien à personne : la partie est annulée puis rejouée ailleurs. Trois échecs d'affilée le mettent en quarantaine 10 min.
+- Le nœud n'exécute aucune commande venue du ladder : seulement les bots de sa liste et des jars identifiés par leur sha256. Un jar qui sortirait de gVisor serait root dans le conteneur privilégié du nœud, comme au ladder.
+
 ## Page sur GitHub Pages
+
 
 Au lieu du profil `web`, la page peut être publiée sur GitHub Pages : une modification de `web/` est alors en ligne à chaque push sur `main`, sans tag. Elle lit les parties et l'API sur ce serveur, qui doit donc être en HTTPS (section "Nom de domaine et HTTPS").
 

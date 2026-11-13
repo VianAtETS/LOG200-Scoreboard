@@ -1,0 +1,49 @@
+# Configuration d'un noeud de calcul (docs/formats.md, "Noeuds"). Copier en node.toml et adapter.
+# Lancement : isolation-ladder node node.toml, ou l'image du ladder avec la commande `node`.
+# Le noeud se connecte au ladder ; il n'ouvre aucun port.
+
+# Nom du noeud, celui donne a `isolation-ladder add-node` sur le ladder.
+id = "node-a"
+# Le ladder, sur le LAN ([nodes].listen de ladder.toml).
+ladder = "ws://ladder.lan:8093/api/node"
+# Le token affiche par add-node, seul dans ce fichier.
+token_file = "/srv/node.token"
+# Cache des jars recus, par sha256 ; au-dela de cache_mb, les moins recemment joues partent.
+jars = "/var/cache/isolation/jars"
+cache_mb = 512
+max_jar_mb = 20
+
+# Les seuls bots que ce noeud accepte de lancer, et leur commande (suivie de la strategie et de ses
+# options). Le premier sert a la sonde de demarrage : une partie contre lui-meme.
+bots = ["aleatoire", "niveau-1"]
+bot_cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "--bot"]
+team_cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "{jar}"]
+
+# Pas de nouvelle partie au-dessus de pause_c, comme au ladder.
+# [thermal]
+# pause_c = 85
+# resume_c = 75
+
+# L'arbitre, le bac a sable et les slots de cette machine : memes cles que dans ladder.toml.
+[exec]
+referee = ["sandbox/run-referee.sh", "{game}", "{port}", "{time_ms}", "{opening}"]
+cleanup = ["sandbox/cleanup.sh", "{game}"]
+
+[exec.sandbox]
+image = "isolation-sandbox"
+runtime = "runsc-host-uds"
+rundir = "/tmp/isolation-ladder"
+memory = "512m"
+java_heap = "384m"
+connect_timeout_ms = "30000"
+cpus = "1"
+pids = "128"
+
+# Un slot par partie simultanee, un coeur par couleur, jamais partages.
+[[exec.slot]]
+cpuset_red = "4"
+cpuset_black = "5"
+
+[[exec.slot]]
+cpuset_red = "6"
+cpuset_black = "7"
