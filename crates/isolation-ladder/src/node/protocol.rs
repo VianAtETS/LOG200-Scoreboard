@@ -10,6 +10,8 @@ use crate::arena::GameError;
 
 /// Change à chaque modification incompatible des messages ; un nœud d'un autre protocole est refusé.
 pub const PROTOCOL: u32 = 1;
+/// Route du ladder où les nœuds se connectent.
+pub const PATH: &str = "/api/node";
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]

@@ -41,6 +41,12 @@ enum Command {
     },
     /// Fait de cette machine un nœud de calcul du ladder (docs/formats.md, « Nœuds »).
     Node { config: PathBuf },
+    /// Inscrit un nœud et affiche son token (seul son sha256 est gardé).
+    AddNode {
+        id: TeamId,
+        #[arg(long, default_value = "jars/nodes.toml")]
+        nodes: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -64,6 +70,9 @@ pub fn cli() -> ExitCode {
             .map_err(anyhow::Error::from),
         (Some(Command::Tournament { action }), _) => request(action),
         (Some(Command::Node { config }), _) => node(&config),
+        (Some(Command::AddNode { id, nodes }), _) => submit::add_team(&nodes, id)
+            .map(|token| println!("{token}"))
+            .map_err(anyhow::Error::from),
 
         (None, Some(path)) => ladder::run(&path, cli.rounds, cli.archives),
         (None, None) => unreachable!("clap exige la configuration sans sous-commande"),

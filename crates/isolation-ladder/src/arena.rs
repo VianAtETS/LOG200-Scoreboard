@@ -20,7 +20,9 @@ use isolation_core::record::{
 use crate::config::Config;
 use crate::exec::{Executor, GameOutput, GameRun, Local};
 use crate::hub::{self, Hub};
-use crate::placement::{Lease, Placement};
+use crate::node::hub::NodeHub;
+use crate::placement::{Lease, Placement, SlotId};
+
 use crate::remote::Seat;
 use crate::roster::Team;
 use crate::store::compact_timestamp;
@@ -50,6 +52,9 @@ pub enum GameError {
     /// Le nœud qui jouait a échoué : arbitre, lancement, délai.
     #[error("nœud {node} : {message}")]
     Remote { node: String, message: String },
+    /// Le nœud qui jouait a disparu en pleine partie : elle est rejouée ailleurs.
+    #[error("nœud {0} perdu pendant la partie")]
+    NodeLost(String),
 }
 
 /// Partie de tournoi : son temps par coup et sa session remplacent ceux du ladder.
@@ -79,7 +84,9 @@ impl Sigterm {
 pub struct Arena {
     cfg: Config,
     placement: Arc<Placement>,
-    local: Local,
+    local: Arc<Local>,
+    /// Registre des nœuds, si `[nodes]` est configuré.
+    nodes: Option<Arc<NodeHub>>,
     /// Levé par SIGTERM : plus de nouvelle partie, on finit celles en cours.
     draining: AtomicBool,
     smoke_tests: AtomicUsize,
@@ -88,9 +95,15 @@ pub struct Arena {
 
 impl Arena {
     pub fn new(cfg: Config, hub: Arc<Hub>) -> Self {
+        let placement = Placement::new(&cfg);
+        let nodes = cfg
+            .nodes
+            .as_ref()
+            .map(|nodes| NodeHub::new(Arc::clone(&placement), nodes.tokens.clone(), cfg.data_dir().into()));
         Self {
-            placement: Placement::new(&cfg),
-            local: Local::new(cfg.exec.clone()),
+            placement,
+            local: Arc::new(Local::new(cfg.exec.clone())),
+            nodes,
             cfg,
             draining: AtomicBool::new(false),
             smoke_tests: AtomicUsize::new(0),
@@ -104,6 +117,18 @@ impl Arena {
 
     pub const fn placement(&self) -> &Arc<Placement> {
         &self.placement
+    }
+
+    pub const fn nodes(&self) -> Option<&Arc<NodeHub>> {
+        self.nodes.as_ref()
+    }
+
+    /// Qui joue sur ce slot : cette machine, ou le nœud qui le prête.
+    fn executor(&self, slot: &SlotId) -> Arc<dyn Executor> {
+        match &self.nodes {
+            Some(nodes) if !slot.local() => nodes.executor(&slot.node),
+            _ => Arc::clone(&self.local) as Arc<dyn Executor>,
+        }
     }
 
     #[cfg(unix)]
@@ -124,6 +149,9 @@ impl Arena {
     pub fn drain(&self) {
         if !self.draining.swap(true, Ordering::SeqCst) {
             eprintln!("arrêt demandé : fin des parties en cours, aucune nouvelle");
+            if let Some(nodes) = &self.nodes {
+                nodes.drain();
+            }
         }
     }
 
@@ -206,7 +234,7 @@ impl Arena {
             black,
             timeout: cfg.game_timeout(time_ms),
         };
-        let result = self.local.run(&run, out)?;
+        let result = self.executor(slot.slot()).run(&run, out)?;
         if let Some(absent) = annulled_no_show(&result, fixture, red, black) {
             return Err(GameError::NoShow(absent.id.clone()));
         }

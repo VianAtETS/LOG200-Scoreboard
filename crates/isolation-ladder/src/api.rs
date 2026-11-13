@@ -91,9 +91,21 @@ pub fn serve(arena: &Arc<Arena>, hub: &Arc<Hub>, registry: Option<&Arc<Registry>
             .or_default()
             .push("équipes distantes : ws://{}/api/remote");
     }
+    if let (Some(nodes), Some(hub)) = (&cfg.nodes, arena.nodes()) {
+        router = router.merge(
+            Router::new()
+                .route(crate::node::protocol::PATH, get(crate::node::hub::upgrade))
+                .with_state(Arc::clone(hub)),
+        );
+        announced
+            .entry(&nodes.listen)
+            .or_default()
+            .push("nœuds : ws://{}/api/node (LAN seulement)");
+    }
     if announced.is_empty() {
         return Ok(None);
     }
+
     let router = router.fallback(not_found).layer(DefaultBodyLimit::disable());
     let runtime = Runtime::new()?;
     for (address, services) in announced {

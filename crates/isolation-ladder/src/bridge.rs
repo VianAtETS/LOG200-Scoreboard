@@ -47,6 +47,21 @@ impl Socket {
     }
 }
 
+impl Socket {
+    /// Pour écrire depuis d'autres threads que celui qui lit.
+    pub fn sender(&self) -> UnboundedSender<Frame> {
+        self.outgoing.clone()
+    }
+
+    /// Un `Socket` relié à des canaux, pour jouer l'autre bout dans un test.
+    #[cfg(test)]
+    pub fn pair() -> (Self, Sender<Frame>, UnboundedReceiver<Frame>) {
+        let (incoming_tx, incoming) = mpsc::channel();
+        let (outgoing, outgoing_rx) = unbounded_channel();
+        (Self { incoming, outgoing }, incoming_tx, outgoing_rx)
+    }
+}
+
 pub fn connect(socket: WebSocket) -> (Socket, impl Future<Output = ()>) {
     let (incoming_tx, incoming) = mpsc::channel();
     let (outgoing, outgoing_rx) = unbounded_channel();

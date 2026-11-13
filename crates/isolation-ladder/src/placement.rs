@@ -2,7 +2,6 @@
 //! connectés (`node/`). Une paire tient un bail ([`Lease`]) sur un slot concret pour ses deux parties
 //! et sa pause ; chaque partie occupe en plus le slot ([`InUse`]) le temps de se jouer, et un smoke
 //! test peut s'y glisser entre deux parties, comme avant les nœuds.
-#![cfg_attr(not(test), expect(dead_code, reason = "nœuds branchés par la suite du plan"))]
 
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
@@ -227,11 +226,6 @@ impl Lease {
     pub const fn kind(&self) -> SlotKind {
         self.kind
     }
-
-    /// Faux une fois son nœud parti.
-    pub fn alive(&self) -> bool {
-        !lock(&self.placement.slots)[self.position].gone
-    }
 }
 
 impl Drop for Lease {
@@ -248,6 +242,10 @@ pub struct InUse {
 }
 
 impl InUse {
+    pub const fn slot(&self) -> &SlotId {
+        &self.id
+    }
+
     pub const fn index(&self) -> usize {
         self.id.index
     }
@@ -327,10 +325,14 @@ mod tests {
         let p = placement("");
         p.add_node("node-a", 1);
         let lease = p.try_lease(PairClass::Portable).unwrap();
-        assert!(lease.alive());
         p.remove_node("node-a");
-        assert!(!lease.alive());
         assert!(!p.idle(), "le bail mort est encore tenu");
+        assert_eq!(
+            at(&p.try_lease(PairClass::Portable).unwrap()),
+            (LOCAL, 0),
+            "plus de slot sur node-a"
+        );
+
         drop(lease);
         assert!(p.idle());
         assert_eq!(at(&p.try_lease(PairClass::Portable).unwrap()), (LOCAL, 0));

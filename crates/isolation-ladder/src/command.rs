@@ -83,7 +83,6 @@ impl CommandTemplate {
     }
 
     /// Stratégie et options d'un bot de référence (`... --bot niveau-2 --margin-ms 100`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "envoyé aux nœuds, branchés ensuite"))]
     pub fn bot(&self) -> Option<(&str, &[String])> {
         let at = self.0.iter().position(|a| a == "--bot")?;
         let strategy = self.0.get(at + 1)?;

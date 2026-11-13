@@ -371,7 +371,7 @@ fn spawn_logged(mut command: Command, log: &Path) -> io::Result<LoggedPlayer> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
 
     /// Garde les événements et range les journaux dans `dir`.
