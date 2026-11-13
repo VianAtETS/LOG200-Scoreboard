@@ -9,7 +9,8 @@ use std::time::Duration;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::command::CommandTemplate;
+use crate::command::{CommandTemplate, ExecConfig};
+
 use crate::team_id::TeamId;
 use crate::tournament::calendar::Schedule;
 
@@ -72,9 +73,12 @@ pub struct Config {
     pub nodes: Option<NodesConfig>,
     #[serde(default, rename = "team")]
     pub teams: Vec<TeamConfig>,
+    /// Ce qu'il faut pour lancer une partie ici, tiré des clés ci-dessus (`command::ExecConfig`).
+    #[serde(skip)]
+    pub exec: ExecConfig,
 }
 
-fn default_port() -> u16 {
+pub fn default_port() -> u16 {
     8888
 }
 fn default_out() -> PathBuf {
@@ -86,13 +90,13 @@ fn default_db() -> PathBuf {
 fn default_opening_plies() -> usize {
     2
 }
-fn default_ready_marker() -> String {
+pub fn default_ready_marker() -> String {
     "LISTENING".into()
 }
-fn default_red_connected_marker() -> String {
+pub fn default_red_connected_marker() -> String {
     "CONNECTED red".into()
 }
-fn default_startup_ms() -> u64 {
+pub fn default_startup_ms() -> u64 {
     1000
 }
 fn default_team_cmd() -> CommandTemplate {
@@ -119,7 +123,8 @@ impl FromStr for Config {
     type Err = ConfigError;
 
     fn from_str(text: &str) -> Result<Self, ConfigError> {
-        let config: Self = toml::from_str(text)?;
+        let mut config: Self = toml::from_str(text)?;
+        config.exec = ExecConfig::from(&config);
         if !config.opening_plies.is_multiple_of(2) {
             return Err(ConfigError::OddOpening(config.opening_plies));
         }
@@ -191,7 +196,7 @@ impl Config {
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 pub struct Slot {
     /// Réservé aux parties d'une équipe `multithread`, qui seules y jouent.
     #[serde(default)]

@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(pair_class(&placement, &none, &single, &multi), PairClass::Multithread);
         assert_eq!(pair_class(&placement, &none, &multi, &single), PairClass::Multithread);
         let vars = Vars {
-            cfg: &cfg,
+            cfg: &cfg.exec,
             slot: 1,
             opening: String::new(),
             game: "g1",

@@ -11,6 +11,7 @@ mod migrate;
 // Matchmaking et parties
 mod arena;
 mod command;
+mod exec;
 mod pairs;
 mod placement;
 mod play;
