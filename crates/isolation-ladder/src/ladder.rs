@@ -39,13 +39,14 @@ pub fn load(path: &Path) -> anyhow::Result<Config> {
         .with_context(|| path.display().to_string())
 }
 
-pub fn run(path: &Path, rounds: Option<u64>) -> anyhow::Result<()> {
+pub fn run(path: &Path, rounds: Option<u64>, archives: bool) -> anyhow::Result<()> {
     warn_if_init();
     let sigterm = Sigterm::listen().context("écoute de SIGTERM")?;
     let cfg = load(path)?;
     let logs = cfg.logs_dir();
     fs::create_dir_all(&logs).with_context(|| logs.display().to_string())?;
-    let (db, scheduler, standings, tournaments) = restore(&cfg, rounds)?;
+    let (db, scheduler, mut standings, tournaments) = restore(&cfg, rounds)?;
+    standings.set_archives(archives)?;
     let live = Live::new(cfg.data_dir().to_path_buf()).with_context(|| cfg.data_dir().display().to_string())?;
 
     let (reports, received) = mpsc::channel();

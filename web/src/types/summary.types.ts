@@ -20,6 +20,7 @@ export type TTeamRating = {
   remote?: boolean;
   anchor?: boolean;
   provisional?: boolean;
+  games: number;
   wins: number;
   losses: number;
   build_wins: number;
@@ -41,6 +42,8 @@ export type TSummary = {
   scopes: Record<string, TScope>;
   // Présent une fois une partie distante jouée.
   verified?: Record<string, TScope>;
+  // Filtres de versions archivées (ladder lancé avec --archives).
+  archives?: boolean;
 };
 
 // Modèle de probabilité de model.json.

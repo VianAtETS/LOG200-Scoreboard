@@ -8,14 +8,15 @@ import { queryKeys } from './query-keys';
 
 // Parties des équipes choisies, lues dans teams/<équipe>.jsonl puis suivies par morceaux. Les lectures
 // passent à la file : deux lectures en parallèle d'un même fichier doubleraient des lignes.
-export const useGetTeamRows = (teams: string[]) => {
+// `use` : une clé par usage, pour que deux appels sur les mêmes équipes ne partagent pas leur cache.
+export const useGetTeamRows = (teams: string[], use = 'picked') => {
   const followed = useRef(new Map<string, TTailState<TGameRow>>());
   const following = useRef<Promise<unknown>>(Promise.resolve());
   // Même Map tant que rien n'arrive : la page ne pulse qu'à l'arrivée de parties.
   const last = useRef<Map<string, TGameRow[]> | null>(null);
 
   return useQuery({
-    queryKey: [queryKeys.teamRows, teams.join(',')],
+    queryKey: [queryKeys.teamRows, use, teams.join(',')],
     queryFn: () => {
       for (const team of followed.current.keys()) if (!teams.includes(team)) followed.current.delete(team);
       for (const team of teams) if (!followed.current.has(team)) followed.current.set(team, tailState());

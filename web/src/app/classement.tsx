@@ -1,6 +1,6 @@
 // Page du ladder : classement et dernières parties de summary.json, parties des équipes choisies
 // dans teams/, replay lu partie par partie sur /api/games/<id>.
-// ?session=, ?teams=, ?match=, ?window=, ?verified=, ?pace=, ?record= et ?game= suivent les choix de la page : l'adresse
+// ?session=, ?teams=, ?match=, ?window=, ?verified=, ?pace=, ?record=, ?archives= et ?game= suivent les choix de la page : l'adresse
 // se partage telle quelle. ?team= des anciens liens vaut ?teams= avec cette seule équipe.
 
 import { LiveStatus } from '@/components/controls/live-status';
@@ -13,6 +13,7 @@ import { EloChart } from '@/components/elo-chart/elo-chart';
 import { Masthead } from '@/components/masthead/masthead';
 import { TeamPicker } from '@/components/picker/team-picker';
 import { QueueDialog } from '@/components/queue/queue-dialog';
+import { ArchiveFilter } from '@/components/ranking/archive-filter';
 import { RankingPanel } from '@/components/ranking/ranking-panel';
 import { DEFAULT_STATS, ELO_STATS, nextStat, PACE_STATS, RECORD_STATS, statOf } from '@/components/ranking/ranking.data';
 import { ReplayPanel } from '@/components/replay/replay-panel';
@@ -24,6 +25,7 @@ import { teamUrl } from '@/dao/scoreboard.repository';
 import { useLiveGames } from '@/hooks/use-live-games';
 import { usePulse } from '@/hooks/use-pulse';
 import { useSearchParam } from '@/hooks/use-search-param';
+import { archivedRows, archiveOptions, withArchivedRows } from '@/lib/archives';
 import { GLOBAL, windowOf } from '@/lib/constants';
 import { BETWEEN, gamesOf, isRemote, ratingOf } from '@/lib/elo';
 import { timeFormat, versionOf } from '@/lib/format';
@@ -86,6 +88,22 @@ const ClassementPage = () => {
   const teamsKey = summary ? chosen.filter((t) => known.has(t)).join(',') : '';
   const teams = useMemo(() => teamsKey.split(',').filter(Boolean), [teamsKey]);
   const { data: rows, isPlaceholderData } = useGetTeamRows(teams);
+
+  // Versions archivées : seulement avec un ladder lancé avec --archives.
+  const [archivesParam, setArchivesParam] = useSearchParam('archives');
+  const archiveChoices = useMemo(() => (summary?.archives ? archiveOptions(summary) : []), [summary]);
+  const wantedArchives = useMemo(() => (archivesParam ?? '').split(',').filter(Boolean), [archivesParam]);
+  const pickedArchives = useMemo(
+    () => archiveChoices.filter((o) => wantedArchives.includes(o.key)),
+    [archiveChoices, wantedArchives]
+  );
+  const archiveTeamsKey = [...new Set(pickedArchives.map((o) => o.team))].join(',');
+  const archiveTeams = useMemo(() => archiveTeamsKey.split(',').filter(Boolean), [archiveTeamsKey]);
+  const { data: archiveFiles, error: archiveError } = useGetTeamRows(archiveTeams, 'archives');
+  const rankingRows = useMemo(() => {
+    const games = new Map([...(archiveFiles?.values() ?? [])].flat().map((g) => [g.id, g]));
+    return withArchivedRows(scope?.ratings ?? [], archivedRows([...games.values()], pickedArchives, { session, verified }));
+  }, [archiveFiles, pickedArchives, scope, session, verified]);
 
   const list = useMemo(() => {
     if (!scope) return [];
@@ -211,7 +229,7 @@ const ClassementPage = () => {
 
       <main className="layout">
         <RankingPanel
-          ratings={ratings}
+          ratings={rankingRows}
           loaded={Boolean(scope)}
           running={running}
           model={model}
@@ -227,7 +245,16 @@ const ClassementPage = () => {
             setPaceParam(next === DEFAULT_STATS.pace ? null : next);
           }}
           onOpenQueue={() => setQueueOpen(true)}
-        />
+        >
+          {summary?.archives && (
+            <ArchiveFilter
+              options={archiveChoices}
+              wanted={wantedArchives}
+              onChange={(next) => setArchivesParam(next.join(',') || null)}
+              error={archiveError?.message}
+            />
+          )}
+        </RankingPanel>
 
         <SubmitPanel />
 

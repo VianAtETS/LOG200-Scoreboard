@@ -114,3 +114,26 @@ target/bot/isolation-bot --port 8888 --strategy random --probe-illegal
 The bot checks every move of the official CPU with our engine. Each turn it first sends a move our engine considers illegal and expects `4` back. A `DIVERGENCE` line in its report means our rules differ from the server's.
 
 Against a CPU set to Niveau 1, with a generous timer, add `--expect niveau-1`: after each game, the bot checks that every CPU move is one our replica could have played.
+
+## Versions archivées du classement (facultatif)
+
+`isolation-ladder ladder.toml --archives` active le filtre de versions archivées sur
+le classement. Sans cet argument, l'affichage habituel est conservé. Redémarrer avec
+ou sans ce flag ; aucune modification de base n'est nécessaire.
+Les graphes gardent leur comportement habituel.
+
+Le filtre permet de rechercher une équipe/version/hash et de cocher précisément les
+anciennes versions à afficher, par exemple **eq110 v1** et **eq118 v2**. Plusieurs
+anciennes versions d'une même équipe sont sélectionnables. Les choix du classement
+sont conservés dans `?archives=` ; « Tout masquer » les retire.
+
+Une version est identifiée par **équipe + hash du JAR**. Son numéro vN garde l'ordre de
+`summary.builds` ; une équipe entière n'est jamais déclarée archivée. Le dernier build
+joué par l'équipe (toutes sessions) est actif ; si un ancien hash rejoue, il redevient
+actif sans changer de numéro. Seuls les builds ayant déjà joué apparaissent.
+
+Les lignes archivées montrent leurs propres victoires/défaites, leur dernier Elo et
+leur maximum historique, sans rang actuel ni badge de partie en cours. Les temps par
+coup non publiés pour ces builds restent vides. Elles ne recalculent pas le classement.
+Les sessions, tournois et parties distantes suivent les mêmes filtres que la vue active.
+Les historiques des seules équipes archivées sélectionnées sont lus à la demande.

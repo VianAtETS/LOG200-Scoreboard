@@ -3,13 +3,17 @@ import { useScrollEdges } from '@/hooks/use-scroll-edges';
 import { winProbability } from '@/lib/predict';
 import { cn } from '@/lib/utils';
 import type { TRunningGame } from '@/types/games.types';
-import type { TModel, TPaceStat, TTeamRating } from '@/types/summary.types';
-import { useRef, useState, type FC, type SyntheticEvent } from 'react';
+import type { TRankingRow } from '@/lib/archives';
+import type { TModel, TPaceStat } from '@/types/summary.types';
+import { useRef, useState, type FC, type ReactNode, type SyntheticEvent } from 'react';
 import { ELO_STATS, PACE_STATS, RECORD_STATS, type TEloStat, type TRecordStat } from './ranking.data';
 import { RankingRow, type TDuel } from './ranking-row';
 
 type Props = {
-  ratings: TTeamRating[];
+  // Lignes actives, et versions archivées choisies sous leur équipe.
+  ratings: TRankingRow[];
+  // Filtre des archives, sous le titre.
+  children?: ReactNode;
   loaded: boolean;
   running: TRunningGame[];
   model: TModel | null | undefined;
@@ -43,6 +47,7 @@ const RankingPanel: FC<Props> = ({
   onNextRecord,
   onNextPace,
   onOpenQueue,
+  children,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const scroll = useScrollEdges(scrollRef);
@@ -57,7 +62,9 @@ const RankingPanel: FC<Props> = ({
     if (!duels.has(g.black))
       duels.set(g.black, { id: g.id, opponent: g.red, color: 'black', chance: winProbability(model, g.black, g.red, 'black') });
   }
-  const listed = new Set(ratings.map((r) => r.team));
+  const active = ratings.filter((r) => !r.archived);
+  const listed = new Set(active.map((r) => r.team));
+  const ranks = new Map(active.map((r, i) => [r.team, i + 1]));
 
   const showOpponent = (e: SyntheticEvent) => setOpponent(opponentOf(e));
   const clearOpponent = () => setOpponent(null);
@@ -77,6 +84,7 @@ const RankingPanel: FC<Props> = ({
   return (
     <section className="panel ranking" aria-labelledby="ranking-title">
       <h2 id="ranking-title">Classement</h2>
+      {children}
       <div
         ref={scrollRef}
         className={cn('scroll ranking-scroll', scroll.edges.less && 'less', scroll.edges.more && 'more')}
@@ -142,7 +150,19 @@ const RankingPanel: FC<Props> = ({
             onBlur={clearOpponent}
             onClick={goToOpponent}
           >
-            {ratings.map((r, i) => {
+            {ratings.map((r) => {
+              if (r.archived)
+                return (
+                  <RankingRow
+                    key={`${r.team}@${r.build}`}
+                    rating={r}
+                    version={versionOf(r.team, r.build)}
+                    opponentListed={false}
+                    eloStat={eloStat}
+                    recordStat={recordStat}
+                    paceStat={paceStat}
+                  />
+                );
               const duel = duels.get(r.team);
               return (
                 <RankingRow
@@ -151,7 +171,7 @@ const RankingPanel: FC<Props> = ({
                     if (node) rows.current.set(r.team, node);
                     else rows.current.delete(r.team);
                   }}
-                  rank={i + 1}
+                  rank={ranks.get(r.team)}
                   rating={r}
                   version={versionOf(r.team, r.build)}
                   duel={duel}

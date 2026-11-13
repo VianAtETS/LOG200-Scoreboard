@@ -5,6 +5,7 @@ const badgeVariantsStyles = {
   default: '',
   remote: 'remote',
   anchor: 'anchor',
+  archived: 'archived',
 };
 
 type TBadgeVariant = keyof typeof badgeVariantsStyles;
