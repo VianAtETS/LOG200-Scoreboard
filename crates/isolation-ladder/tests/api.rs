@@ -33,6 +33,7 @@ struct Ladder {
     submit: String,
     remote: String,
     live: String,
+    nodes: String,
 }
 
 impl Ladder {
@@ -47,7 +48,8 @@ impl Ladder {
                 "referee = [\"unused\"]\ntime_ms = 1000\nsession = \"api\"\nteam_cmd = [\"unused\"]\n\
                  [submit]\nlisten = \"127.0.0.1:0\"\nmax_jar_mb = {MAX_JAR_MB}\n\
                  [remote]\nlisten = \"127.0.0.1:0\"\n\
-                 [live]\nlisten = \"127.0.0.1:0\"\n"
+                 [live]\nlisten = \"127.0.0.1:0\"\n\
+                 [nodes]\nlisten = \"127.0.0.1:0\"\n"
             ),
         )
         .unwrap();
@@ -59,8 +61,8 @@ impl Ladder {
             .spawn()
             .unwrap();
         let mut stderr = BufReader::new(process.stderr.take().unwrap());
-        let [mut submit, mut remote, mut live] = [None, None, None];
-        while submit.is_none() || remote.is_none() || live.is_none() {
+        let [mut submit, mut remote, mut live, mut nodes] = [None, None, None, None];
+        while submit.is_none() || remote.is_none() || live.is_none() || nodes.is_none() {
             let mut announced = String::new();
             assert_ne!(
                 stderr.read_line(&mut announced).unwrap(),
@@ -74,6 +76,7 @@ impl Ladder {
             submit = submit.or_else(|| address("/api/submit"));
             remote = remote.or_else(|| address("/api/remote"));
             live = live.or_else(|| address("/api/live"));
+            nodes = nodes.or_else(|| address("/api/node"));
         }
         thread::spawn(move || io::copy(&mut stderr, &mut io::sink()));
         Self {
@@ -82,6 +85,7 @@ impl Ladder {
             submit: submit.unwrap(),
             remote: remote.unwrap(),
             live: live.unwrap(),
+            nodes: nodes.unwrap(),
         }
     }
 
@@ -97,12 +101,16 @@ impl Ladder {
 
     /// Status code and first line of the body, what the teams' CI reads.
     fn request(&self, method: &str, path: &str, token: Option<&str>, body: &[u8]) -> (u16, String) {
-        let mut stream = TcpStream::connect(&self.submit).unwrap();
+        Self::request_at(&self.submit, method, path, token, body)
+    }
+
+    fn request_at(address: &str, method: &str, path: &str, token: Option<&str>, body: &[u8]) -> (u16, String) {
+        let mut stream = TcpStream::connect(address).unwrap();
         let authorization = token.map_or_else(String::new, |t| format!("Authorization: Bearer {t}\r\n"));
         write!(
             stream,
             "{method} {path} HTTP/1.1\r\nHost: {}\r\n{authorization}Content-Length: {}\r\nConnection: close\r\n\r\n",
-            self.submit,
+            address,
             body.len()
         )
         .unwrap();
@@ -226,6 +234,20 @@ fn remote_accepts_only_a_team_token() {
     );
     let (_, response) = tungstenite::connect(request).unwrap();
     assert_eq!(response.status(), 101);
+}
+
+#[test]
+fn node_route_is_served_only_on_the_nodes_address() {
+    let ladder = Ladder::start("nodes");
+    let (status, _) = ladder.request("GET", "/api/node", None, b"");
+    assert_eq!(status, 404, "jamais sur l'adresse publique, que le proxy relaie");
+    let refused = tungstenite::connect(format!("ws://{}/api/node", ladder.nodes)).unwrap_err();
+    assert!(
+        matches!(&refused, tungstenite::Error::Http(response) if response.status() == 401),
+        "{refused}"
+    );
+    let (status, _) = Ladder::request_at(&ladder.nodes, "GET", "/api/games", None, b"");
+    assert_eq!(status, 404, "l'adresse des nœuds ne sert rien d'autre");
 }
 
 #[test]

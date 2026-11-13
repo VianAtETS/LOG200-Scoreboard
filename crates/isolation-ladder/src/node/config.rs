@@ -101,13 +101,15 @@ pub mod tests {
     #[test]
     fn example_node_config_parses() {
         let cfg: NodeConfig = include_str!("../../../../node.example.toml").parse().unwrap();
-        assert_eq!((cfg.id.as_str(), cfg.slots(), cfg.bots[0].as_str()), ("node-a", 2, "aleatoire"));
+        assert_eq!(
+            (cfg.id.as_str(), cfg.slots(), cfg.bots[0].as_str()),
+            ("node-a", 2, "aleatoire")
+        );
         assert_eq!(cfg.exec.slots[1].sandbox["cpuset_red"].as_str(), Some("6"));
     }
 
     #[test]
     fn a_node_config_parses_and_checks_what_it_cannot_do_without() {
-
         let cfg: NodeConfig = NODE.parse().unwrap();
         assert_eq!((cfg.slots(), cfg.cache_mb, cfg.max_jar_mb), (2, 512, 20));
         assert!(NODE.replace("\"node-a\"", "\"../x\"").parse::<NodeConfig>().is_err());

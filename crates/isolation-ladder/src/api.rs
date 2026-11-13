@@ -91,23 +91,29 @@ pub fn serve(arena: &Arc<Arena>, hub: &Arc<Hub>, registry: Option<&Arc<Registry>
             .or_default()
             .push("équipes distantes : ws://{}/api/remote");
     }
-    if let (Some(nodes), Some(hub)) = (&cfg.nodes, arena.nodes()) {
-        router = router.merge(
-            Router::new()
-                .route(crate::node::protocol::PATH, get(crate::node::hub::upgrade))
-                .with_state(Arc::clone(hub)),
-        );
-        announced
-            .entry(&nodes.listen)
-            .or_default()
-            .push("nœuds : ws://{}/api/node (LAN seulement)");
-    }
-    if announced.is_empty() {
+    // Les nœuds ont leur propre adresse et rien d'autre : le proxy public relaie /api/* vers les
+    // autres, /api/node ne doit jamais y répondre.
+    let nodes = cfg.nodes.as_ref().zip(arena.nodes()).map(|(nodes, hub)| {
+        let router = Router::new()
+            .route(crate::node::protocol::PATH, get(crate::node::hub::upgrade))
+            .with_state(Arc::clone(hub))
+            .fallback(not_found);
+        (nodes.listen.as_str(), router)
+    });
+    if announced.is_empty() && nodes.is_none() {
         return Ok(None);
     }
 
     let router = router.fallback(not_found).layer(DefaultBodyLimit::disable());
     let runtime = Runtime::new()?;
+    if let Some((address, router)) = nodes {
+        let listener = runtime
+            .block_on(TcpListener::bind(address))
+            .with_context(|| format!("écoute des nœuds sur {address}"))?;
+        eprintln!("nœuds (LAN seulement) : ws://{}/api/node", listener.local_addr()?);
+        runtime.spawn(axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future());
+    }
+
     for (address, services) in announced {
         let listener = runtime
             .block_on(TcpListener::bind(address))
