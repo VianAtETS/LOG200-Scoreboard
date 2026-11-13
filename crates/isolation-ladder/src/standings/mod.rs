@@ -34,6 +34,13 @@ fn round2(x: f64) -> f64 {
     (x * 100.0).round() / 100.0
 }
 
+/// Temps par coup mesuré d'un build : base de la portabilité (`roster::pair_class`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Measured {
+    pub p99: u64,
+    pub count: u64,
+}
+
 /// Temps par coup d'un build : les temps sont des ms entières, un compte par valeur suffit.
 #[derive(Default)]
 struct Pace {
@@ -182,7 +189,8 @@ impl Scope {
             } else {
                 vec![]
             };
-            if !ms.is_empty() {
+            // Le rythme sert à juger la portabilité d'une équipe : mesuré au serveur principal seulement.
+            if !ms.is_empty() && game.node.is_none() {
                 let pace = s.paces.entry(players[color].build.clone()).or_insert_with(|| Pace {
                     limit: u64::MAX,
                     ..Pace::default()
@@ -368,6 +376,17 @@ impl Standings {
         self.full.all.teams.get(team).map_or(START, |s| s.rating)
     }
 
+    /// Rythme du build courant de `team`, mesuré au serveur principal, toutes sessions.
+    #[cfg_attr(not(test), expect(dead_code, reason = "lu par la portabilité, branchée ensuite"))]
+    pub fn pace(&self, team: &str) -> Option<Measured> {
+        let standing = self.full.all.teams.get(team)?;
+        let pace = standing.paces.get(&standing.build)?;
+        Some(Measured {
+            p99: pace.percentile(0.99),
+            count: pace.total,
+        })
+    }
+
     pub fn build(&self, team: &str) -> Option<&str> {
         self.full.all.teams.get(team)?.build.as_deref()
     }
@@ -510,6 +529,7 @@ mod tests {
             red: player(red),
             black: player(black),
             tournament: None,
+            node: None,
             result: GameResult {
                 v: RECORD_VERSION,
                 time_ms: 500,
@@ -603,6 +623,23 @@ mod tests {
         let ratings = scope.ratings(false);
         let a = rating(&ratings, "a");
         assert!(a.peak > a.rating && a.peak > START);
+    }
+
+    #[test]
+    fn pace_counts_only_games_played_on_the_main_server() {
+        let mut standings = Standings::new(Path::new("d"));
+        let timed = |ms: u64, node: Option<&str>| {
+            let mut g = game("a", "b", Color::Red);
+            g.red.build = Some("v1".into());
+            g.result.moves = vec![String::new(); 200];
+            g.result.move_ms = vec![ms; 200];
+            g.node = node.map(String::from);
+            g
+        };
+        standings.play(&timed(50, None));
+        standings.play(&timed(400, Some("node-b")));
+        assert_eq!(standings.pace("a"), Some(Measured { p99: 50, count: 100 }));
+        assert_eq!(standings.pace("nobody"), None);
     }
 
     #[test]

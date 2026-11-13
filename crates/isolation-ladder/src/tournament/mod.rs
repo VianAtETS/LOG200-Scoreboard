@@ -391,6 +391,7 @@ pub(super) mod tests {
             red: player(&p.red),
             black: player(&p.black),
             tournament: Some(p.game.clone()),
+            node: None,
             result: GameResult {
                 v: RECORD_VERSION,
                 time_ms: 5000,

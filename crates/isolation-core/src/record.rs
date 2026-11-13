@@ -85,6 +85,9 @@ pub struct GameRecord {
     pub black: Player,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tournament: Option<TournamentGame>,
+    /// Nœud qui a joué la partie ; absent : le serveur principal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
     #[serde(flatten)]
     pub result: GameResult,
 }
@@ -250,6 +253,7 @@ mod tests {
                 remote: false,
             },
             tournament: None,
+            node: None,
             result: GameResult {
                 v: RECORD_VERSION,
                 time_ms: 500,
@@ -284,6 +288,21 @@ mod tests {
             game.result.moves[0]
         );
         assert_eq!(serde_json::to_string(&game).unwrap(), expected);
+    }
+
+    #[test]
+    fn a_record_without_node_round_trips_unchanged() {
+        let line = serde_json::to_string(&sample()).unwrap();
+        let back: GameRecord = serde_json::from_str(&line).unwrap();
+        assert_eq!(back.node, None);
+        assert_eq!(serde_json::to_string(&back).unwrap(), line);
+        let on_node = GameRecord {
+            node: Some("node-a".into()),
+            ..sample()
+        };
+        let line = serde_json::to_string(&on_node).unwrap();
+        assert!(line.contains(r#""node":"node-a""#));
+        assert_eq!(serde_json::from_str::<GameRecord>(&line).unwrap(), on_node);
     }
 
     #[test]

@@ -261,6 +261,7 @@ impl Arena {
             red: red_entry,
             black: black_entry,
             tournament: fixture.map(|f| f.game.clone()),
+            node: None,
             result,
         })
     }
