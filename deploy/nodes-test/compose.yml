@@ -1,0 +1,40 @@
+# Banc d'essai des noeuds : un ladder et deux noeuds, la meme image (voir run.sh).
+name: isolation-nodes-test
+
+x-sandbox: &sandbox
+  image: ${IMAGE:-isolation-ladder:nodes}
+  privileged: true
+  init: true
+
+services:
+  ladder:
+    <<: *sandbox
+    ports:
+      - "127.0.0.1:18090:8090"
+    volumes:
+      - ./ladder.toml:/srv/ladder.toml:ro
+      - ./jars:/srv/jars
+      - ./data:/srv/data
+      - ./state:/srv/state
+      - ladder-docker:/var/lib/docker
+
+  node-a:
+    <<: *sandbox
+    command: ["node"]
+    volumes:
+      - ./node-a.toml:/srv/node.toml:ro
+      - ./node-a.token:/srv/node.token:ro
+      - node-a-docker:/var/lib/docker
+
+  node-b:
+    <<: *sandbox
+    command: ["node"]
+    volumes:
+      - ./node-b.toml:/srv/node.toml:ro
+      - ./node-b.token:/srv/node.token:ro
+      - node-b-docker:/var/lib/docker
+
+volumes:
+  ladder-docker:
+  node-a-docker:
+  node-b-docker:

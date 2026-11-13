@@ -1,0 +1,24 @@
+# Noeud node-a du banc d'essai (run.sh).
+id = "node-a"
+ladder = "ws://ladder:8093/api/node"
+token_file = "/srv/node.token"
+bots = ["aleatoire", "niveau-1"]
+bot_cmd = ["sandbox/run-player.sh", "{game}", "{side}", "{port}", "--bot"]
+
+[exec]
+referee = ["sandbox/run-referee.sh", "{game}", "{port}", "{time_ms}", "{opening}"]
+cleanup = ["sandbox/cleanup.sh", "{game}"]
+
+[exec.sandbox]
+image = "isolation-sandbox"
+runtime = "runsc-host-uds"
+rundir = "/tmp/isolation-ladder"
+memory = "512m"
+java_heap = "384m"
+connect_timeout_ms = "30000"
+cpus = "1"
+pids = "128"
+
+[[exec.slot]]
+cpuset_red = "2"
+cpuset_black = "3"
