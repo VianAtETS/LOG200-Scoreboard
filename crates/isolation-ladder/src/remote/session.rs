@@ -11,16 +11,16 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
-use axum::extract::ws::{CloseFrame, Message as Frame, WebSocket, close_code};
+use axum::extract::ws::Message as Frame;
 use axum::http::StatusCode;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use tokio::time::timeout;
 
 use isolation_core::remote::{Message, PROTOCOL_VERSION, is_build};
 
 use super::stream::RefereeStream;
 use super::{GameSpec, Registry};
+use crate::bridge::{Gone, Socket};
 use crate::submit::{bearer, find_team, load_teams};
+
 use crate::sync::lock;
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -37,8 +37,6 @@ const FRESH: Duration = Duration::from_secs(15);
 const END_GRACE: Duration = Duration::from_millis(500);
 pub const MAX_MESSAGE: usize = 64 << 10;
 /// Close reasons travel in one control frame.
-const MAX_REASON: usize = 123;
-const CLOSE_WAIT: Duration = Duration::from_secs(1);
 /// Une partie dure quelques minutes, à un ping toutes les 10 s.
 const MAX_RTT_SAMPLES: usize = 64;
 /// Texte du client repris dans les journaux.
@@ -184,74 +182,6 @@ pub fn authenticate(teams: &Path, authorization: Option<&str>) -> Result<String,
         })
 }
 
-/// The session thread's end of the client's WebSocket, which an async pump serves.
-pub struct Socket {
-    incoming: Receiver<Frame>,
-    outgoing: UnboundedSender<Frame>,
-}
-
-impl Socket {
-    fn read(&self, wait: Duration) -> Result<Option<Frame>, Gone> {
-        match self.incoming.recv_timeout(wait) {
-            Ok(frame) => Ok(Some(frame)),
-            Err(RecvTimeoutError::Timeout) => Ok(None),
-            Err(RecvTimeoutError::Disconnected) => Err(Gone),
-        }
-    }
-
-    fn send(&self, frame: Frame) -> Result<(), Gone> {
-        self.outgoing.send(frame).map_err(|_| Gone)
-    }
-
-    fn goodbye(&self, reason: &str) {
-        let mut end = reason.len().min(MAX_REASON);
-        while !reason.is_char_boundary(end) {
-            end -= 1;
-        }
-        let frame = CloseFrame {
-            code: close_code::POLICY,
-            reason: reason[..end].into(),
-        };
-        let _ = self.send(Frame::Close(Some(frame)));
-    }
-}
-
-pub fn connect(socket: WebSocket) -> (Socket, impl Future<Output = ()>) {
-    let (incoming_tx, incoming) = mpsc::channel();
-    let (outgoing, outgoing_rx) = unbounded_channel();
-    (Socket { incoming, outgoing }, pump(socket, incoming_tx, outgoing_rx))
-}
-
-/// Lives until the client or the session leaves; after a close frame, waits briefly for the client's.
-async fn pump(mut socket: WebSocket, incoming: Sender<Frame>, mut outgoing: UnboundedReceiver<Frame>) {
-    loop {
-        tokio::select! {
-            frame = outgoing.recv() => match frame {
-                Some(frame @ Frame::Close(_)) => {
-                    if socket.send(frame).await.is_ok() {
-                        let _ = timeout(CLOSE_WAIT, async { while let Some(Ok(_)) = socket.recv().await {} }).await;
-                    }
-                    return;
-                }
-                Some(frame) => {
-                    if socket.send(frame).await.is_err() {
-                        return;
-                    }
-                }
-                None => return,
-            },
-            frame = socket.recv() => match frame {
-                Some(Ok(frame)) => {
-                    if incoming.send(frame).is_err() {
-                        return;
-                    }
-                }
-                Some(Err(_)) | None => return,
-            },
-        }
-    }
-}
-
 /// Build déclaré par le client.
 fn hello(socket: &Socket) -> Result<String, String> {
     let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
@@ -281,9 +211,6 @@ fn printable(text: &str) -> String {
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect()
 }
-
-/// Le client est parti.
-struct Gone;
 
 /// La WebSocket d'une session : pings, silence du client, temps d'aller-retour.
 struct Link {
