@@ -680,10 +680,14 @@ mod tests {
                 .try_lease(PairClass::Portable)
                 .is_some_and(|l| !l.slot().local())
         });
-        let nodes: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(dir.join("nodes.json")).unwrap()).unwrap();
-        assert_eq!(nodes["nodes"][0]["ready"], true);
-        assert_eq!(nodes["nodes"][0]["slots"], 2);
+        // nodes.json suit le placement de près, pas dans le même instant : on l'attend.
+        let published = || {
+            let text = fs::read_to_string(dir.join("nodes.json")).unwrap_or_default();
+            serde_json::from_str::<serde_json::Value>(&text).unwrap_or_default()
+        };
+        eventually("publié prêt", || published()["nodes"][0]["ready"] == true);
+        assert_eq!(published()["nodes"][0]["slots"], 2);
+
         drop(peer);
         served.join().unwrap();
         let lease = hub.placement.try_lease(PairClass::Portable).unwrap();
