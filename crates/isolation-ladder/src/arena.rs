@@ -134,7 +134,7 @@ impl Arena {
     #[cfg(unix)]
     pub fn drain_on(self: &Arc<Self>, mut sigterm: Sigterm) {
         let arena = Arc::clone(self);
-        thread::spawn(move || {
+        std::thread::spawn(move || {
             for _ in sigterm.0.forever() {
                 arena.drain();
             }
@@ -421,7 +421,7 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !arena.draining() {
             assert!(std::time::Instant::now() < deadline, "SIGTERM lost");
-            thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
