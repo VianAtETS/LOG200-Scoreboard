@@ -68,6 +68,7 @@ impl Registry {
                 build: None,
                 anchor: false,
                 multithread: false,
+                portable: false,
                 remote: Some(Seat {
                     registry: Arc::clone(self),
                     team: session.team.clone(),

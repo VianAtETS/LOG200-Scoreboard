@@ -21,6 +21,8 @@ pub struct Pairs {
     pub scheduler: Scheduler,
     /// Slots et baux : une paire en cours, pause comprise, tient le sien.
     placement: Arc<Placement>,
+    /// Équipes qui peuvent jouer sur un nœud, relues par la boucle à chaque tour.
+    portable: HashSet<String>,
     busy: HashSet<String>,
     announced: Announcements,
     pub round: u64,
@@ -31,6 +33,7 @@ impl Pairs {
         Self {
             scheduler,
             placement,
+            portable: HashSet::new(),
             busy: HashSet::new(),
             announced: Announcements::default(),
             round: 0,
@@ -43,7 +46,24 @@ impl Pairs {
 
     /// Classe de la paire : où elle a le droit de jouer.
     pub fn class(&self, a: &Team, b: &Team) -> PairClass {
-        pair_class(&self.placement, a, b)
+        pair_class(&self.placement, &self.portable, a, b)
+    }
+
+    pub fn set_portable(&mut self, portable: HashSet<String>) {
+        self.portable = portable;
+    }
+
+    /// La prochaine paire qui tient dans un slot libre.
+    pub fn next_pair<'t>(
+        &mut self,
+        teams: &'t [Team],
+        unavailable: &HashSet<String>,
+        rating: impl Fn(&str) -> f64,
+        rng: &mut impl Rng,
+    ) -> Option<(&'t Team, &'t Team)> {
+        let (placement, portable) = (&self.placement, &self.portable);
+        let fits = |a: &Team, b: &Team| placement.fits(pair_class(placement, portable, a, b));
+        self.scheduler.next_pair(teams, unavailable, fits, rating, rng)
     }
 
     /// Une paire de plus tient dans `rounds`, annonces comprises.
@@ -124,8 +144,9 @@ impl Pairs {
         rng: &mut impl Rng,
     ) {
         let unavailable = self.unavailable(waiting, Some(&rest.pair));
-        let placement = &self.placement;
-        let fits = |a: &Team, b: &Team| rest.kind.accepts(pair_class(placement, a, b));
+        let (placement, portable) = (&self.placement, &self.portable);
+        let fits = |a: &Team, b: &Team| rest.kind.accepts(pair_class(placement, portable, a, b));
+
         let Some((a, b)) = self.scheduler.next_pair(teams, &unavailable, fits, rating, rng) else {
             return;
         };
@@ -223,6 +244,46 @@ mod tests {
             assert_eq!(pairs.announced.take_ready().len(), 1);
             assert!(pairs.idle());
         }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_slot_withdrawn_during_rest_cancels_its_announcement() {
+        let dir = std::env::temp_dir().join(format!("isolation-withdrawn-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let teams = ["a", "b", "c", "d", "e"]
+            .map(|id| format!("[[team]]\nid = \"{id}\"\ncmd = [\"bot\"]\nportable = true\n"))
+            .concat();
+        let toml = format!(
+            "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\nout = {out:?}\n[nodes]\n{teams}",
+            out = dir.join("games.jsonl")
+        );
+        let cfg: Config = toml.parse().unwrap();
+        let teams = roster(&cfg, None, &mut HashSet::new());
+        let arena = Arc::new(Arena::new(cfg, crate::hub::Hub::new(|_, _, _| {})));
+        let placement = Arc::clone(arena.placement());
+        placement.add_node("node-a", 1);
+        let mut pairs = Pairs::new(Scheduler::default(), Arc::clone(&placement));
+        pairs.set_portable(teams.iter().map(|t| t.id.clone()).collect());
+        let resting = placement.try_lease(PairClass::Portable).unwrap();
+        assert_eq!(resting.slot().node.as_ref(), "node-a");
+        let _main = placement.try_lease(PairClass::Heavy).unwrap();
+        pairs.busy.extend(["a", "b", "e"].map(String::from));
+        let rest = Rest {
+            pair: ["a".into(), "b".into()],
+            kind: resting.kind(),
+            at: "2026-11-13T12:01:00.000Z".into(),
+        };
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        pairs.announce(arena.config(), &teams, &HashSet::new(), rest, |_| 1500.0, &mut rng);
+        assert_eq!(pairs.announced.len(), 1);
+
+        placement.remove_node("node-a");
+        pairs.done(&["a".into(), "b".into()], resting);
+        let (reports, _received) = std::sync::mpsc::channel();
+        pairs.launch_announced(&arena, &teams, &reports, &mut rng);
+        assert_eq!(pairs.announced.len(), 0, "annonce tombée");
+        assert_eq!(pairs.round, 0, "aucune paire lancée");
         let _ = fs::remove_dir_all(&dir);
     }
 }

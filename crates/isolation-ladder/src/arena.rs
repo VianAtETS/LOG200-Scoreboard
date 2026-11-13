@@ -25,7 +25,7 @@ use crate::config::Config;
 use crate::hub::{self, Hub};
 use crate::placement::{Lease, Placement};
 use crate::remote::{GameSpec, Seat, Seated};
-use crate::roster::{Team, pair_class};
+use crate::roster::Team;
 use crate::store::compact_timestamp;
 
 /// Au-delà, le journal d'un joueur est tronqué : un jar ne doit pas pouvoir remplir le disque.
@@ -172,7 +172,10 @@ impl Arena {
     ) -> Result<GameRecord, GameError> {
         let cfg = &self.cfg;
         let time_ms = fixture.map_or(cfg.time_ms, |f| f.time_ms);
-        let slot = self.placement.occupy(lease, pair_class(&self.placement, red, black));
+        // La classe ne compte que pour un smoke test : un slot du serveur principal du bon genre.
+        let class = self.placement.class(red.multithread || black.multithread);
+        let slot = self.placement.occupy(lease, class);
+
         let ts = now_rfc3339();
         let id = format!("{}-{}-{}", compact_timestamp(&ts), red.id, black.id);
         let entry = |team: &Team| Player {
@@ -646,6 +649,7 @@ mod tests {
             build: None,
             anchor: false,
             multithread: false,
+            portable: false,
             remote: None,
         };
         let (red, black) = (team("eq01"), team("eq02"));

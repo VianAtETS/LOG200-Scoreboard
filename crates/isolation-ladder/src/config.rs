@@ -68,6 +68,8 @@ pub struct Config {
     pub tournament: Option<TournamentConfig>,
     /// Garde-fou thermique (`thermal.rs`). Absent : les parties partent quelle que soit la température.
     pub thermal: Option<ThermalConfig>,
+    /// Nœuds de calcul (`node/`). Absent : tout se joue ici.
+    pub nodes: Option<NodesConfig>,
     #[serde(default, rename = "team")]
     pub teams: Vec<TeamConfig>,
 }
@@ -211,6 +213,10 @@ pub struct TeamConfig {
     /// Ses parties se jouent dans les slots `multithread`, adversaire compris.
     #[serde(default)]
     pub multithread: bool,
+    /// Bot dont la force ne dépend pas de la machine (aléatoire, profondeur fixe) : il peut jouer sur
+    /// un nœud.
+    #[serde(default)]
+    pub portable: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -261,6 +267,30 @@ impl Default for TournamentConfig {
             min_teams: 4,
             catch_up_h: 2,
             retries: 3,
+        }
+    }
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct NodesConfig {
+    /// Où les nœuds se connectent : le LAN seulement, jamais derrière le proxy public.
+    pub listen: String,
+    /// Registre des nœuds (`add-node`) : id et sha256 du token.
+    pub tokens: PathBuf,
+    /// Une équipe est portable si le p99 de son build actif est strictement en dessous...
+    pub portable_p99_ms: u64,
+    /// ... sur au moins ce nombre de coups joués ici.
+    pub portable_min_moves: u64,
+}
+
+impl Default for NodesConfig {
+    fn default() -> Self {
+        Self {
+            listen: "0.0.0.0:8093".into(),
+            tokens: "jars/nodes.toml".into(),
+            portable_p99_ms: 100,
+            portable_min_moves: 200,
         }
     }
 }
@@ -329,6 +359,19 @@ pub mod tests {
     use super::*;
 
     pub const MINIMAL: &str = "referee = [\"r\", \"{port}\", \"{opening}\"]\ntime_ms = 1000\nsession = \"s\"\n";
+
+    #[test]
+    fn nodes_section_has_defaults_and_rejects_unknown_keys() {
+        let cfg: Config = format!("{MINIMAL}[nodes]\n").parse().unwrap();
+        let nodes = cfg.nodes.unwrap();
+        assert_eq!((nodes.portable_p99_ms, nodes.portable_min_moves), (100, 200));
+        assert!(
+            format!("{MINIMAL}[nodes]\nportable_p99 = 3\n")
+                .parse::<Config>()
+                .is_err()
+        );
+        assert!(MINIMAL.parse::<Config>().unwrap().nodes.is_none());
+    }
 
     #[test]
     fn example_config_parses() {

@@ -1,11 +1,16 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
+
+use isolation_core::digest::short_hash;
 
 use crate::command::CommandTemplate;
-use crate::config::{Config, TeamConfig};
+use crate::config::{Config, NodesConfig, TeamConfig};
 use crate::placement::{PairClass, Placement};
 use crate::remote::{Registry, Seat};
+use crate::standings::Measured;
 use crate::submit;
 use crate::team_id::TeamId;
 
@@ -16,6 +21,8 @@ pub struct Team {
     pub build: Option<PathBuf>,
     pub anchor: bool,
     pub multithread: bool,
+    /// Déclaré portable dans la config (bots dont la force ne dépend pas de la machine).
+    pub portable: bool,
     /// Équipe connectée depuis sa machine : elle joue à la place de `cmd`.
     pub remote: Option<Seat>,
 }
@@ -28,6 +35,7 @@ impl From<&TeamConfig> for Team {
             build: team.build.clone(),
             anchor: team.anchor,
             multithread: team.multithread,
+            portable: team.portable,
             remote: None,
         }
     }
@@ -41,6 +49,7 @@ impl Team {
             build: Some(jar.to_path_buf()),
             anchor: false,
             multithread,
+            portable: false,
             remote: None,
         }
     }
@@ -55,9 +64,72 @@ impl Team {
     }
 }
 
-/// Multithread dès qu'une des équipes l'est.
-pub fn pair_class(placement: &Placement, a: &Team, b: &Team) -> PairClass {
-    placement.class(a.multithread || b.multithread)
+/// Multithread dès qu'une des équipes l'est ; portable si les deux sont dans `portable`.
+pub fn pair_class(placement: &Placement, portable: &HashSet<String>, a: &Team, b: &Team) -> PairClass {
+    let multithread = a.multithread || b.multithread;
+    if !multithread && portable.contains(&a.id) && portable.contains(&b.id) {
+        PairClass::Portable
+    } else {
+        placement.class(multithread)
+    }
+}
+
+/// Peut jouer sur un nœud sans que sa force en dépende : bot déclaré portable, ou build actif
+/// (`build`) assez rapide, mesuré ici. `pace` donne le rythme d'un build de l'équipe.
+pub fn is_portable(
+    team: &Team,
+    nodes: &NodesConfig,
+    build: Option<&str>,
+    pace: impl Fn(&str) -> Option<Measured>,
+) -> bool {
+    if team.multithread || team.remote.is_some() {
+        return false;
+    }
+    if team.portable {
+        return true;
+    }
+    build
+        .and_then(pace)
+        .is_some_and(|m| m.p99 < nodes.portable_p99_ms && m.count >= nodes.portable_min_moves)
+}
+
+/// Les équipes portables du roster ; aucune sans `[nodes]`.
+pub fn portable_teams(
+    cfg: &Config,
+    teams: &[Team],
+    builds: &mut Builds,
+    pace: impl Fn(&str, &str) -> Option<Measured>,
+) -> HashSet<String> {
+    let Some(nodes) = &cfg.nodes else {
+        return HashSet::new();
+    };
+    teams
+        .iter()
+        .filter(|team| {
+            let build = team.build_file().and_then(|path| builds.hash(&path));
+            is_portable(team, nodes, build.as_deref(), |b| pace(&team.id, b))
+        })
+        .map(|team| team.id.clone())
+        .collect()
+}
+
+/// Hash court des jars actifs, relu seulement quand le fichier change (taille ou date).
+#[derive(Default)]
+pub struct Builds(HashMap<PathBuf, (u64, SystemTime, String)>);
+
+impl Builds {
+    pub fn hash(&mut self, path: &Path) -> Option<String> {
+        let meta = fs::metadata(path).ok()?;
+        let stamp = (meta.len(), meta.modified().ok()?);
+        if let Some((len, modified, hash)) = self.0.get(path)
+            && (*len, *modified) == stamp
+        {
+            return Some(hash.clone());
+        }
+        let hash = short_hash(&fs::read(path).ok()?);
+        self.0.insert(path.to_path_buf(), (stamp.0, stamp.1, hash.clone()));
+        Some(hash)
+    }
 }
 
 /// Équipes de `[[team]]`, puis les équipes inscrites qui n'y figurent pas. Une équipe connectée en
@@ -109,9 +181,10 @@ mod tests {
             Team::with_jar(&cfg, &id, jar, true),
         );
         let placement = Placement::new(&cfg);
-        assert_eq!(pair_class(&placement, &single, &single), PairClass::Heavy);
-        assert_eq!(pair_class(&placement, &single, &multi), PairClass::Multithread);
-        assert_eq!(pair_class(&placement, &multi, &single), PairClass::Multithread);
+        let none = HashSet::new();
+        assert_eq!(pair_class(&placement, &none, &single, &single), PairClass::Heavy);
+        assert_eq!(pair_class(&placement, &none, &single, &multi), PairClass::Multithread);
+        assert_eq!(pair_class(&placement, &none, &multi, &single), PairClass::Multithread);
         let vars = Vars {
             cfg: &cfg,
             slot: 1,
@@ -127,10 +200,90 @@ mod tests {
         assert_eq!(keys, ["SANDBOX_CPUS"]);
 
         let ordinary_only = Placement::new(&MINIMAL.parse().unwrap());
-        assert_eq!(pair_class(&ordinary_only, &multi, &single), PairClass::Heavy);
+        assert_eq!(pair_class(&ordinary_only, &none, &multi, &single), PairClass::Heavy);
         let multithread_only: Config = format!("{MINIMAL}[[slot]]\nmultithread = true\n").parse().unwrap();
         let multithread_only = Placement::new(&multithread_only);
-        assert_eq!(pair_class(&multithread_only, &single, &single), PairClass::Multithread);
+        assert_eq!(
+            pair_class(&multithread_only, &none, &single, &single),
+            PairClass::Multithread
+        );
+    }
+
+    fn nodes() -> NodesConfig {
+        format!("{MINIMAL}[nodes]\n").parse::<Config>().unwrap().nodes.unwrap()
+    }
+
+    fn fixed(id: &str, portable: bool) -> Team {
+        Team {
+            portable,
+            ..Team::from(&TeamConfig {
+                id: id.into(),
+                cmd: CommandTemplate::new(["bot"]),
+                build: None,
+                anchor: false,
+                multithread: false,
+                portable,
+            })
+        }
+    }
+
+    fn measured(p99: u64, count: u64) -> impl Fn(&str) -> Option<Measured> {
+        move |_| Some(Measured { p99, count })
+    }
+
+    #[test]
+    fn bots_are_portable_only_when_flagged() {
+        let none = |_: &str| None;
+        assert!(is_portable(&fixed("aleatoire", true), &nodes(), None, none));
+        assert!(!is_portable(&fixed("niveau-4", false), &nodes(), None, none));
+    }
+
+    #[test]
+    fn new_build_is_not_portable_until_measured_on_the_main_server() {
+        let cfg: Config = MINIMAL.parse().unwrap();
+        let team = Team::with_jar(&cfg, &"eq07".parse().unwrap(), Path::new("j.jar"), false);
+        let nodes = nodes();
+        assert!(!is_portable(&team, &nodes, Some("v2"), |_| None));
+        assert!(!is_portable(&team, &nodes, Some("v2"), measured(99, 199)));
+        assert!(is_portable(&team, &nodes, Some("v2"), measured(99, 200)));
+        assert!(!is_portable(&team, &nodes, Some("v2"), measured(100, 500)));
+        assert!(!is_portable(&team, &nodes, None, measured(10, 500)), "build illisible");
+        let asked = std::cell::RefCell::new(String::new());
+        is_portable(&team, &nodes, Some("v2"), |build| {
+            asked.replace(build.into());
+            None
+        });
+        assert_eq!(
+            asked.into_inner(),
+            "v2",
+            "le rythme du build actif, pas du dernier joué"
+        );
+    }
+
+    #[test]
+    fn multithread_and_remote_teams_are_never_portable() {
+        let mut multi = fixed("niveau-5", true);
+        multi.multithread = true;
+        assert!(!is_portable(&multi, &nodes(), None, |_| None));
+        let cfg: Config = MINIMAL.parse().unwrap();
+        let placement = Placement::new(&cfg);
+        let portable = HashSet::from(["niveau-5".to_string(), "aleatoire".to_string()]);
+        assert_eq!(
+            pair_class(&placement, &portable, &multi, &fixed("aleatoire", true)),
+            PairClass::Heavy,
+            "sans slot multithread, une paire multithread est ordinaire, jamais portable"
+        );
+    }
+
+    #[test]
+    fn a_pair_is_portable_only_if_both_players_are() {
+        let cfg: Config = MINIMAL.parse().unwrap();
+        let placement = Placement::new(&cfg);
+        let portable = HashSet::from(["aleatoire".to_string(), "niveau-1".to_string()]);
+        let (a, b, c) = (fixed("aleatoire", true), fixed("niveau-1", true), fixed("eq07", false));
+        assert_eq!(pair_class(&placement, &portable, &a, &b), PairClass::Portable);
+        assert_eq!(pair_class(&placement, &portable, &a, &c), PairClass::Heavy);
+        assert_eq!(pair_class(&placement, &HashSet::new(), &a, &b), PairClass::Heavy);
     }
 
     #[test]

@@ -278,6 +278,7 @@ mod tests {
             build: Some(format!("{id}.jar").into()),
             anchor: false,
             multithread: false,
+            portable: false,
             remote: None,
         }
     }

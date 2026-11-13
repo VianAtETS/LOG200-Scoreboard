@@ -101,6 +101,7 @@ mod tests {
             build: None,
             anchor: false,
             multithread: false,
+            portable: false,
             remote: None,
         }
     }

@@ -376,11 +376,10 @@ impl Standings {
         self.full.all.teams.get(team).map_or(START, |s| s.rating)
     }
 
-    /// Rythme du build courant de `team`, mesuré au serveur principal, toutes sessions.
-    #[cfg_attr(not(test), expect(dead_code, reason = "lu par la portabilité, branchée ensuite"))]
-    pub fn pace(&self, team: &str) -> Option<Measured> {
+    /// Rythme du build `build` de `team`, mesuré au serveur principal, toutes sessions.
+    pub fn pace(&self, team: &str, build: &str) -> Option<Measured> {
         let standing = self.full.all.teams.get(team)?;
-        let pace = standing.paces.get(&standing.build)?;
+        let pace = standing.paces.get(&Some(build.to_string()))?;
         Some(Measured {
             p99: pace.percentile(0.99),
             count: pace.total,
@@ -638,8 +637,9 @@ mod tests {
         };
         standings.play(&timed(50, None));
         standings.play(&timed(400, Some("node-b")));
-        assert_eq!(standings.pace("a"), Some(Measured { p99: 50, count: 100 }));
-        assert_eq!(standings.pace("nobody"), None);
+        assert_eq!(standings.pace("a", "v1"), Some(Measured { p99: 50, count: 100 }));
+        assert_eq!(standings.pace("a", "v2"), None);
+        assert_eq!(standings.pace("nobody", "v1"), None);
     }
 
     #[test]

@@ -102,6 +102,17 @@ min_interval_s = 300
 # listen = "0.0.0.0:8091"
 # connect = "unix:/tmp/isolation-ladder/{game}/{side}/sock"
 
+# Noeuds de calcul (docs/formats.md, "Noeuds") : d'autres machines du LAN s'y connectent
+# (isolation-ladder node node.toml) et jouent les paires portables, qui comptent comme les autres.
+# Une paire est portable si ses deux joueurs le sont : bot `portable = true`, ou build actif dont le
+# p99 est sous portable_p99_ms sur au moins portable_min_moves coups joues ici. tokens : registre
+# des noeuds (isolation-ladder add-node ID). Ecouter sur le LAN seulement, jamais derriere la page.
+# [nodes]
+# listen = "0.0.0.0:8093"
+# tokens = "jars/nodes.toml"
+# portable_p99_ms = 100
+# portable_min_moves = 200
+
 # Direct des parties pour la page (WebSocket /api/live, docs/formats.md) : chaque coup, au moment ou il
 # est joue. La page relaie /api/live vers listen ; sans cette section, la page Direct est indisponible.
 [live]
@@ -127,7 +138,8 @@ time_ms = 5000
 # sensor = "/sys/class/hwmon/hwmon3/temp1_input"
 
 # Equipes fixes, en plus des equipes inscrites. Dans cmd, {port}, {game} et {side} (red ou black)
-# sont remplaces. `anchor = true` fige le rating a 1500.
+# sont remplaces. `anchor = true` fige le rating a 1500. `portable = true` : sa force ne depend pas de
+# la machine (aleatoire, profondeur fixe), il peut jouer sur un noeud.
 [[team]]
 id = "aleatoire"
 cmd = [
@@ -138,6 +150,7 @@ cmd = [
     "--bot",
     "aleatoire",
 ]
+portable = true
 
 [[team]]
 id = "niveau-1"
@@ -150,6 +163,8 @@ cmd = [
     "niveau-1",
 ]
 anchor = true
+portable = true
+
 
 [[team]]
 id = "niveau-2"
