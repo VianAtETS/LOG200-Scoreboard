@@ -6,8 +6,9 @@ set -euo pipefail
 trap 'exit 143' TERM
 
 # La base des parties doit survivre au conteneur : sans volume, le ladder importerait data/games.jsonl
-# dans une base perdue au prochain `docker compose up -d`.
-if ! awk '$5 == "/srv/state" { found = 1 } END { exit !found }' /proc/self/mountinfo; then
+# dans une base perdue au prochain `docker compose up -d`. Un noeud n'a pas de base.
+if [ "${1:-}" != node ] && ! awk '$5 == "/srv/state" { found = 1 } END { exit !found }' /proc/self/mountinfo; then
+
     echo "ERREUR : /srv/state n'est pas un volume. Ajouter '- ./state:/srv/state' aux volumes du" \
         "service ladder dans compose.yml (voir deploy/compose.yml), puis relancer." >&2
     exit 1
