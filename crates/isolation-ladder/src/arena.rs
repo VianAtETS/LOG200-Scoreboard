@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 
-use isolation_core::board::{Color, Move};
+use isolation_core::board::{ByColor, Color, Move};
 use isolation_core::digest::short_hash;
 use isolation_core::notation;
 use isolation_core::record::{
@@ -32,6 +32,8 @@ use crate::sync::lock;
 const LOG_CAP: usize = 1 << 20;
 const MARKER_TIMEOUT: Duration = Duration::from_secs(60);
 const LOG_FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
+/// Le client `docker run` d'un joueur absent a eu le temps de rendre son code de sortie.
+const EXIT_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Error)]
 pub enum GameError {
@@ -52,6 +54,9 @@ pub enum GameError {
     /// Partie de tournoi avant son dernier essai (`Fixture::forfeit_counts`).
     #[error("{0} jamais connecté à l'arbitre, partie rejouée")]
     NoShow(String),
+    /// Le bac à sable d'un joueur n'a jamais démarré (Docker, gVisor) : le serveur est en faute.
+    #[error("bac à sable du joueur {side} jamais démarré (code {code}), partie annulée")]
+    Infra { side: Color, code: i32 },
 }
 
 /// Partie de tournoi : son temps par coup et sa session remplacent ceux du ladder.
@@ -246,7 +251,19 @@ impl Arena {
             }
         }
         let result = referee.finish(cfg.game_timeout(time_ms))?;
+        let mut exits = ByColor::default();
+        // Seul un absent peut être une panne ; les autres parties n'attendent pas leurs joueurs.
+        if result.reason == Reason::NoShow {
+            for (player, side) in players.iter_mut().zip([Color::Red, Color::Black]) {
+                if let Contestant::Local(player) = player {
+                    exits[side] = player.exit_code(EXIT_GRACE);
+                }
+            }
+        }
         drop(players);
+        if let Some((side, code)) = infra_failure(&result, exits) {
+            return Err(GameError::Infra { side, code });
+        }
         if let Some(absent) = annulled_no_show(&result, fixture, red, black) {
             return Err(GameError::NoShow(absent.id.clone()));
         }
@@ -314,6 +331,23 @@ fn annulled_no_show<'t>(
         Color::Red => red,
         Color::Black => black,
     })
+}
+
+/// Codes de `docker run` quand le conteneur n'a pas pu tourner (125 : démon ou runtime, 126 :
+/// commande non exécutable, 127 : commande introuvable). `player-entry.sh` ramène ceux du jar à 1 :
+/// un jar ne peut pas se faire passer pour une panne.
+const DOCKER_FAILED: std::ops::RangeInclusive<i32> = 125..=127;
+
+/// Le joueur absent d'un `no_show` dont le bac à sable n'a jamais tourné, et son code. Un joueur qui
+/// s'est connecté a perdu pour de vrai, quel que soit son code.
+fn infra_failure(result: &GameResult, exits: ByColor<Option<i32>>) -> Option<(Color, i32)> {
+    if result.reason != Reason::NoShow {
+        return None;
+    }
+    let absent = result.winner.other();
+    exits[absent]
+        .filter(|code| DOCKER_FAILED.contains(code))
+        .map(|code| (absent, code))
 }
 
 fn build_hash(team: &Team) -> Option<String> {
@@ -472,13 +506,29 @@ impl Drop for CleanupGuard {
 }
 
 enum Contestant {
-    Local(#[expect(dead_code, reason = "tenu pour son Drop")] LoggedPlayer),
+    Local(LoggedPlayer),
     Remote(#[expect(dead_code, reason = "tenu pour son Drop")] Seated),
 }
 
 struct LoggedPlayer {
     process: Option<Reaper>,
     written: Receiver<()>,
+}
+
+impl LoggedPlayer {
+    /// Code de sortie si le processus finit d'ici `grace` ; `None` s'il tourne encore ou a été tué
+    /// par un signal.
+    fn exit_code(&mut self, grace: Duration) -> Option<i32> {
+        let child = &mut self.process.as_mut()?.0;
+        let deadline = std::time::Instant::now() + grace;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return status.code(),
+                Ok(None) if std::time::Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
+                _ => return None,
+            }
+        }
+    }
 }
 
 impl Drop for LoggedPlayer {
@@ -625,6 +675,36 @@ mod tests {
         assert_eq!(arena.smoke_tests(), 1);
         drop(running);
         assert_eq!(arena.smoke_tests(), 0);
+    }
+
+    #[test]
+    fn an_absent_player_whose_docker_failed_is_an_infra_error() {
+        let result = |winner, reason| GameResult {
+            v: isolation_core::record::RECORD_VERSION,
+            time_ms: 500,
+            opening: vec![],
+            moves: vec![],
+            winner,
+            reason,
+            invalid: isolation_core::record::InvalidCounts::default(),
+            duration_ms: 0,
+            move_ms: vec![],
+        };
+        let exits = |red, black| ByColor { red, black };
+        let black_absent = result(Color::Red, Reason::NoShow);
+        assert_eq!(
+            infra_failure(&black_absent, exits(None, Some(125))),
+            Some((Color::Black, 125))
+        );
+        assert_eq!(infra_failure(&black_absent, exits(None, Some(1))), None);
+        assert_eq!(infra_failure(&black_absent, exits(None, None)), None);
+        let red_timed_out = result(Color::Black, Reason::Timeout);
+        assert_eq!(infra_failure(&red_timed_out, exits(Some(125), None)), None);
+        let red_absent = result(Color::Black, Reason::NoShow);
+        assert_eq!(
+            infra_failure(&red_absent, exits(Some(127), None)),
+            Some((Color::Red, 127))
+        );
     }
 
     #[test]
