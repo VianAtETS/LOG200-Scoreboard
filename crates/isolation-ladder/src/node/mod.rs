@@ -5,6 +5,7 @@
     expect(dead_code, reason = "branché par l'agent et le registre des nœuds")
 )]
 
-pub mod protocol;
-
+pub mod agent;
+pub mod config;
 pub mod jars;
+pub mod protocol;

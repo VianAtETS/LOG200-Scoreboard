@@ -99,7 +99,7 @@ pub fn default_red_connected_marker() -> String {
 pub fn default_startup_ms() -> u64 {
     1000
 }
-fn default_team_cmd() -> CommandTemplate {
+pub fn default_team_cmd() -> CommandTemplate {
     CommandTemplate::new(["sandbox/run-player.sh", "{game}", "{side}", "{port}", "{jar}"])
 }
 

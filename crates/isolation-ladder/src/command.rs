@@ -77,6 +77,11 @@ impl CommandTemplate {
         Self(self.0.iter().map(|a| a.replace("{jar}", jar)).collect())
     }
 
+    /// Le même gabarit suivi de `args`.
+    pub fn then(&self, args: impl IntoIterator<Item = String>) -> Self {
+        Self(self.0.iter().cloned().chain(args).collect())
+    }
+
     /// Stratégie et options d'un bot de référence (`... --bot niveau-2 --margin-ms 100`).
     #[cfg_attr(not(test), expect(dead_code, reason = "envoyé aux nœuds, branchés ensuite"))]
     pub fn bot(&self) -> Option<(&str, &[String])> {

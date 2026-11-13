@@ -39,6 +39,8 @@ enum Command {
         #[command(subcommand)]
         action: TournamentAction,
     },
+    /// Fait de cette machine un nœud de calcul du ladder (docs/formats.md, « Nœuds »).
+    Node { config: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -61,6 +63,8 @@ pub fn cli() -> ExitCode {
             .map(|token| println!("{token}"))
             .map_err(anyhow::Error::from),
         (Some(Command::Tournament { action }), _) => request(action),
+        (Some(Command::Node { config }), _) => node(&config),
+
         (None, Some(path)) => ladder::run(&path, cli.rounds, cli.archives),
         (None, None) => unreachable!("clap exige la configuration sans sous-commande"),
     };
@@ -85,6 +89,14 @@ fn request(action: TournamentAction) -> anyhow::Result<()> {
         IDLE_DELAY.as_secs()
     );
     Ok(())
+}
+
+fn node(path: &std::path::Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let text = std::fs::read_to_string(path).with_context(|| path.display().to_string())?;
+
+    let cfg: crate::node::config::NodeConfig = text.parse().with_context(|| path.display().to_string())?;
+    crate::node::agent::run(cfg)
 }
 
 #[cfg(test)]

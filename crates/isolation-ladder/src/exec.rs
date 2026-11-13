@@ -45,6 +45,8 @@ pub trait GameOutput: Send + Sync {
 /// Joue une partie quelque part.
 pub trait Executor: Send + Sync {
     fn run(&self, run: &GameRun<'_>, out: Arc<dyn GameOutput>) -> Result<GameResult, GameError>;
+    /// Arrête la partie `game` en cours : son `run` rend vite une erreur.
+    fn abort(&self, game: &str);
 }
 
 /// Joue sur cette machine, dans ses bacs à sable.
@@ -59,18 +61,23 @@ impl Local {
 
     /// Ramasse les restes d'un arrêt brutal : `cleanup` avec `{game}` vide.
     pub fn sweep(&self) {
-        let vars = Vars {
-            cfg: &self.cfg,
-            slot: 0,
-            opening: String::new(),
-            game: "",
-            time_ms: 0,
-        };
-        drop(CleanupGuard::new(&vars));
+        self.abort("");
     }
 }
 
 impl Executor for Local {
+    /// `cleanup` de la partie : ses conteneurs tués, l'arbitre sort et `run` rend la main.
+    fn abort(&self, game: &str) {
+        let vars = Vars {
+            cfg: &self.cfg,
+            slot: 0,
+            opening: String::new(),
+            game,
+            time_ms: 0,
+        };
+        drop(CleanupGuard::new(&vars));
+    }
+
     fn run(&self, run: &GameRun<'_>, out: Arc<dyn GameOutput>) -> Result<GameResult, GameError> {
         let cfg = &self.cfg;
         let vars = Vars {
@@ -130,7 +137,7 @@ impl Executor for Local {
 }
 
 /// Au-delà, le journal d'un joueur est tronqué : un jar ne doit pas pouvoir remplir le disque.
-const LOG_CAP: usize = 1 << 20;
+pub const LOG_CAP: usize = 1 << 20;
 const MARKER_TIMEOUT: Duration = Duration::from_secs(60);
 const LOG_FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 /// Le client `docker run` d'un joueur absent a eu le temps de rendre son code de sortie.
