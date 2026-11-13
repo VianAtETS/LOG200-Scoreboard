@@ -450,6 +450,30 @@ pub mod tests {
     }
 
     #[test]
+    fn exit_code_waits_a_little_for_a_finished_player_only() {
+        let dir = std::env::temp_dir().join(format!("isolation-exit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let spawn = |script: &str| {
+            let mut command = Command::new("sh");
+            command.args(["-c", script]);
+            spawn_logged(command, &dir.join("joueur.log")).unwrap()
+        };
+        assert_eq!(spawn("exit 125").exit_code(Duration::from_secs(5)), Some(125));
+        assert_eq!(spawn("exit 0").exit_code(Duration::from_secs(5)), Some(0));
+        let started = std::time::Instant::now();
+        assert_eq!(
+            spawn("sleep 5").exit_code(Duration::from_millis(100)),
+            None,
+            "encore vivant"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "n'attend que le délai donné"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn events_go_out_and_the_result_is_the_first_other_json_line() {
         let stdout = "{\"event\":\"ready\"}\nbruit\n{\"event\":\"move\",\"move\":\"G1-G4-F9\",\"ms\":3}\n\
                       {\"event\":\"futur\"}\n{\"v\":1}\n{\"v\":2}\n";

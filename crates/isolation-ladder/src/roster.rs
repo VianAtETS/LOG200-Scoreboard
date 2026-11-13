@@ -232,6 +232,27 @@ mod tests {
     }
 
     #[test]
+    fn build_hashes_follow_the_jar_and_are_cached_until_it_changes() {
+        let dir = std::env::temp_dir().join(format!("isolation-builds-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let jar = dir.join("current.jar");
+        let mut builds = Builds::default();
+        assert_eq!(builds.hash(&jar), None, "pas de jar");
+        fs::write(&jar, "v1").unwrap();
+        let v1 = builds.hash(&jar).unwrap();
+        assert_eq!(v1, short_hash(b"v1"));
+        assert_eq!(builds.hash(&jar).unwrap(), v1, "relu depuis le cache");
+        fs::write(&jar, "v2, plus long").unwrap();
+        assert_eq!(
+            builds.hash(&jar).unwrap(),
+            short_hash(b"v2, plus long"),
+            "nouveau jar, nouveau hash"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn bots_are_portable_only_when_flagged() {
         let none = |_: &str| None;
         assert!(is_portable(&fixed("aleatoire", true), &nodes(), None, none));

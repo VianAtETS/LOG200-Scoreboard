@@ -345,17 +345,25 @@ fn run(socket: &Socket, hub: &Arc<NodeHub>, node: &str, link: &Arc<NodeLink>) ->
             Ok(None) => {}
             Ok(Some(frame)) => {
                 heard = Instant::now();
-                match frame {
-                    Frame::Text(text) => match serde_json::from_str::<FromNode>(text.as_str()) {
-                        Ok(message) => on_message(hub, node, link, message),
-                        Err(e) => eprintln!("nœud {node} : message ignoré ({e})"),
-                    },
-                    Frame::Close(_) => return "fermée par le nœud".into(),
-                    _ => {}
+                if let Err(why) = on_frame(hub, node, link, frame) {
+                    return why;
                 }
             }
         }
     }
+}
+
+/// Une trame du nœud ; `Err` : la raison de fin de la connexion.
+fn on_frame(hub: &Arc<NodeHub>, node: &str, link: &Arc<NodeLink>, frame: Frame) -> Result<(), String> {
+    match frame {
+        Frame::Text(text) => match serde_json::from_str::<FromNode>(text.as_str()) {
+            Ok(message) => on_message(hub, node, link, message),
+            Err(e) => eprintln!("nœud {node} : message ignoré ({e})"),
+        },
+        Frame::Close(_) => return Err("fermée par le nœud".into()),
+        _ => {}
+    }
+    Ok(())
 }
 
 fn on_message(hub: &Arc<NodeHub>, node: &str, link: &Arc<NodeLink>, message: FromNode) {
@@ -384,18 +392,21 @@ fn on_message(hub: &Arc<NodeHub>, node: &str, link: &Arc<NodeLink>, message: Fro
                 let _ = tx.send(GameMsg::Result(outcome, logs));
             }
         }
-        FromNode::Need { sha256 } => {
-            let path = lock(&hub.jars).get(&sha256).cloned();
-            match path.map(fs::read) {
-                Some(Ok(bytes)) => {
-                    let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-                    let _ = link.send(&ToNode::Jar { sha256, size });
-                    let _ = link.outgoing.send(Frame::Binary(bytes.into()));
-                }
-                Some(Err(e)) => eprintln!("nœud {node} : jar {sha256} illisible ({e})"),
-                None => eprintln!("nœud {node} : jar {sha256} inconnu, ignoré"),
-            }
+        FromNode::Need { sha256 } => send_jar(hub, node, link, sha256),
+    }
+}
+
+/// Le jar demandé, s'il appartient à une partie distante en cours ; sinon rien.
+fn send_jar(hub: &NodeHub, node: &str, link: &NodeLink, sha256: String) {
+    let path = lock(&hub.jars).get(&sha256).cloned();
+    match path.map(fs::read) {
+        Some(Ok(bytes)) => {
+            let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+            let _ = link.send(&ToNode::Jar { sha256, size });
+            let _ = link.outgoing.send(Frame::Binary(bytes.into()));
         }
+        Some(Err(e)) => eprintln!("nœud {node} : jar {sha256} illisible ({e})"),
+        None => eprintln!("nœud {node} : jar {sha256} inconnu, ignoré"),
     }
 }
 

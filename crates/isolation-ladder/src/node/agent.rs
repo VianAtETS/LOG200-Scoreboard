@@ -161,13 +161,35 @@ pub fn backoff(attempt: u32, rng: &mut impl Rng) -> Duration {
 
 #[derive(Debug)]
 pub enum Ended {
-    /// Le ladder a refusé la connexion (token, version) : inutile d'insister vite.
+    /// Le ladder a refusé la connexion (token, version).
     Refused(String),
     Lost(String),
 }
 
+impl std::fmt::Display for Ended {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(why) => write!(f, "refusé par le ladder : {why}"),
+            Self::Lost(why) => write!(f, "ladder perdu : {why}"),
+        }
+    }
+}
+
 /// Lance l'agent jusqu'à l'arrêt du processus.
 pub fn run(cfg: NodeConfig) -> anyhow::Result<()> {
+    let agent = prepare(cfg)?;
+    let mut rng = rand::rng();
+    let mut attempt = 0;
+    loop {
+        let since = Instant::now();
+        eprintln!("{}", agent.session());
+        attempt = next_attempt(attempt, since.elapsed());
+        thread::sleep(backoff(attempt, &mut rng));
+    }
+}
+
+/// Le token, le dossier des journaux, un Docker interne sans restes d'un arrêt brutal.
+fn prepare(cfg: NodeConfig) -> anyhow::Result<Agent> {
     let token = fs::read_to_string(&cfg.token_file)
         .with_context(|| cfg.token_file.display().to_string())?
         .trim()
@@ -176,18 +198,12 @@ pub fn run(cfg: NodeConfig) -> anyhow::Result<()> {
     let local = Arc::new(Local::new(cfg.exec.clone()));
     local.sweep();
     let jars = cfg.jars.clone();
-    let agent = Agent::new(cfg, token, local, jars).context("cache de jars")?;
-    let mut rng = rand::rng();
-    let mut attempt = 0;
-    loop {
-        let since = Instant::now();
-        match agent.session() {
-            Ended::Refused(why) => eprintln!("refusé par le ladder : {why}"),
-            Ended::Lost(why) => eprintln!("ladder perdu : {why}"),
-        }
-        attempt = if since.elapsed() > STABLE { 0 } else { attempt + 1 };
-        thread::sleep(backoff(attempt, &mut rng));
-    }
+    Agent::new(cfg, token, local, jars).context("cache de jars")
+}
+
+/// Une session qui a tenu longtemps remet le délai de reconnexion à zéro.
+fn next_attempt(attempt: u32, lasted: Duration) -> u32 {
+    if lasted > STABLE { 0 } else { attempt.saturating_add(1) }
 }
 
 pub struct Agent {
@@ -338,39 +354,53 @@ impl Session<'_> {
 
     fn step(&mut self) -> Result<(), Ended> {
         while let Ok(note) = self.notes.try_recv() {
-            match note {
-                Note::Send(message) => self.send(&message)?,
-                Note::Probed(probed) => {
-                    self.probed_at = Instant::now();
-                    self.probe = match probed {
-                        Ok(()) => Probe::Passed,
-                        Err(why) => {
-                            eprintln!("sonde ratée : {why}");
-                            Probe::Failed(why)
-                        }
-                    };
-                    self.announce()?;
-                }
-                Note::Finished(game) => {
-                    if let Some((_, handle)) = self.games.remove(&game) {
-                        let _ = handle.join();
-                    }
-                }
-            }
+            self.on_note(note)?;
         }
         if self.beat.elapsed() >= HEARTBEAT {
-            self.beat = Instant::now();
-            self.cool = lock(&self.agent.thermal).as_mut().is_none_or(Thermal::cool);
-            if matches!(self.probe, Probe::Failed(_)) && self.probed_at.elapsed() >= REPROBE {
-                self.start_probe();
-            }
-            self.announce()?;
-            let running = self.games.len();
-            self.send(&FromNode::Heartbeat { running, temp_c: None })?;
+            self.heartbeat()?;
         }
         if self.heard.elapsed() >= SILENCE {
             return Err(Ended::Lost(format!("aucune nouvelle depuis {} s", SILENCE.as_secs())));
         }
+        self.listen()
+    }
+
+    fn on_note(&mut self, note: Note) -> Result<(), Ended> {
+        match note {
+            Note::Send(message) => self.send(&message),
+            Note::Probed(probed) => {
+                self.probed_at = Instant::now();
+                self.probe = probed.map_or_else(
+                    |why| {
+                        eprintln!("sonde ratée : {why}");
+                        Probe::Failed(why)
+                    },
+                    |()| Probe::Passed,
+                );
+                self.announce()
+            }
+            Note::Finished(game) => {
+                if let Some((_, handle)) = self.games.remove(&game) {
+                    let _ = handle.join();
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Température, nouvelle sonde après un échec, état prêt, puis le battement lui-même.
+    fn heartbeat(&mut self) -> Result<(), Ended> {
+        self.beat = Instant::now();
+        self.cool = lock(&self.agent.thermal).as_mut().is_none_or(Thermal::cool);
+        if matches!(self.probe, Probe::Failed(_)) && self.probed_at.elapsed() >= REPROBE {
+            self.start_probe();
+        }
+        self.announce()?;
+        let running = self.games.len();
+        self.send(&FromNode::Heartbeat { running, temp_c: None })
+    }
+
+    fn listen(&mut self) -> Result<(), Ended> {
         match self.ws.read() {
             Ok(frame) => {
                 self.heard = Instant::now();
@@ -755,43 +785,77 @@ mod tests {
         }
     }
 
-    #[test]
-    #[expect(clippy::result_large_err, reason = "signature du rappel imposée par tungstenite")]
-    fn agent_aborts_every_game_when_the_ladder_goes_away() {
+    /// Le ladder des tests : il accepte l'agent (en vérifiant son token), lit et écrit des messages.
+    struct FakeLadder(tungstenite::WebSocket<std::net::TcpStream>);
+
+    impl FakeLadder {
+        #[expect(clippy::result_large_err, reason = "signature du rappel imposée par tungstenite")]
+        fn accept(listener: &TcpListener) -> Self {
+            let (stream, _) = listener.accept().unwrap();
+            let ws = tungstenite::accept_hdr(stream, |request: &tungstenite::handshake::server::Request, response| {
+                assert_eq!(request.headers()["authorization"], "Bearer secret");
+                Ok(response)
+            })
+            .unwrap();
+            Self(ws)
+        }
+
+        fn read(&mut self) -> FromNode {
+            loop {
+                if let Frame::Text(text) = self.0.read().unwrap() {
+                    return serde_json::from_str(text.as_str()).unwrap();
+                }
+            }
+        }
+
+        /// Le prochain message qui n'est pas un battement.
+        fn next(&mut self) -> FromNode {
+            loop {
+                match self.read() {
+                    FromNode::Heartbeat { .. } => {}
+                    message => return message,
+                }
+            }
+        }
+
+        fn say(&mut self, message: &ToNode) {
+            self.0
+                .send(Frame::text(serde_json::to_string(message).unwrap()))
+                .unwrap();
+        }
+
+        /// Le hello, puis la fin de la sonde.
+        fn until_ready(&mut self) {
+            assert!(matches!(self.read(), FromNode::Hello { slots: 2, .. }));
+            while !matches!(self.read(), FromNode::Ready { ready: true, .. }) {}
+        }
+    }
+
+    /// Un agent dont l'exécuteur est un bouchon, et le port où son ladder l'attend.
+    fn agent(name: &str) -> (Agent, Arc<Stub>, TcpListener, Receiver<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let mut cfg = cfg();
         cfg.ladder = format!("ws://{}/api/node", listener.local_addr().unwrap());
-        cfg.logs = std::env::temp_dir().join(format!("isolation-agent-{}", std::process::id()));
+        cfg.logs = std::env::temp_dir().join(format!("isolation-agent-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&cfg.logs);
         let (started_tx, started) = mpsc::channel();
         let stub = Arc::new(Stub {
             started: Mutex::new(Some(started_tx)),
             aborted: Mutex::new(Vec::new()),
         });
-        let jars_dir = cfg.logs.join("jars");
-        let agent = Agent::new(cfg, "secret".into(), Arc::clone(&stub) as Arc<dyn Executor>, jars_dir).unwrap();
+        let jars = cfg.logs.join("jars");
+        let agent = Agent::new(cfg, "secret".into(), Arc::clone(&stub) as Arc<dyn Executor>, jars).unwrap();
+        (agent, stub, listener, started)
+    }
+
+    #[test]
+    fn agent_aborts_every_game_when_the_ladder_goes_away() {
+        let (agent, stub, listener, started) = agent("away");
         let ladder = thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            let mut ws =
-                tungstenite::accept_hdr(stream, |request: &tungstenite::handshake::server::Request, response| {
-                    assert_eq!(request.headers()["authorization"], "Bearer secret");
-                    Ok(response)
-                })
-                .unwrap();
-            let mut read = || loop {
-                if let Frame::Text(text) = ws.read().unwrap() {
-                    return serde_json::from_str::<FromNode>(text.as_str()).unwrap();
-                }
-            };
-            assert!(matches!(read(), FromNode::Hello { slots: 2, .. }));
-            loop {
-                if let FromNode::Ready { ready: true, .. } = read() {
-                    break;
-                }
-            }
-            let start = ToNode::Start(game(bot("aleatoire", &[]), bot("niveau-1", &[])));
-            ws.send(Frame::text(serde_json::to_string(&start).unwrap())).unwrap();
+            let mut ladder = FakeLadder::accept(&listener);
+            ladder.until_ready();
+            ladder.say(&ToNode::Start(game(bot("aleatoire", &[]), bot("niveau-1", &[]))));
             started.recv_timeout(Duration::from_secs(5)).unwrap();
-            drop(ws);
         });
         let ended = agent.session();
         ladder.join().unwrap();
@@ -801,5 +865,110 @@ mod tests {
             ["20261113T120000.000Z-eq01-niveau-1"],
             "la partie en cours est arrêtée avant toute reconnexion"
         );
+    }
+
+    #[test]
+    fn agent_fetches_missing_jars_then_obeys_abort_and_drain() {
+        let (agent, stub, listener, started) = agent("jars");
+        let jar = b"un jar".to_vec();
+        let sha = isolation_core::digest::sha256_hex(&jar);
+        let id = "20261113T120000.000Z-eq01-niveau-1";
+        let ladder = thread::spawn(move || {
+            let mut ladder = FakeLadder::accept(&listener);
+            ladder.until_ready();
+            ladder.say(&ToNode::Start(game(
+                WirePlayer::Jar { sha256: sha.clone() },
+                bot("niveau-1", &[]),
+            )));
+            assert_eq!(ladder.next(), FromNode::Need { sha256: sha.clone() });
+            ladder.0.send(Frame::text("{\"type\":\"inconnu\"}")).unwrap();
+            ladder.say(&ToNode::Jar { sha256: sha, size: 6 });
+            ladder.0.send(Frame::Binary(jar.into())).unwrap();
+            assert_eq!(
+                started.recv_timeout(Duration::from_secs(5)).unwrap(),
+                id,
+                "le jar reçu, la partie part"
+            );
+            ladder.say(&ToNode::Abort { game: id.into() });
+            let FromNode::Result {
+                game: stopped, outcome, ..
+            } = ladder.next()
+            else {
+                panic!("attendu le résultat de la partie arrêtée");
+            };
+            assert_eq!(stopped, id);
+
+            assert!(matches!(outcome, Outcome::Error { .. }));
+            ladder.say(&ToNode::Drain);
+            assert!(matches!(ladder.next(), FromNode::Ready { ready: false, .. }));
+            ladder.say(&ToNode::Start(game(bot("aleatoire", &[]), bot("niveau-1", &[]))));
+            let FromNode::Result { outcome, .. } = ladder.next() else {
+                panic!("attendu un refus");
+            };
+            assert!(matches!(outcome, Outcome::Error { message } if message.contains("pas prêt")));
+        });
+        let ended = agent.session();
+        ladder.join().unwrap();
+        assert!(matches!(ended, Ended::Lost(_)), "{ended:?}");
+        assert_eq!(*stub.aborted.lock().unwrap(), [id]);
+    }
+
+    #[test]
+    fn agent_beats_every_two_seconds_with_its_running_games() {
+        let (agent, _stub, listener, _started) = agent("beat");
+        let ladder = thread::spawn(move || {
+            let mut ladder = FakeLadder::accept(&listener);
+            ladder.until_ready();
+            let since = Instant::now();
+            loop {
+                if let FromNode::Heartbeat { running, .. } = ladder.read() {
+                    assert_eq!(running, 0);
+                    break;
+                }
+            }
+            assert!(since.elapsed() <= HEARTBEAT + Duration::from_secs(1));
+        });
+        let ended = agent.session();
+        ladder.join().unwrap();
+        assert!(matches!(ended, Ended::Lost(_)));
+    }
+
+    #[test]
+    fn a_session_end_says_who_ended_it() {
+        assert_eq!(Ended::Refused("401".into()).to_string(), "refusé par le ladder : 401");
+        assert_eq!(Ended::Lost("délai".into()).to_string(), "ladder perdu : délai");
+    }
+
+    #[test]
+    fn next_attempt_resets_after_a_stable_session() {
+        assert_eq!(next_attempt(4, Duration::from_secs(5)), 5);
+        assert_eq!(next_attempt(4, STABLE + Duration::from_secs(1)), 0);
+        assert_eq!(next_attempt(u32::MAX, Duration::ZERO), u32::MAX);
+    }
+
+    #[test]
+    fn prepare_reads_the_token_and_creates_the_logs() {
+        let dir = std::env::temp_dir().join(format!("isolation-prepare-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let mut node = cfg();
+        node.token_file = dir.join("token");
+        node.logs = dir.join("logs");
+        node.jars = dir.join("jars");
+        assert!(prepare(node).is_err(), "sans token, le nœud ne part pas");
+        fs::write(
+            dir.join("token"),
+            "secret
+",
+        )
+        .unwrap();
+        let mut node = cfg();
+        node.token_file = dir.join("token");
+        node.logs = dir.join("logs");
+        node.jars = dir.join("jars");
+        let agent = prepare(node).unwrap();
+        assert_eq!(agent.token, "secret");
+        assert!(dir.join("logs").is_dir() && dir.join("jars").is_dir());
+        let _ = fs::remove_dir_all(&dir);
     }
 }
