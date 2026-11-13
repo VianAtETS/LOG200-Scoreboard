@@ -34,7 +34,6 @@ use crate::roster::Team;
 use crate::sync::lock;
 use crate::thermal::Thermal;
 
-/// Préfixe des parties de la sonde de démarrage.
 const PROBE: &str = "sonde";
 const TICK: Duration = Duration::from_millis(100);
 const HEARTBEAT: Duration = Duration::from_secs(2);
@@ -175,7 +174,6 @@ impl std::fmt::Display for Ended {
     }
 }
 
-/// Lance l'agent jusqu'à l'arrêt du processus.
 pub fn run(cfg: NodeConfig) -> anyhow::Result<()> {
     let agent = prepare(cfg)?;
     let mut rng = rand::rng();
@@ -201,7 +199,6 @@ fn prepare(cfg: NodeConfig) -> anyhow::Result<Agent> {
     Agent::new(cfg, token, local, jars).context("cache de jars")
 }
 
-/// Une session qui a tenu longtemps remet le délai de reconnexion à zéro.
 fn next_attempt(attempt: u32, lasted: Duration) -> u32 {
     if lasted > STABLE { 0 } else { attempt.saturating_add(1) }
 }

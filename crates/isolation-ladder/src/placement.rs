@@ -125,7 +125,6 @@ impl Placement {
         }
     }
 
-    /// Un slot libre accepte `class`.
     pub fn fits(&self, class: PairClass) -> bool {
         lock(&self.slots).iter().any(|s| s.free() && s.kind.accepts(class))
     }
@@ -234,7 +233,6 @@ impl Drop for Lease {
     }
 }
 
-/// Une partie se joue sur ce slot.
 pub struct InUse {
     placement: Arc<Placement>,
     position: usize,

@@ -77,7 +77,6 @@ impl CommandTemplate {
         Self(self.0.iter().map(|a| a.replace("{jar}", jar)).collect())
     }
 
-    /// Le même gabarit suivi de `args`.
     pub fn then(&self, args: impl IntoIterator<Item = String>) -> Self {
         Self(self.0.iter().cloned().chain(args).collect())
     }

@@ -94,7 +94,6 @@ struct NodeInfo {
     last_error: Option<String>,
 }
 
-/// Une connexion de nœud vivante.
 pub struct NodeLink {
     outgoing: UnboundedSender<Frame>,
     games: Mutex<HashMap<String, Sender<GameMsg>>>,
@@ -137,7 +136,6 @@ impl NodeHub {
         lock(&self.links).get(node).cloned()
     }
 
-    /// L'exécuteur qui joue sur `node`.
     pub fn executor(self: &Arc<Self>, node: &str) -> Arc<dyn Executor> {
         Arc::new(NodeExecutor {
             hub: Arc::clone(self),

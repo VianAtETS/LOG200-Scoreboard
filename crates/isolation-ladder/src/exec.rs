@@ -22,7 +22,6 @@ use crate::command::{ExecConfig, Vars};
 use crate::remote::{GameSpec, Seated};
 use crate::roster::Team;
 
-/// Une partie à jouer.
 pub struct GameRun<'a> {
     pub id: &'a str,
     /// Index du slot sur la machine qui joue : ses cœurs et ses remplacements de `[sandbox]`.
@@ -42,14 +41,12 @@ pub trait GameOutput: Send + Sync {
     fn log_path(&self, side: Color) -> PathBuf;
 }
 
-/// Joue une partie quelque part.
 pub trait Executor: Send + Sync {
     fn run(&self, run: &GameRun<'_>, out: Arc<dyn GameOutput>) -> Result<GameResult, GameError>;
     /// Arrête la partie `game` en cours : son `run` rend vite une erreur.
     fn abort(&self, game: &str);
 }
 
-/// Joue sur cette machine, dans ses bacs à sable.
 pub struct Local {
     cfg: ExecConfig,
 }
