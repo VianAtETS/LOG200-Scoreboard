@@ -11,25 +11,26 @@ use isolation_core::rules::random_opening;
 
 use crate::arena::Arena;
 use crate::config::Config;
+use crate::placement::{Lease, PairClass, Placement};
 use crate::play::{Report, Rest, spawn_game, spawn_pair};
-use crate::roster::{Team, multithread_game};
+use crate::roster::{Team, pair_class};
 use crate::schedule::{Announcements, Scheduler};
 use crate::tournament::Organizer;
 
 pub struct Pairs {
     pub scheduler: Scheduler,
-    /// Paires en cours, par genre de slot (ordinaire, multithread), pause comprise.
-    pub running: [usize; 2],
+    /// Slots et baux : une paire en cours, pause comprise, tient le sien.
+    placement: Arc<Placement>,
     busy: HashSet<String>,
     announced: Announcements,
     pub round: u64,
 }
 
 impl Pairs {
-    pub fn new(scheduler: Scheduler) -> Self {
+    pub fn new(scheduler: Scheduler, placement: Arc<Placement>) -> Self {
         Self {
             scheduler,
-            running: [0; 2],
+            placement,
             busy: HashSet::new(),
             announced: Announcements::default(),
             round: 0,
@@ -37,7 +38,12 @@ impl Pairs {
     }
 
     pub fn idle(&self) -> bool {
-        self.running == [0; 2]
+        self.placement.idle()
+    }
+
+    /// Classe de la paire : où elle a le droit de jouer.
+    pub fn class(&self, a: &Team, b: &Team) -> PairClass {
+        pair_class(&self.placement, a, b)
     }
 
     /// Une paire de plus tient dans `rounds`, annonces comprises.
@@ -63,6 +69,8 @@ impl Pairs {
         queued.unwrap_or_else(|e| eprintln!("   file d'attente non publiée : {e}"));
     }
 
+    /// Lance la paire si un slot l'accepte. Faux sinon (un nœud vient de partir, un tournoi a pris
+    /// le slot).
     pub fn launch(
         &mut self,
         arena: &Arc<Arena>,
@@ -70,34 +78,37 @@ impl Pairs {
         [a, b]: [Team; 2],
         reports: &Sender<Report>,
         rng: &mut impl Rng,
-    ) {
+    ) -> bool {
         let cfg = arena.config();
+        let Some(lease) = self.placement.try_lease(self.class(&a, &b)) else {
+            return false;
+        };
         self.round += 1;
-        self.running[usize::from(multithread_game(cfg, &a, &b))] += 1;
         self.scheduler.record(&a.id, &b.id, 2);
         self.busy.extend([a.id.clone(), b.id.clone()]);
         self.publish(cfg, teams);
         let opening = random_opening(cfg.opening_plies, rng);
         eprintln!(
-            "== paire {} : {} contre {} (ouverture {})",
+            "== paire {} : {} contre {} sur {}/{} (ouverture {})",
             self.round,
             a.id,
             b.id,
+            lease.slot().node,
+            lease.slot().index,
             notation::join(&opening)
         );
-        spawn_pair(Arc::clone(arena), a, b, opening, reports.clone());
+        spawn_pair(Arc::clone(arena), lease, a, b, opening, reports.clone());
+        true
     }
 
     /// Lance les matchs de tournoi prêts qui trouvent un slot libre.
     pub fn launch_tournament(&mut self, arena: &Arc<Arena>, tournaments: &mut Organizer, reports: &Sender<Report>) {
         let cfg = arena.config();
         for p in tournaments.pending(&self.busy) {
-            let multithread = multithread_game(cfg, &p.red, &p.black);
-            if self.running[usize::from(multithread)] < cfg.slots_of(multithread) {
-                self.running[usize::from(multithread)] += 1;
+            if let Some(lease) = self.placement.try_lease(self.class(&p.red, &p.black)) {
                 self.busy.extend([p.red.id.clone(), p.black.id.clone()]);
                 tournaments.start(cfg, &p);
-                spawn_game(Arc::clone(arena), p, reports.clone());
+                spawn_game(Arc::clone(arena), lease, p, reports.clone());
             }
         }
     }
@@ -113,13 +124,14 @@ impl Pairs {
         rng: &mut impl Rng,
     ) {
         let unavailable = self.unavailable(waiting, Some(&rest.pair));
-        let fits = |a: &Team, b: &Team| multithread_game(cfg, a, b) == rest.multithread;
+        let placement = &self.placement;
+        let fits = |a: &Team, b: &Team| rest.kind.accepts(pair_class(placement, a, b));
         let Some((a, b)) = self.scheduler.next_pair(teams, &unavailable, fits, rating, rng) else {
             return;
         };
         eprintln!("   annonce : {} contre {} à {}", a.id, b.id, rest.at);
         let pair = [a.clone(), b.clone()];
-        self.announced.add(rest.pair, rest.multithread, pair, rest.at);
+        self.announced.add(rest.pair, pair, rest.at);
         self.publish(cfg, teams);
     }
 
@@ -130,7 +142,8 @@ impl Pairs {
         }
     }
 
-    /// Lance les annonces dont la pause est finie, sauf si un tournoi a pris leur slot.
+    /// Lance les annonces dont la pause est finie, sauf si plus aucun slot ne les accepte (un
+    /// tournoi l'a pris, son nœud est parti).
     pub fn launch_announced(
         &mut self,
         arena: &Arc<Arena>,
@@ -139,21 +152,21 @@ impl Pairs {
         rng: &mut impl Rng,
     ) {
         let cfg = arena.config();
-        for (pair, multithread) in self.announced.take_ready() {
-            if self.running[usize::from(multithread)] < cfg.slots_of(multithread) {
-                self.launch(arena, teams, pair, reports, rng);
-            } else {
+        for pair in self.announced.take_ready() {
+            let ids = [pair[0].id.clone(), pair[1].id.clone()];
+            if !self.launch(arena, teams, pair, reports, rng) {
                 eprintln!(
-                    "   annonce {} contre {} annulée : slot pris par le tournoi",
-                    pair[0].id, pair[1].id
+                    "   annonce {} contre {} annulée : plus de slot pour elle",
+                    ids[0], ids[1]
                 );
                 self.publish(cfg, teams);
             }
         }
     }
 
-    pub fn done(&mut self, pair: &[String; 2], multithread: bool) {
-        self.running[usize::from(multithread)] -= 1;
+    /// La paire a fini sa pause : son slot est libre, son annonce peut partir.
+    pub fn done(&mut self, pair: &[String; 2], lease: Lease) {
+        drop(lease);
         for id in pair {
             self.busy.remove(id);
         }
@@ -184,13 +197,16 @@ mod tests {
         let cfg: Config = toml.parse().unwrap();
         let teams = roster(&cfg, None, &mut HashSet::new());
         for seed in 0..20 {
-            let mut pairs = Pairs::new(Scheduler::default());
+            let placement = Placement::new(&cfg);
+            let mut pairs = Pairs::new(Scheduler::default(), Arc::clone(&placement));
             pairs.scheduler.record("a", "b", 2);
             pairs.busy.extend(["a", "b", "c"].map(String::from));
-            pairs.running = [2, 0];
+            let resting = placement.try_lease(PairClass::Heavy).unwrap();
+            assert!(!placement.fits(PairClass::Heavy), "le seul slot est en pause");
+
             let rest = Rest {
                 pair: ["a".into(), "b".into()],
-                multithread: false,
+                kind: resting.kind(),
                 at: "2026-11-05T12:01:00.000Z".into(),
             };
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -203,8 +219,9 @@ mod tests {
                 serde_json::from_str(&fs::read_to_string(dir.join("queue.json")).unwrap()).unwrap();
             assert_eq!(file["next"][0]["teams"], serde_json::json!(announced));
             assert!(pairs.announced.take_ready().is_empty());
-            pairs.done(&["a".into(), "b".into()], false);
+            pairs.done(&["a".into(), "b".into()], resting);
             assert_eq!(pairs.announced.take_ready().len(), 1);
+            assert!(pairs.idle());
         }
         let _ = fs::remove_dir_all(&dir);
     }

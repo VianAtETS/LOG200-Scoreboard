@@ -17,8 +17,7 @@ struct Announced {
     at: String,
     #[serde(skip)]
     after: [String; 2],
-    #[serde(skip)]
-    multithread: bool,
+
     #[serde(skip)]
     pair: [Team; 2],
     #[serde(skip)]
@@ -47,12 +46,11 @@ impl Announcements {
     }
 
     /// `after` : la paire en pause dont le slot accueillera `pair` ; `at` : la fin de cette pause.
-    pub fn add(&mut self, after: [String; 2], multithread: bool, pair: [Team; 2], at: String) {
+    pub fn add(&mut self, after: [String; 2], pair: [Team; 2], at: String) {
         self.0.push(Announced {
             teams: [pair[0].id.clone(), pair[1].id.clone()],
             at,
             after,
-            multithread,
             jars: [jar_stamp(&pair[0]), jar_stamp(&pair[1])],
             pair,
             ready: false,
@@ -83,10 +81,10 @@ impl Announcements {
     }
 
     /// Annonces dont la pause est finie, retirées de la liste : `(paire, multithread)`.
-    pub fn take_ready(&mut self) -> Vec<([Team; 2], bool)> {
+    pub fn take_ready(&mut self) -> Vec<[Team; 2]> {
         let (ready, waiting) = std::mem::take(&mut self.0).into_iter().partition(|a| a.ready);
         self.0 = waiting;
-        ready.into_iter().map(|a: Announced| (a.pair, a.multithread)).collect()
+        ready.into_iter().map(|a: Announced| a.pair).collect()
     }
 }
 
@@ -115,7 +113,6 @@ mod tests {
         let mut announcements = Announcements::default();
         announcements.add(
             pair(after[0], after[1]),
-            false,
             next.map(team),
             "2026-11-05T12:01:00.000Z".into(),
         );
@@ -146,7 +143,7 @@ mod tests {
         assert_eq!(
             ready
                 .iter()
-                .map(|(p, _)| [p[0].id.as_str(), p[1].id.as_str()])
+                .map(|p| [p[0].id.as_str(), p[1].id.as_str()])
                 .collect::<Vec<_>>(),
             [["a", "c"]]
         );
@@ -190,7 +187,7 @@ mod tests {
             ..team(id)
         };
         let mut announcements = Announcements::default();
-        announcements.add(pair("a", "b"), false, [with_jar("c"), team("d")], String::new());
+        announcements.add(pair("a", "b"), [with_jar("c"), team("d")], String::new());
         let all = [team("a"), team("b"), with_jar("c"), team("d")];
         assert!(!announcements.cancel_stale(&all, &HashSet::new(), &HashSet::new()));
         let later = SystemTime::now() + std::time::Duration::from_secs(5);

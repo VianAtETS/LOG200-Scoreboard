@@ -180,15 +180,6 @@ impl Config {
             .count()
     }
 
-    /// Faute de slot du genre voulu, l'autre, pour qu'aucune partie n'attende un slot qui n'existe pas.
-    pub fn slot_kind(&self, multithread: bool) -> bool {
-        if self.slots_of(multithread) > 0 {
-            multithread
-        } else {
-            !multithread
-        }
-    }
-
     pub fn tournament_settings(&self) -> TournamentConfig {
         self.tournament.clone().unwrap_or_default()
     }

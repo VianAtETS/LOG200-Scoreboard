@@ -11,8 +11,9 @@ use isolation_core::record::{GameRecord, TournamentGame, rfc3339_at};
 use crate::arena::{Arena, Fixture, GameError};
 use crate::config::Config;
 use crate::hub::Hub;
+use crate::placement::{Lease, SlotKind};
 use crate::remote::Registry;
-use crate::roster::{Team, multithread_game};
+use crate::roster::Team;
 use crate::tournament::Pending;
 
 /// Pause après une partie annulée : une config cassée ne doit pas faire tourner le ladder à vide.
@@ -44,15 +45,17 @@ pub enum Report {
     },
     /// Les deux parties de la paire sont jouées : son slot entre en pause jusqu'à `at`.
     Resting(Rest),
+    /// Le bail est rendu à la boucle, qui le libère.
     Done {
         pair: [String; 2],
-        multithread: bool,
+        lease: Lease,
     },
 }
 
 pub struct Rest {
     pub pair: [String; 2],
-    pub multithread: bool,
+    /// Genre du slot à pourvoir : la paire annoncée doit y tenir.
+    pub kind: SlotKind,
     pub at: String,
 }
 
@@ -78,12 +81,12 @@ pub fn live_hub(reports: &Sender<Report>) -> Arc<Hub> {
     })
 }
 
-/// Joue la paire dans les deux couleurs, avec la même ouverture. L'arène attribue un slot à chaque
-/// partie. Pendant l'arrêt, la seconde couleur n'est pas jouée.
-pub fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, reports: Sender<Report>) {
+/// Joue la paire dans les deux couleurs, avec la même ouverture, sur le slot de `lease`, gardé
+/// jusqu'à la fin de la pause. Pendant l'arrêt, la seconde couleur n'est pas jouée.
+pub fn spawn_pair(arena: Arc<Arena>, lease: Lease, a: Team, b: Team, opening: Vec<Move>, reports: Sender<Report>) {
     thread::spawn(move || {
         for (red, black) in [(&a, &b), (&b, &a)] {
-            let retry = play_and_report(&arena, &reports, red, black, &opening, None);
+            let retry = play_and_report(&arena, &lease, &reports, red, black, &opening, None);
             if arena.draining() {
                 break;
             }
@@ -95,32 +98,33 @@ pub fn spawn_pair(arena: Arc<Arena>, a: Team, b: Team, opening: Vec<Move>, repor
             let pause = Duration::from_secs(arena.config().pause_s);
             let _ = reports.send(Report::Resting(Rest {
                 pair: [a.id.clone(), b.id.clone()],
-                multithread: multithread_game(arena.config(), &a, &b),
+                kind: lease.kind(),
                 at: rfc3339_at(SystemTime::now() + pause),
             }));
             thread::sleep(pause);
         }
-        report_done(&arena, &reports, a, b);
+        report_done(&reports, a, b, lease);
     });
 }
 
-pub fn spawn_game(arena: Arc<Arena>, p: Pending, reports: Sender<Report>) {
+pub fn spawn_game(arena: Arc<Arena>, lease: Lease, p: Pending, reports: Sender<Report>) {
     thread::spawn(move || {
         let fixture = Fixture {
             game: p.game,
             time_ms: p.time_ms,
             forfeit_counts: p.forfeit_counts,
         };
-        if let Some(delay) = play_and_report(&arena, &reports, &p.red, &p.black, &p.opening, Some(&fixture)) {
+        if let Some(delay) = play_and_report(&arena, &lease, &reports, &p.red, &p.black, &p.opening, Some(&fixture)) {
             thread::sleep(delay);
         }
-        report_done(&arena, &reports, p.red, p.black);
+        report_done(&reports, p.red, p.black, lease);
     });
 }
 
 /// Si la partie a échoué : l'attente avant la suivante.
 fn play_and_report(
     arena: &Arena,
+    lease: &Lease,
     reports: &Sender<Report>,
     red: &Team,
     black: &Team,
@@ -133,7 +137,14 @@ fn play_and_report(
         black: black.id.clone(),
         game: game.clone(),
     });
-    let outcome = arena.play(red, black, opening, fixture, !(red.is_bot() && black.is_bot()));
+    let outcome = arena.play(
+        Some(lease),
+        red,
+        black,
+        opening,
+        fixture,
+        !(red.is_bot() && black.is_bot()),
+    );
     let retry = match &outcome {
         Ok(_) => None,
         Err(GameError::NoShow(_)) => Some(NO_SHOW_RETRY_DELAY),
@@ -148,10 +159,9 @@ fn play_and_report(
     retry
 }
 
-fn report_done(arena: &Arena, reports: &Sender<Report>, a: Team, b: Team) {
-    let multithread = multithread_game(arena.config(), &a, &b);
+fn report_done(reports: &Sender<Report>, a: Team, b: Team, lease: Lease) {
     let _ = reports.send(Report::Done {
         pair: [a.id, b.id],
-        multithread,
+        lease,
     });
 }

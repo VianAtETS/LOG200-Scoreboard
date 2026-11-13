@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::command::CommandTemplate;
 use crate::config::{Config, TeamConfig};
+use crate::placement::{PairClass, Placement};
 use crate::remote::{Registry, Seat};
 use crate::submit;
 use crate::team_id::TeamId;
@@ -55,8 +56,8 @@ impl Team {
 }
 
 /// Multithread dès qu'une des équipes l'est.
-pub fn multithread_game(cfg: &Config, a: &Team, b: &Team) -> bool {
-    cfg.slot_kind(a.multithread || b.multithread)
+pub fn pair_class(placement: &Placement, a: &Team, b: &Team) -> PairClass {
+    placement.class(a.multithread || b.multithread)
 }
 
 /// Équipes de `[[team]]`, puis les équipes inscrites qui n'y figurent pas. Une équipe connectée en
@@ -107,9 +108,10 @@ mod tests {
             Team::with_jar(&cfg, &id, jar, false),
             Team::with_jar(&cfg, &id, jar, true),
         );
-        assert!(!multithread_game(&cfg, &single, &single));
-        assert!(multithread_game(&cfg, &single, &multi));
-        assert!(multithread_game(&cfg, &multi, &single));
+        let placement = Placement::new(&cfg);
+        assert_eq!(pair_class(&placement, &single, &single), PairClass::Heavy);
+        assert_eq!(pair_class(&placement, &single, &multi), PairClass::Multithread);
+        assert_eq!(pair_class(&placement, &multi, &single), PairClass::Multithread);
         let vars = Vars {
             cfg: &cfg,
             slot: 1,
@@ -124,10 +126,11 @@ mod tests {
             .collect();
         assert_eq!(keys, ["SANDBOX_CPUS"]);
 
-        let ordinary_only: Config = MINIMAL.parse().unwrap();
-        assert!(!multithread_game(&ordinary_only, &multi, &single));
+        let ordinary_only = Placement::new(&MINIMAL.parse().unwrap());
+        assert_eq!(pair_class(&ordinary_only, &multi, &single), PairClass::Heavy);
         let multithread_only: Config = format!("{MINIMAL}[[slot]]\nmultithread = true\n").parse().unwrap();
-        assert!(multithread_game(&multithread_only, &single, &single));
+        let multithread_only = Placement::new(&multithread_only);
+        assert_eq!(pair_class(&multithread_only, &single, &single), PairClass::Multithread);
     }
 
     #[test]

@@ -5,9 +5,9 @@ use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
@@ -23,10 +23,10 @@ use isolation_core::record::{
 use crate::command::Vars;
 use crate::config::Config;
 use crate::hub::{self, Hub};
+use crate::placement::{Lease, Placement};
 use crate::remote::{GameSpec, Seat, Seated};
-use crate::roster::{Team, multithread_game};
+use crate::roster::{Team, pair_class};
 use crate::store::compact_timestamp;
-use crate::sync::lock;
 
 /// Au-delà, le journal d'un joueur est tronqué : un jar ne doit pas pouvoir remplir le disque.
 const LOG_CAP: usize = 1 << 20;
@@ -85,8 +85,7 @@ impl Sigterm {
 /// Joue au plus une partie par slot, ladder et smoke tests confondus : pas de port ni de coeur partagé.
 pub struct Arena {
     cfg: Config,
-    free: Mutex<Vec<usize>>,
-    freed: Condvar,
+    placement: Arc<Placement>,
     /// Levé par SIGTERM : plus de nouvelle partie, on finit celles en cours.
     draining: AtomicBool,
     smoke_tests: AtomicUsize,
@@ -95,11 +94,9 @@ pub struct Arena {
 
 impl Arena {
     pub fn new(cfg: Config, hub: Arc<Hub>) -> Self {
-        let free = (0..cfg.slots()).rev().collect();
         Self {
+            placement: Placement::new(&cfg),
             cfg,
-            free: Mutex::new(free),
-            freed: Condvar::new(),
             draining: AtomicBool::new(false),
             smoke_tests: AtomicUsize::new(0),
             hub,
@@ -108,6 +105,10 @@ impl Arena {
 
     pub const fn config(&self) -> &Config {
         &self.cfg
+    }
+
+    pub const fn placement(&self) -> &Arc<Placement> {
+        &self.placement
     }
 
     #[cfg(unix)]
@@ -147,23 +148,6 @@ impl Arena {
         self.smoke_tests.load(Ordering::SeqCst)
     }
 
-    /// Attend un slot libre de ce genre, celui de plus petit index.
-    fn take_slot(&self, multithread: bool) -> Slot<'_> {
-        let fits = |&index: &usize| self.cfg.multithread_slot(index) == multithread;
-        let free = lock(&self.free);
-        let mut free = self
-            .freed
-            .wait_while(free, |free| !free.iter().any(fits))
-            .unwrap_or_else(PoisonError::into_inner);
-        let Some(position) = free.iter().rposition(fits) else {
-            unreachable!("attendu tant qu'aucun slot de ce genre n'est libre");
-        };
-        Slot {
-            arena: self,
-            index: free.remove(position),
-        }
-    }
-
     /// Ramasse les restes d'un arrêt brutal : `cleanup` avec `{game}` vide.
     pub fn sweep(&self) {
         let vars = Vars {
@@ -176,8 +160,10 @@ impl Arena {
         drop(CleanupGuard::new(&vars));
     }
 
+    /// Joue sur le slot de `lease` ; sans bail (smoke test), sur un slot du serveur principal.
     pub fn play(
         &self,
+        lease: Option<&Lease>,
         red: &Team,
         black: &Team,
         opening: &[Move],
@@ -186,7 +172,7 @@ impl Arena {
     ) -> Result<GameRecord, GameError> {
         let cfg = &self.cfg;
         let time_ms = fixture.map_or(cfg.time_ms, |f| f.time_ms);
-        let slot = self.take_slot(multithread_game(cfg, red, black));
+        let slot = self.placement.occupy(lease, pair_class(&self.placement, red, black));
         let ts = now_rfc3339();
         let id = format!("{}-{}-{}", compact_timestamp(&ts), red.id, black.id);
         let entry = |team: &Team| Player {
@@ -198,7 +184,7 @@ impl Arena {
         let (red_entry, black_entry) = (entry(red), entry(black));
         let vars = Vars {
             cfg,
-            slot: slot.index,
+            slot: slot.index(),
             opening: notation::join(opening),
             game: &id,
             time_ms,
@@ -293,20 +279,6 @@ struct OnAir {
 impl Drop for OnAir {
     fn drop(&mut self) {
         self.hub.end(&self.id, self.result);
-    }
-}
-
-struct Slot<'a> {
-    arena: &'a Arena,
-    index: usize,
-}
-
-impl Drop for Slot<'_> {
-    fn drop(&mut self) {
-        let mut free = lock(&self.arena.free);
-        free.push(self.index);
-        free.sort_unstable_by(|a, b| b.cmp(a));
-        self.arena.freed.notify_all();
     }
 }
 
@@ -569,47 +541,6 @@ fn spawn_logged(mut command: Command, log: &Path) -> io::Result<LoggedPlayer> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_game_waits_for_a_free_slot() {
-        let cfg: Config = "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\n[[slot]]\n[[slot]]\n"
-            .parse()
-            .unwrap();
-        let arena = Arena::new(cfg, Hub::new(|_, _, _| {}));
-        let first = arena.take_slot(false);
-        let second = arena.take_slot(false);
-        assert_eq!((first.index, second.index), (0, 1));
-        thread::scope(|scope| {
-            let (tx, rx) = mpsc::channel();
-            let arena = &arena;
-            scope.spawn(move || tx.send(arena.take_slot(false).index).unwrap());
-            assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
-            drop(second);
-            assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(1));
-        });
-        drop(first);
-        assert_eq!(arena.take_slot(false).index, 0);
-    }
-
-    #[test]
-    fn a_multithread_game_waits_for_a_multithread_slot() {
-        let cfg: Config = "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\n\
-                           [[slot]]\n[[slot]]\nmultithread = true\n[[slot]]\n"
-            .parse()
-            .unwrap();
-        let arena = Arena::new(cfg, Hub::new(|_, _, _| {}));
-        let multithread = arena.take_slot(true);
-        assert_eq!(multithread.index, 1);
-        assert_eq!(arena.take_slot(false).index, 0);
-        thread::scope(|scope| {
-            let (tx, rx) = mpsc::channel();
-            let arena = &arena;
-            scope.spawn(move || tx.send(arena.take_slot(true).index).unwrap());
-            assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
-            drop(multithread);
-            assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(1));
-        });
-    }
 
     fn result_of(stdout: &'static str, hub: Option<Arc<Hub>>) -> String {
         read_result(stdout.as_bytes(), "g1".into(), hub)

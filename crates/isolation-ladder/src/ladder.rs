@@ -23,7 +23,7 @@ use crate::migrate::open_db;
 use crate::pairs::Pairs;
 use crate::play::{Report, live_hub, remote_registry};
 use crate::remote::Registry;
-use crate::roster::{Team, multithread_game, roster};
+use crate::roster::{Team, pair_class, roster};
 use crate::schedule::Scheduler;
 use crate::standings::Standings;
 use crate::thermal::Thermal;
@@ -57,6 +57,7 @@ pub fn run(path: &Path, rounds: Option<u64>, archives: bool) -> anyhow::Result<(
     arena.sweep();
     let _api = api::serve(&arena, &hub, remote.as_ref())?;
 
+    let pairs = Pairs::new(scheduler, Arc::clone(arena.placement()));
     let mut ladder = Ladder {
         thermal: Thermal::new(arena.config().thermal.as_ref()),
         arena,
@@ -65,7 +66,8 @@ pub fn run(path: &Path, rounds: Option<u64>, archives: bool) -> anyhow::Result<(
         tournaments,
         live,
         remote,
-        pairs: Pairs::new(scheduler),
+        pairs,
+
         reports,
         rounds,
         rng: rand::rng(),
@@ -162,16 +164,13 @@ impl Ladder {
         }
         self.pairs
             .launch_announced(&self.arena, &teams, &self.reports, &mut self.rng);
-        if self.pairs.running.iter().sum::<usize>() >= cfg.slots() || !self.pairs.open(self.rounds) {
+        if !self.pairs.open(self.rounds) {
             return false;
         }
         let unavailable = self.pairs.unavailable(&waiting, None);
-        let running = self.pairs.running;
-        let fits = |a: &Team, b: &Team| {
-            let multithread = multithread_game(cfg, a, b);
-            running[usize::from(multithread)] < cfg.slots_of(multithread)
-        };
         let standings = &self.standings;
+        let placement = self.arena.placement();
+        let fits = |a: &Team, b: &Team| placement.fits(pair_class(placement, a, b));
         let next = self
             .pairs
             .scheduler
@@ -179,9 +178,9 @@ impl Ladder {
         if let Some((a, b)) = next {
             self.said_waiting = false;
             let pair = [a.clone(), b.clone()];
-            self.pairs
+            return self
+                .pairs
                 .launch(&self.arena, &teams, pair, &self.reports, &mut self.rng);
-            return true;
         }
         if self.pairs.idle() && !self.said_waiting {
             eprintln!("en attente d'au moins deux équipes ({} pour l'instant)", teams.len());
@@ -218,8 +217,9 @@ impl Ladder {
                     self.pairs.announce(cfg, &teams, &waiting, rest, rating, &mut self.rng);
                 }
             }
-            Report::Done { pair, multithread } => {
-                self.pairs.done(&pair, multithread);
+            Report::Done { pair, lease } => {
+                self.pairs.done(&pair, lease);
+
                 prune_logs(&cfg.logs_dir(), LOG_RETENTION);
             }
         }
