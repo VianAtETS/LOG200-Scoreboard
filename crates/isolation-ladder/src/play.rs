@@ -11,7 +11,8 @@ use isolation_core::record::{GameRecord, TournamentGame, rfc3339_at};
 use crate::arena::{Arena, Fixture, GameError};
 use crate::config::Config;
 use crate::hub::Hub;
-use crate::placement::{Lease, SlotKind};
+use crate::placement::{Lease, PairClass, SlotKind};
+
 use crate::remote::Registry;
 use crate::roster::Team;
 use crate::tournament::Pending;
@@ -121,6 +122,26 @@ pub fn spawn_game(arena: Arc<Arena>, lease: Lease, p: Pending, reports: Sender<R
     });
 }
 
+/// Une partie perdue avec son nœud n'a rien joué de compté : on la rejoue une fois, ailleurs.
+fn replay<T>(
+    first: Result<T, GameError>,
+    again: impl FnOnce() -> Option<Result<T, GameError>>,
+) -> Result<T, GameError> {
+    match first {
+        Err(GameError::NodeLost(_)) => again().unwrap_or(first),
+        other => other,
+    }
+}
+
+/// Un autre slot pour une paire portable dont le nœud est parti ; on attend une fois s'il n'y en a pas.
+fn elsewhere(arena: &Arena) -> Option<Lease> {
+    let placement = arena.placement();
+    placement.try_lease(PairClass::Portable).or_else(|| {
+        thread::sleep(RETRY_DELAY);
+        placement.try_lease(PairClass::Portable)
+    })
+}
+
 /// Si la partie a échoué : l'attente avant la suivante.
 fn play_and_report(
     arena: &Arena,
@@ -137,14 +158,16 @@ fn play_and_report(
         black: black.id.clone(),
         game: game.clone(),
     });
-    let outcome = arena.play(
-        Some(lease),
-        red,
-        black,
-        opening,
-        fixture,
-        !(red.is_bot() && black.is_bot()),
-    );
+    let live = !(red.is_bot() && black.is_bot());
+    let first = arena.play(Some(lease), red, black, opening, fixture, live);
+    let outcome = replay(first, || {
+        eprintln!(
+            "   {} contre {} : nœud perdu, partie rejouée ailleurs",
+            red.id, black.id
+        );
+        let other = elsewhere(arena)?;
+        Some(arena.play(Some(&other), red, black, opening, fixture, live))
+    });
     let retry = match &outcome {
         Ok(_) => None,
         Err(GameError::NoShow(_)) => Some(NO_SHOW_RETRY_DELAY),
@@ -164,4 +187,33 @@ fn report_done(reports: &Sender<Report>, a: Team, b: Team, lease: Lease) {
         pair: [a.id, b.id],
         lease,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn a_game_lost_with_its_node_is_replayed_once_elsewhere() {
+        let lost = || Err::<u32, _>(GameError::NodeLost("node-a".into()));
+        let calls = Cell::new(0);
+        let again = |result: Result<u32, GameError>| {
+            calls.set(calls.get() + 1);
+            Some(result)
+        };
+        assert_eq!(replay(lost(), || again(Ok(7))).unwrap(), 7);
+        assert_eq!(calls.get(), 1);
+        let twice = replay(lost(), || again(lost()));
+        assert!(matches!(twice, Err(GameError::NodeLost(_))), "pas de troisième essai");
+        assert_eq!(calls.get(), 2);
+        assert!(
+            matches!(replay(lost(), || None), Err(GameError::NodeLost(_))),
+            "aucun slot libre"
+        );
+        let timeout = Err::<u32, _>(GameError::Timeout(Duration::from_secs(1)));
+        assert!(matches!(replay(timeout, || again(Ok(1))), Err(GameError::Timeout(_))));
+        assert_eq!(calls.get(), 2, "seule une perte de nœud est rejouée");
+    }
 }

@@ -249,7 +249,7 @@ impl Arena {
             red: red_entry,
             black: black_entry,
             tournament: fixture.map(|f| f.game.clone()),
-            node: None,
+            node: (!slot.slot().local()).then(|| slot.slot().node.to_string()),
             result,
         })
     }
@@ -316,6 +316,99 @@ fn build_hash(team: &Team) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn games_played_on_a_node_carry_its_id() {
+        use crate::bridge::Socket;
+        use crate::node::protocol::{FromNode, Outcome, PROTOCOL, ToNode};
+        use crate::placement::PairClass;
+        use axum::extract::ws::Message as Frame;
+
+        let dir = std::env::temp_dir().join(format!("isolation-arena-node-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("logs")).unwrap();
+        let cfg: Config = format!(
+            "referee = [\"r\"]\ntime_ms = 100\nsession = \"s\"\nout = {out:?}\n[nodes]\n",
+            out = dir.join("games.jsonl")
+        )
+        .parse()
+        .unwrap();
+        let arena = Arena::new(cfg, Hub::new(|_, _, _| {}));
+        let (socket, to_hub, mut from_hub) = Socket::pair();
+        let hub = Arc::clone(arena.nodes().unwrap());
+        std::thread::spawn(move || crate::node::hub::serve(&socket, &hub, "node-a"));
+        let say = move |message: &FromNode| {
+            to_hub
+                .send(Frame::text(serde_json::to_string(message).unwrap()))
+                .unwrap();
+        };
+        say(&FromNode::Hello {
+            node: "node-a".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            protocol: PROTOCOL,
+            arch: "x86_64".into(),
+            slots: 1,
+        });
+        say(&FromNode::Ready { ready: true, why: None });
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let lease = loop {
+            if let Some(lease) = arena
+                .placement()
+                .try_lease(PairClass::Portable)
+                .filter(|l| !l.slot().local())
+            {
+                break lease;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "le nœud n'a jamais offert de slot"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let bot = |id: &str| Team {
+            id: id.into(),
+            cmd: crate::command::CommandTemplate::new(["run.sh", "--bot", "aleatoire"]),
+            build: None,
+            anchor: false,
+            multithread: false,
+            portable: true,
+            remote: None,
+        };
+        let node = std::thread::spawn(move || {
+            loop {
+                let Some(Frame::Text(text)) = from_hub.blocking_recv() else {
+                    continue;
+                };
+                if let Ok(ToNode::Start(start)) = serde_json::from_str(text.as_str()) {
+                    let result = GameResult {
+                        v: isolation_core::record::RECORD_VERSION,
+                        time_ms: 100,
+                        opening: vec![],
+                        moves: vec![],
+                        winner: Color::Black,
+                        reason: Reason::Timeout,
+                        invalid: isolation_core::record::InvalidCounts::default(),
+                        duration_ms: 5,
+                        move_ms: vec![],
+                    };
+                    say(&FromNode::Result {
+                        game: start.game,
+                        outcome: Outcome::Ok { result },
+                        logs: ByColor::default(),
+                    });
+                    return;
+                }
+            }
+        });
+        let record = arena
+            .play(Some(&lease), &bot("aleatoire"), &bot("niveau-1"), &[], None, false)
+            .unwrap();
+        node.join().unwrap();
+        assert_eq!(record.node.as_deref(), Some("node-a"));
+        let local = arena.placement().try_lease(PairClass::Heavy).unwrap();
+        assert!(local.slot().local());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[cfg(unix)]
     #[test]
