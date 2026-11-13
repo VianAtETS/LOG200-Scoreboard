@@ -12,6 +12,7 @@ mod migrate;
 mod arena;
 mod command;
 mod exec;
+mod node;
 mod pairs;
 mod placement;
 mod play;

@@ -47,6 +47,9 @@ pub enum GameError {
     /// Le bac à sable d'un joueur n'a jamais démarré (Docker, gVisor) : le serveur est en faute.
     #[error("bac à sable du joueur {side} jamais démarré (code {code}), partie annulée")]
     Infra { side: Color, code: i32 },
+    /// Le nœud qui jouait a échoué : arbitre, lancement, délai.
+    #[error("nœud {node} : {message}")]
+    Remote { node: String, message: String },
 }
 
 /// Partie de tournoi : son temps par coup et sa session remplacent ceux du ladder.

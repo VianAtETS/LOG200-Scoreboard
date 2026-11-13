@@ -397,7 +397,31 @@ Un token inconnu reçoit `401` avant l'upgrade. Le ladder ferme la session avec 
 
 Section `[remote]` de `ladder.toml` (demande `[submit]`, qui tient les tokens) : `listen`, l'adresse de la WebSocket, relayée par la page sur `/api/remote` ; `connect`, où relier le joueur distant : `unix:<rundir>/{game}/{side}/sock`, la socket de sa couleur chez l'arbitre, ou `tcp:127.0.0.1:{port}` pour un arbitre sans bac à sable. Le journal du joueur (`data/logs/`) reçoit le diagnostic du relais : délai avant `ready`, aller-retour médian.
 
+## Nœuds
+
+D'autres machines du LAN peuvent jouer des parties pour le ladder : ce sont des nœuds. Un nœud lance `isolation-ladder node node.toml`, se connecte au ladder (`[nodes].listen`, route `/api/node`) avec `Authorization: Bearer <token>` (`isolation-ladder add-node ID` crée le token ; seul son sha256 est gardé), puis annonce ses slots. Il ne reçoit jamais de commande : seulement un nom de bot de sa liste blanche ou le sha256 d'un jar, et il construit lui-même les commandes depuis sa configuration. Une partie jouée sur un nœud compte exactement comme les autres : même arbitre, même image, même bac à sable ; seul le champ `node` de la base la distingue.
+
+Seules les paires portables y vont : deux joueurs dont la force ne dépend pas de la machine. Un bot l'est par `portable = true` dans `[[team]]` ; une équipe l'est si son build actif a un p99 sous `portable_p99_ms` (100) sur au moins `portable_min_moves` (200) coups joués sur le serveur principal. Une paire portable prend un slot de nœud d'abord, sinon un slot ordinaire du serveur principal ; une paire non portable ne quitte jamais le serveur principal.
+
+Un message par trame WebSocket texte, en JSON, distingué par `type` ; une clé inconnue est refusée.
+
+| Sens | Message | Rôle |
+|------|---------|------|
+| nœud → ladder | `{"type":"hello","node":"node-a","version":"0.30.0","protocol":1,"arch":"aarch64","slots":2}` | Premier message. Une autre `version` ou un autre `protocol` que le ladder : refusé. |
+| nœud → ladder | `{"type":"ready","ready":true,"why":null}` | Prêt à jouer (sonde réussie, température correcte), ou plus. Seul un nœud prêt reçoit des parties. |
+| nœud → ladder | `{"type":"heartbeat","running":1,"temp_c":61.5}` | Toutes les 2 s. Sans nouvelles depuis 6 s, le nœud est perdu. |
+| nœud → ladder | `{"type":"event","game":"…","event":{"event":"move","move":"G1-E3-C12","ms":12}}` | Événement de l'arbitre, pour le direct. |
+| nœud → ladder | `{"type":"need","sha256":"…"}` | Le jar n'est pas dans le cache du nœud. |
+| nœud → ladder | `{"type":"result","game":"…","outcome":{"status":"ok","result":{…}},"logs":{"red":"…","black":"…"}}` | Fin de partie : le résultat (revalidé par le ladder) ou `{"status":"infra","side":"red","code":125}` ou `{"status":"error","message":"…"}`, qui annulent la partie ; et la sortie d'erreur de chaque joueur. |
+| ladder → nœud | `{"type":"start","game":"…","slot":0,"time_ms":1000,"opening":["…"],"timeout_ms":264000,"red":{"kind":"bot","strategy":"niveau-1","args":[]},"black":{"kind":"jar","sha256":"…"}}` | Joue cette partie sur ce slot du nœud. |
+| ladder → nœud | `{"type":"jar","sha256":"…","size":123}` puis une trame binaire | Le jar demandé ; le nœud vérifie sa taille et son sha256. |
+| ladder → nœud | `{"type":"abort","game":"…"}` | Arrête la partie (délai dépassé côté ladder). |
+| ladder → nœud | `{"type":"drain"}` | Le ladder s'arrête : finir les parties en cours, n'en accepter aucune. |
+
+Si la connexion tombe en pleine partie, le nœud arrête tout et nettoie ; le ladder annule la partie (`NodeLost`) et la rejoue une fois ailleurs avec la même ouverture. Elle n'est jamais comptée comme une défaite.
+
 ## Mise en route
+
 
 ```sh
 cargo build --release --bin isolation-referee --bin isolation-ladder --bin isolation-check
