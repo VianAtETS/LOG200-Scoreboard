@@ -9,8 +9,15 @@ use std::path::{Path, PathBuf};
 
 use crate::config::ThermalConfig;
 
-/// Pilotes hwmon dont `temp1_input` est la température du package (Intel, AMD).
-const PACKAGE_HWMON: [&str; 3] = ["coretemp", "k10temp", "zenpower"];
+/// Pilotes hwmon dont `temp1_input` est la température du package (Intel, AMD, puce ARM).
+const PACKAGE_HWMON: [&str; 6] = [
+    "coretemp",
+    "k10temp",
+    "zenpower",
+    "cpu_thermal",
+    "soc_thermal",
+    "soc-thermal",
+];
 
 pub struct Thermal {
     sensor: PathBuf,
@@ -111,7 +118,7 @@ fn find_sensor(class: &Path) -> Option<PathBuf> {
     hwmon.filter(|p| p.is_file()).or_else(|| {
         entries("thermal")
             .into_iter()
-            .find(|d| named(d, "type", &["x86_pkg_temp"]))
+            .find(|d| named(d, "type", &["x86_pkg_temp", "soc-thermal"]))
             .map(|d| d.join("temp"))
             .filter(|p| p.is_file())
     })
@@ -157,6 +164,20 @@ mod tests {
         write(&class.join("hwmon/hwmon3/name"), "coretemp\n");
         write(&class.join("hwmon/hwmon3/temp1_input"), "88000\n");
         assert_eq!(find_sensor(class), Some(class.join("hwmon/hwmon3/temp1_input")));
+    }
+
+    #[test]
+    fn the_soc_sensor_of_an_arm_board_is_found() {
+        let dir = temp_dir("thermal-arm");
+        let class = dir.as_path();
+        write(&class.join("thermal/thermal_zone0/type"), "soc-thermal\n");
+        write(&class.join("thermal/thermal_zone0/temp"), "51769\n");
+        assert_eq!(find_sensor(class), Some(class.join("thermal/thermal_zone0/temp")));
+        write(&class.join("hwmon/hwmon0/name"), "soc_thermal\n");
+        write(&class.join("hwmon/hwmon0/temp1_input"), "51769\n");
+        write(&class.join("hwmon/hwmon1/name"), "bigcore0_thermal\n");
+        write(&class.join("hwmon/hwmon1/temp1_input"), "52000\n");
+        assert_eq!(find_sensor(class), Some(class.join("hwmon/hwmon0/temp1_input")));
     }
 
     #[test]
