@@ -163,7 +163,7 @@ impl Ladder {
         let teams = roster(cfg, self.remote.as_ref(), &mut self.warned);
         let standings = &self.standings;
         let portable = portable_teams(cfg, &teams, &mut self.builds, |t, b| standings.pace(t, b));
-        self.pairs.set_portable(portable);
+        self.pairs.set_portable(portable, &teams);
         let waiting = self.tournaments.waiting();
         self.pairs.cancel_stale(cfg, &teams, &waiting);
         if !cool {
@@ -217,7 +217,7 @@ impl Ladder {
                     let teams = roster(cfg, self.remote.as_ref(), &mut self.warned);
                     let standings = &self.standings;
                     let portable = portable_teams(cfg, &teams, &mut self.builds, |t, b| standings.pace(t, b));
-                    self.pairs.set_portable(portable);
+                    self.pairs.set_portable(portable, &teams);
                     let waiting = self.tournaments.waiting();
                     let rating = |id: &str| standings.rating(id);
                     self.pairs.announce(cfg, &teams, &waiting, rest, rating, &mut self.rng);

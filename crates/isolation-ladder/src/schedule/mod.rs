@@ -23,6 +23,7 @@ const MAX_GAP: f64 = 600.0;
 const CATCH_UP: u32 = 20;
 const BOT_STRIDE: u32 = 2;
 const LATE: u32 = 8;
+const NODE_LEAD: u32 = 4;
 
 /// Paire d'équipes, sans ordre.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -107,6 +108,24 @@ impl Scheduler {
             &dir.join("queue.json"),
             &serde_json::to_vec(&QueueFile { v: 1, teams, next })?,
         )
+    }
+
+    /// Équipes (hors bots) à plus de `NODE_LEAD` parties devant l'équipe médiane de `roster`.
+    pub fn leaders(&self, roster: &[Team]) -> HashSet<String> {
+        let mut passes: Vec<(u32, &str)> = roster
+            .iter()
+            .filter(|t| !t.is_bot())
+            .map(|t| (self.queue.pass(&t.id), t.id.as_str()))
+            .collect();
+        passes.sort_unstable();
+        let Some(&(median, _)) = passes.get(passes.len() / 2) else {
+            return HashSet::new();
+        };
+        passes
+            .into_iter()
+            .filter(|&(pass, _)| pass > median + NODE_LEAD)
+            .map(|(_, id)| id.to_string())
+            .collect()
     }
 
     fn mark_bot(&mut self, id: &str, bot: bool) {
@@ -701,5 +720,22 @@ mod tests {
         let spread = students.iter().max().unwrap() - students.iter().min().unwrap();
         assert!(spread <= 4, "{spread}");
         assert!(per_draw < Duration::from_millis(20), "{per_draw:?}");
+    }
+
+    #[test]
+    fn a_student_far_ahead_of_the_median_leads_and_bots_never_do() {
+        let teams = vec![team("a"), team("b"), team("c"), bot("x")];
+        let mut scheduler = Scheduler::default();
+        for t in &teams {
+            scheduler.mark_bot(&t.id, t.is_bot());
+            scheduler.queue.join(&t.id);
+        }
+        scheduler.record("b", "c", 2);
+        for _ in 0..3 {
+            scheduler.record("a", "x", 2);
+        }
+        assert!(scheduler.leaders(&teams).is_empty());
+        scheduler.record("a", "x", 2);
+        assert_eq!(scheduler.leaders(&teams), HashSet::from(["a".to_string()]));
     }
 }

@@ -49,7 +49,11 @@ impl Pairs {
         pair_class(&self.placement, &self.portable, a, b)
     }
 
-    pub fn set_portable(&mut self, portable: HashSet<String>) {
+    /// Une équipe trop en avance perd les nœuds : sinon, seule portable, elle y jouerait sans fin.
+    pub fn set_portable(&mut self, mut portable: HashSet<String>, teams: &[Team]) {
+        for id in self.scheduler.leaders(teams) {
+            portable.remove(&id);
+        }
         self.portable = portable;
     }
 
@@ -264,7 +268,7 @@ mod tests {
         let placement = Arc::clone(arena.placement());
         placement.add_node("node-a", 1);
         let mut pairs = Pairs::new(Scheduler::default(), Arc::clone(&placement));
-        pairs.set_portable(teams.iter().map(|t| t.id.clone()).collect());
+        pairs.set_portable(teams.iter().map(|t| t.id.clone()).collect(), &teams);
         let resting = placement.try_lease(PairClass::Portable).unwrap();
         assert_eq!(resting.slot().node.as_ref(), "node-a");
         let _main = placement.try_lease(PairClass::Heavy).unwrap();
