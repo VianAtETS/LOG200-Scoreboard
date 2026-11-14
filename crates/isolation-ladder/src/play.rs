@@ -5,8 +5,8 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use isolation_core::board::Move;
-use isolation_core::record::{GameRecord, TournamentGame, rfc3339_at};
+use isolation_core::board::{Color, Move};
+use isolation_core::record::{GameRecord, Player, Reason, TournamentGame, rfc3339_at};
 
 use crate::arena::{Arena, Fixture, GameError};
 use crate::config::Config;
@@ -43,6 +43,11 @@ pub enum Report {
         black: String,
         outcome: Result<GameRecord, GameError>,
         game: Option<TournamentGame>,
+    },
+    /// Ce build a dépassé son temps sur un nœud : il n'y retourne plus.
+    NodeTimeout {
+        team: String,
+        build: Option<String>,
     },
     /// Les deux parties de la paire sont jouées : son slot entre en pause jusqu'à `at`.
     Resting(Rest),
@@ -86,8 +91,12 @@ pub fn live_hub(reports: &Sender<Report>) -> Arc<Hub> {
 /// jusqu'à la fin de la pause. Pendant l'arrêt, la seconde couleur n'est pas jouée.
 pub fn spawn_pair(arena: Arc<Arena>, lease: Lease, a: Team, b: Team, opening: Vec<Move>, reports: Sender<Report>) {
     thread::spawn(move || {
+        let mut slot = Some(&lease);
         for (red, black) in [(&a, &b), (&b, &a)] {
-            let retry = play_and_report(&arena, &lease, &reports, red, black, &opening, None);
+            let (retry, timed_out) = play_and_report(&arena, slot, &reports, red, black, &opening, None);
+            if timed_out {
+                slot = None;
+            }
             if arena.draining() {
                 break;
             }
@@ -115,7 +124,16 @@ pub fn spawn_game(arena: Arc<Arena>, lease: Lease, p: Pending, reports: Sender<R
             time_ms: p.time_ms,
             forfeit_counts: p.forfeit_counts,
         };
-        if let Some(delay) = play_and_report(&arena, &lease, &reports, &p.red, &p.black, &p.opening, Some(&fixture)) {
+        let (retry, _) = play_and_report(
+            &arena,
+            Some(&lease),
+            &reports,
+            &p.red,
+            &p.black,
+            &p.opening,
+            Some(&fixture),
+        );
+        if let Some(delay) = retry {
             thread::sleep(delay);
         }
         report_done(&reports, p.red, p.black, lease);
@@ -142,16 +160,27 @@ fn elsewhere(arena: &Arena) -> Option<Lease> {
     })
 }
 
-/// Si la partie a échoué : l'attente avant la suivante.
+/// Le joueur qui a dépassé son temps sur un nœud : la partie ne compte pas.
+fn node_timeout(record: &GameRecord) -> Option<&Player> {
+    record.node.as_ref()?;
+    let loser = match record.result.winner.other() {
+        Color::Red => &record.red,
+        Color::Black => &record.black,
+    };
+    (record.result.reason == Reason::Timeout).then_some(loser)
+}
+
+/// Joue une partie, sur `lease` ou, sans bail, sur un slot du serveur principal. Rend l'attente
+/// avant la suivante si elle a échoué, et vrai si un joueur a dépassé son temps sur un nœud.
 fn play_and_report(
     arena: &Arena,
-    lease: &Lease,
+    lease: Option<&Lease>,
     reports: &Sender<Report>,
     red: &Team,
     black: &Team,
     opening: &[Move],
     fixture: Option<&Fixture>,
-) -> Option<Duration> {
+) -> (Option<Duration>, bool) {
     let game = fixture.map(|f| f.game.clone());
     let _ = reports.send(Report::Started {
         red: red.id.clone(),
@@ -159,7 +188,7 @@ fn play_and_report(
         game: game.clone(),
     });
     let live = !(red.is_bot() && black.is_bot());
-    let first = arena.play(Some(lease), red, black, opening, fixture, live);
+    let first = arena.play(lease, red, black, opening, fixture, live);
     let outcome = replay(first, || {
         eprintln!(
             "   {} contre {} : nœud perdu, partie rejouée ailleurs",
@@ -168,6 +197,21 @@ fn play_and_report(
         let other = elsewhere(arena)?;
         Some(arena.play(Some(&other), red, black, opening, fixture, live))
     });
+    let late = outcome.as_ref().ok().and_then(node_timeout).cloned();
+    let outcome = match &late {
+        Some(player) => {
+            eprintln!(
+                "   {} : temps dépassé sur un nœud, partie rejouée au serveur principal",
+                player.team
+            );
+            let _ = reports.send(Report::NodeTimeout {
+                team: player.team.clone(),
+                build: player.build.clone(),
+            });
+            arena.play(None, red, black, opening, fixture, live)
+        }
+        None => outcome,
+    };
     let retry = match &outcome {
         Ok(_) => None,
         Err(GameError::NoShow(_)) => Some(NO_SHOW_RETRY_DELAY),
@@ -179,7 +223,7 @@ fn play_and_report(
         outcome,
         game,
     });
-    retry
+    (retry, late.is_some())
 }
 
 fn report_done(reports: &Sender<Report>, a: Team, b: Team, lease: Lease) {
@@ -215,5 +259,16 @@ mod tests {
         let timeout = Err::<u32, _>(GameError::Timeout(Duration::from_secs(1)));
         assert!(matches!(replay(timeout, || again(Ok(1))), Err(GameError::Timeout(_))));
         assert_eq!(calls.get(), 2, "seule une perte de nœud est rejouée");
+    }
+
+    #[test]
+    fn only_a_timeout_on_a_node_is_held_against_the_late_player() {
+        let mut g = crate::db::tests::game("g", "a", "b", Color::Red);
+        g.result.reason = Reason::Timeout;
+        assert!(node_timeout(&g).is_none(), "au serveur principal, la partie compte");
+        g.node = Some("node-a".into());
+        assert_eq!(node_timeout(&g).map(|p| p.team.as_str()), Some("b"));
+        g.result.reason = Reason::NoMoves;
+        assert!(node_timeout(&g).is_none());
     }
 }

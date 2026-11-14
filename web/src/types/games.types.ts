@@ -46,12 +46,16 @@ export type TGameRow = TRatingRow & {
   duration_ms: number;
   time_ms?: number;
   tournament?: TTournamentRef;
+  // Jouée sur un nœud de calcul : temps par coup plus longs, hors des statistiques de temps.
+  node?: true;
   // Ladder d'avant la base : [début, longueur] de la ligne dans games.jsonl.
   at?: [number, number];
 };
 
 // Partie complète de /api/games/<id>.
-export type TGame = Omit<TGameRow, 'moves'> & {
+export type TGame = Omit<TGameRow, 'moves' | 'node'> & {
+  // Nom du nœud, dans /api/games/<id>.
+  node?: string;
   opening?: string[];
   moves: string[];
   move_ms?: number[];

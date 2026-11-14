@@ -44,6 +44,10 @@ pub(super) struct Row {
     pub(super) black: Side,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) tournament: Option<TournamentGame>,
+    /// Jouée sur un nœud : ses temps par coup ne valent pas ceux du serveur principal. Le nom du
+    /// nœud reste privé.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) node: bool,
 }
 
 /// Ligne de `timeline.jsonl` : le strict nécessaire pour rejouer les ratings de toutes les équipes.

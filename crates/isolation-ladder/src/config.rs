@@ -283,10 +283,6 @@ pub struct NodesConfig {
     pub listen: String,
     /// Registre des nœuds (`add-node`) : id et sha256 du token.
     pub tokens: PathBuf,
-    /// Une équipe est portable si le p99 de son build actif est strictement en dessous...
-    pub portable_p99_ms: u64,
-    /// ... sur au moins ce nombre de coups joués ici.
-    pub portable_min_moves: u64,
 }
 
 impl Default for NodesConfig {
@@ -294,8 +290,6 @@ impl Default for NodesConfig {
         Self {
             listen: "0.0.0.0:8093".into(),
             tokens: "jars/nodes.toml".into(),
-            portable_p99_ms: 100,
-            portable_min_moves: 200,
         }
     }
 }
@@ -369,9 +363,9 @@ pub mod tests {
     fn nodes_section_has_defaults_and_rejects_unknown_keys() {
         let cfg: Config = format!("{MINIMAL}[nodes]\n").parse().unwrap();
         let nodes = cfg.nodes.unwrap();
-        assert_eq!((nodes.portable_p99_ms, nodes.portable_min_moves), (100, 200));
+        assert_eq!(nodes.listen, "0.0.0.0:8093");
         assert!(
-            format!("{MINIMAL}[nodes]\nportable_p99 = 3\n")
+            format!("{MINIMAL}[nodes]\nportable_p99_ms = 300\n")
                 .parse::<Config>()
                 .is_err()
         );

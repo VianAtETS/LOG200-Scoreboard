@@ -1,7 +1,9 @@
 -- Temps de réflexion de :team par build, dans l'ordre où ils ont joué pour la première fois.
+-- Serveur principal seulement : sur un nœud plus lent, les mêmes coups prennent plus de temps.
 WITH scope AS (
     SELECT * FROM games
-    WHERE (:session IS NULL AND tournament_id IS NULL) OR session = :session
+    WHERE ((:session IS NULL AND tournament_id IS NULL) OR session = :session)
+      AND json_extract(record, '$.node') IS NULL
 ),
 sides AS (
     SELECT seq, time_ms, red_build AS build, 'red' AS color FROM scope WHERE red_team = :team

@@ -98,7 +98,7 @@ L'équipe utilise son token habituel et l'adresse de la page : `isolation-remote
 
 ## Nœuds de calcul (optionnel)
 
-D'autres machines du LAN peuvent jouer des parties pour le ladder : un nœud prend les paires portables (bots `portable = true`, équipes dont le build actif répond en moins de 100 ms), qui comptent exactement comme les autres. Détails et protocole : "Nœuds" dans `docs/formats.md`.
+D'autres machines du LAN peuvent jouer des parties pour le ladder : un nœud prend les paires portables (bots `portable = true`, équipes dont le build actif n'y a jamais dépassé son temps), qui comptent exactement comme les autres. Un timeout sur un nœud ne compte pas : la partie est rejouée ici et le build ne retourne plus sur les nœuds. Détails et protocole : "Nœuds" dans `docs/formats.md`.
 
 1. Sur le ladder, décommenter `[nodes]` dans `ladder.toml`, puis inscrire le nœud : `docker compose exec ladder isolation-ladder add-node node-a --nodes jars/nodes.toml`. Le token s'affiche une fois ; seul son sha256 est gardé.
 2. Publier `[nodes].listen` (8093 par défaut) **sur l'adresse LAN seulement** et limiter la source aux nœuds dans le pare-feu. Ce port ne passe jamais par Caddy ni par un proxy public.

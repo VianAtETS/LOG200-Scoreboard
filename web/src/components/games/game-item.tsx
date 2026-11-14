@@ -1,4 +1,4 @@
-import { RemoteBadge } from '@/components/badge/badge';
+import { NodeBadge, RemoteBadge } from '@/components/badge/badge';
 import { REASONS } from '@/components/replay/replay.data';
 import { fullFormat, roundDelta, shortWhen, signed } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -49,7 +49,7 @@ const GameItem: FC<Props> = ({ game: g, rating, current, selectedTeam, sideOrder
         type="button"
         className="game"
         data-id={g.id}
-        aria-label={`${who(left)} contre ${who(right)}, ${g[g.winner].team} gagne`}
+        aria-label={`${who(left)} contre ${who(right)}, ${g[g.winner].team} gagne${g.node ? ', sur un nœud' : ''}`}
         aria-current={current ? 'true' : undefined}
         onClick={() => onSelect(g)}
       >
@@ -58,7 +58,10 @@ const GameItem: FC<Props> = ({ game: g, rating, current, selectedTeam, sideOrder
         </time>
         {side(left)}
         {side(right)}
-        <span className="meta">{`${REASONS[g.reason] ?? g.reason}, ${g.moves} coups, ${Math.round(g.duration_ms / 1000)} s`}</span>
+        <span className="meta">
+          {g.node && <NodeBadge />}
+          {`${REASONS[g.reason] ?? g.reason}, ${g.moves} coups, ${Math.round(g.duration_ms / 1000)} s`}
+        </span>
       </button>
     </li>
   );

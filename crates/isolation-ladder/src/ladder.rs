@@ -23,7 +23,7 @@ use crate::migrate::open_db;
 use crate::pairs::Pairs;
 use crate::play::{Report, live_hub, remote_registry};
 use crate::remote::Registry;
-use crate::roster::{Builds, portable_teams, roster};
+use crate::roster::{Builds, NodeBans, portable_teams, roster};
 
 use crate::schedule::Scheduler;
 use crate::standings::Standings;
@@ -74,6 +74,7 @@ pub fn run(path: &Path, rounds: Option<u64>, archives: bool) -> anyhow::Result<(
         rng: rand::rng(),
         warned: HashSet::new(),
         builds: Builds::default(),
+        node_bans: NodeBans::new(),
 
         said_waiting: false,
     };
@@ -135,6 +136,9 @@ struct Ladder {
     /// Équipes inscrites déjà signalées en doublon d'une équipe fixe.
     warned: HashSet<String>,
     builds: Builds,
+    // shortcut: en mémoire seulement, un redémarrage redonne une chance à chaque build exclu (une
+    // partie rejouée) ; à garder dans state/ si ça coûte un jour trop cher.
+    node_bans: NodeBans,
     said_waiting: bool,
 }
 
@@ -161,8 +165,7 @@ impl Ladder {
                 .launch_tournament(&self.arena, &mut self.tournaments, &self.reports);
         }
         let teams = roster(cfg, self.remote.as_ref(), &mut self.warned);
-        let standings = &self.standings;
-        let portable = portable_teams(cfg, &teams, &mut self.builds, |t, b| standings.pace(t, b));
+        let portable = portable_teams(cfg, &teams, &mut self.builds, &self.node_bans);
         self.pairs.set_portable(portable, &teams);
         let waiting = self.tournaments.waiting();
         self.pairs.cancel_stale(cfg, &teams, &waiting);
@@ -216,12 +219,15 @@ impl Ladder {
                 if !self.arena.draining() && self.pairs.open(self.rounds) {
                     let teams = roster(cfg, self.remote.as_ref(), &mut self.warned);
                     let standings = &self.standings;
-                    let portable = portable_teams(cfg, &teams, &mut self.builds, |t, b| standings.pace(t, b));
+                    let portable = portable_teams(cfg, &teams, &mut self.builds, &self.node_bans);
                     self.pairs.set_portable(portable, &teams);
                     let waiting = self.tournaments.waiting();
                     let rating = |id: &str| standings.rating(id);
                     self.pairs.announce(cfg, &teams, &waiting, rest, rating, &mut self.rng);
                 }
+            }
+            Report::NodeTimeout { team, build } => {
+                self.node_bans.insert((team, build));
             }
             Report::Done { pair, lease } => {
                 self.pairs.done(&pair, lease);

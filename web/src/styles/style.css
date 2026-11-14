@@ -750,6 +750,16 @@ th[aria-sort] {
     color: var(--ink);
 }
 
+/* Partie de nœud : temps par coup mesurés sur un CPU plus lent. */
+.badge.node {
+    border-color: var(--muted);
+    color: var(--muted);
+}
+
+.game .meta .badge {
+    margin: 0 6px 0 0;
+}
+
 .side .badge {
     flex: none;
     margin-left: 0;

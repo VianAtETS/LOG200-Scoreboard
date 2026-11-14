@@ -6,6 +6,7 @@ const badgeVariantsStyles = {
   remote: 'remote',
   anchor: 'anchor',
   archived: 'archived',
+  node: 'node',
 };
 
 type TBadgeVariant = keyof typeof badgeVariantsStyles;
@@ -32,4 +33,13 @@ const RemoteBadge: FC = () => (
   </Badge>
 );
 
-export { Badge, RemoteBadge };
+const NODE_TITLE =
+  'Jouée sur un nœud de calcul, plus lent que le serveur principal : mêmes règles et même temps par coup, mais des temps de réflexion plus longs, laissés hors des statistiques de temps';
+
+const NodeBadge: FC = () => (
+  <Badge variant="node" title={NODE_TITLE}>
+    nœud
+  </Badge>
+);
+
+export { Badge, NodeBadge, RemoteBadge };

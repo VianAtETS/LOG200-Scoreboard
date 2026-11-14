@@ -34,13 +34,6 @@ fn round2(x: f64) -> f64 {
     (x * 100.0).round() / 100.0
 }
 
-/// Temps par coup mesuré d'un build : base de la portabilité (`roster::pair_class`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Measured {
-    pub p99: u64,
-    pub count: u64,
-}
-
 /// Temps par coup d'un build : les temps sont des ms entières, un compte par valeur suffit.
 #[derive(Default)]
 struct Pace {
@@ -189,7 +182,7 @@ impl Scope {
             } else {
                 vec![]
             };
-            // Le rythme sert à juger la portabilité d'une équipe : mesuré au serveur principal seulement.
+            // Rythme publié : serveur principal seulement, un nœud plus lent fausserait les temps.
             if !ms.is_empty() && game.node.is_none() {
                 let pace = s.paces.entry(players[color].build.clone()).or_insert_with(|| Pace {
                     limit: u64::MAX,
@@ -376,16 +369,6 @@ impl Standings {
         self.full.all.teams.get(team).map_or(START, |s| s.rating)
     }
 
-    /// Rythme du build `build` de `team`, mesuré au serveur principal, toutes sessions.
-    pub fn pace(&self, team: &str, build: &str) -> Option<Measured> {
-        let standing = self.full.all.teams.get(team)?;
-        let pace = standing.paces.get(&Some(build.to_string()))?;
-        Some(Measured {
-            p99: pace.percentile(0.99),
-            count: pace.total,
-        })
-    }
-
     pub fn build(&self, team: &str) -> Option<&str> {
         self.full.all.teams.get(team)?.build.as_deref()
     }
@@ -471,6 +454,7 @@ impl Standings {
             red: side(&game.red, Color::Red),
             black: side(&game.black, Color::Black),
             tournament: game.tournament.clone(),
+            node: game.node.is_some(),
         };
         self.full.push_recent(&row);
         if !remote {
@@ -637,9 +621,8 @@ mod tests {
         };
         standings.play(&timed(50, None));
         standings.play(&timed(400, Some("node-b")));
-        assert_eq!(standings.pace("a", "v1"), Some(Measured { p99: 50, count: 100 }));
-        assert_eq!(standings.pace("a", "v2"), None);
-        assert_eq!(standings.pace("nobody", "v1"), None);
+        let pace = &standings.full.all.teams["a"].paces[&Some("v1".into())];
+        assert_eq!((pace.total, pace.percentile(0.99)), (100, 50));
     }
 
     #[test]

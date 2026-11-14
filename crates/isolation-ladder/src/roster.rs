@@ -7,10 +7,9 @@ use std::time::SystemTime;
 use isolation_core::digest::short_hash;
 
 use crate::command::CommandTemplate;
-use crate::config::{Config, NodesConfig, TeamConfig};
+use crate::config::{Config, TeamConfig};
 use crate::placement::{PairClass, Placement};
 use crate::remote::{Registry, Seat};
-use crate::standings::Measured;
 use crate::submit;
 use crate::team_id::TeamId;
 
@@ -74,40 +73,28 @@ pub fn pair_class(placement: &Placement, portable: &HashSet<String>, a: &Team, b
     }
 }
 
-/// Peut jouer sur un nœud sans que sa force en dépende : bot déclaré portable, ou build actif
-/// (`build`) assez rapide, mesuré ici. `pace` donne le rythme d'un build de l'équipe.
-pub fn is_portable(
-    team: &Team,
-    nodes: &NodesConfig,
-    build: Option<&str>,
-    pace: impl Fn(&str) -> Option<Measured>,
-) -> bool {
-    if team.multithread || team.remote.is_some() {
+/// Builds qui ont dépassé leur temps sur un nœud : `(équipe, build)`, `None` pour un bot.
+pub type NodeBans = HashSet<(String, Option<String>)>;
+
+/// Peut jouer sur un nœud : bot déclaré portable (la liste des nœuds), ou équipe dont le jar actif
+/// (`build`) n'y a jamais dépassé son temps.
+pub fn is_portable(team: &Team, build: Option<&str>, banned: &NodeBans) -> bool {
+    if team.multithread || team.remote.is_some() || !(team.portable || build.is_some()) {
         return false;
     }
-    if team.portable {
-        return true;
-    }
-    build
-        .and_then(pace)
-        .is_some_and(|m| m.p99 < nodes.portable_p99_ms && m.count >= nodes.portable_min_moves)
+    !banned.contains(&(team.id.clone(), build.map(String::from)))
 }
 
 /// Les équipes portables du roster ; aucune sans `[nodes]`.
-pub fn portable_teams(
-    cfg: &Config,
-    teams: &[Team],
-    builds: &mut Builds,
-    pace: impl Fn(&str, &str) -> Option<Measured>,
-) -> HashSet<String> {
-    let Some(nodes) = &cfg.nodes else {
+pub fn portable_teams(cfg: &Config, teams: &[Team], builds: &mut Builds, banned: &NodeBans) -> HashSet<String> {
+    if cfg.nodes.is_none() {
         return HashSet::new();
-    };
+    }
     teams
         .iter()
         .filter(|team| {
             let build = team.build_file().and_then(|path| builds.hash(&path));
-            is_portable(team, nodes, build.as_deref(), |b| pace(&team.id, b))
+            is_portable(team, build.as_deref(), banned)
         })
         .map(|team| team.id.clone())
         .collect()
@@ -209,10 +196,6 @@ mod tests {
         );
     }
 
-    fn nodes() -> NodesConfig {
-        format!("{MINIMAL}[nodes]\n").parse::<Config>().unwrap().nodes.unwrap()
-    }
-
     fn fixed(id: &str, portable: bool) -> Team {
         Team {
             portable,
@@ -225,10 +208,6 @@ mod tests {
                 portable,
             })
         }
-    }
-
-    fn measured(p99: u64, count: u64) -> impl Fn(&str) -> Option<Measured> {
-        move |_| Some(Measured { p99, count })
     }
 
     #[test]
@@ -254,38 +233,28 @@ mod tests {
 
     #[test]
     fn bots_are_portable_only_when_flagged() {
-        let none = |_: &str| None;
-        assert!(is_portable(&fixed("aleatoire", true), &nodes(), None, none));
-        assert!(!is_portable(&fixed("niveau-4", false), &nodes(), None, none));
+        let none = NodeBans::new();
+        assert!(is_portable(&fixed("aleatoire", true), None, &none));
+        assert!(!is_portable(&fixed("niveau-4", false), None, &none));
+        let banned = NodeBans::from([("aleatoire".to_string(), None)]);
+        assert!(!is_portable(&fixed("aleatoire", true), None, &banned));
     }
 
     #[test]
-    fn new_build_is_not_portable_until_measured_on_the_main_server() {
+    fn a_team_is_portable_until_its_build_times_out_on_a_node() {
         let cfg: Config = MINIMAL.parse().unwrap();
         let team = Team::with_jar(&cfg, &"eq07".parse().unwrap(), Path::new("j.jar"), false);
-        let nodes = nodes();
-        assert!(!is_portable(&team, &nodes, Some("v2"), |_| None));
-        assert!(!is_portable(&team, &nodes, Some("v2"), measured(99, 199)));
-        assert!(is_portable(&team, &nodes, Some("v2"), measured(99, 200)));
-        assert!(!is_portable(&team, &nodes, Some("v2"), measured(100, 500)));
-        assert!(!is_portable(&team, &nodes, None, measured(10, 500)), "build illisible");
-        let asked = std::cell::RefCell::new(String::new());
-        is_portable(&team, &nodes, Some("v2"), |build| {
-            asked.replace(build.into());
-            None
-        });
-        assert_eq!(
-            asked.into_inner(),
-            "v2",
-            "le rythme du build actif, pas du dernier joué"
-        );
+        let banned = NodeBans::from([("eq07".to_string(), Some("v1".to_string()))]);
+        assert!(!is_portable(&team, Some("v1"), &banned));
+        assert!(is_portable(&team, Some("v2"), &banned), "nouveau build, nouvel essai");
+        assert!(!is_portable(&team, None, &NodeBans::new()), "jar illisible");
     }
 
     #[test]
     fn multithread_and_remote_teams_are_never_portable() {
         let mut multi = fixed("niveau-5", true);
         multi.multithread = true;
-        assert!(!is_portable(&multi, &nodes(), None, |_| None));
+        assert!(!is_portable(&multi, None, &NodeBans::new()));
         let cfg: Config = MINIMAL.parse().unwrap();
         let placement = Placement::new(&cfg);
         let portable = HashSet::from(["niveau-5".to_string(), "aleatoire".to_string()]);

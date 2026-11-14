@@ -625,6 +625,11 @@ pub(crate) mod tests {
     #[test]
     fn move_times_skip_the_first_move_when_counting_near_the_limit() {
         let db = league();
+        let mut slow = game("g5", "a", "b", Color::Red);
+        slow.red.build = Some("h1".into());
+        slow.node = Some("node-a".into());
+        slow.result.move_ms = vec![900, 20, 900];
+        db.insert_game(&slow).unwrap();
         assert_eq!(
             stat(&db, Stat::MoveTimes, None, Some("a")),
             serde_json::json!([

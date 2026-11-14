@@ -104,14 +104,12 @@ min_interval_s = 300
 
 # Noeuds de calcul (docs/formats.md, "Noeuds") : d'autres machines du LAN s'y connectent
 # (isolation-ladder node node.toml) et jouent les paires portables, qui comptent comme les autres.
-# Une paire est portable si ses deux joueurs le sont : bot `portable = true`, ou build actif dont le
-# p99 est sous portable_p99_ms sur au moins portable_min_moves coups joues ici. tokens : registre
+# Une paire est portable si ses deux joueurs le sont : bot `portable = true` (de la liste des noeuds),
+# ou equipe dont le build actif n'a jamais depasse son temps sur un noeud. tokens : registre
 # des noeuds (isolation-ladder add-node ID). Ecouter sur le LAN seulement, jamais derriere la page.
 # [nodes]
 # listen = "0.0.0.0:8093"
 # tokens = "jars/nodes.toml"
-# portable_p99_ms = 100
-# portable_min_moves = 200
 
 # Direct des parties pour la page (WebSocket /api/live, docs/formats.md) : chaque coup, au moment ou il
 # est joue. La page relaie /api/live vers listen ; sans cette section, la page Direct est indisponible.

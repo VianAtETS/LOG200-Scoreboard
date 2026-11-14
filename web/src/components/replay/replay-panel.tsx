@@ -1,4 +1,4 @@
-import { RemoteBadge } from '@/components/badge/badge';
+import { NodeBadge, RemoteBadge } from '@/components/badge/badge';
 import { Board } from '@/components/board/board';
 import { FirstIcon, LastIcon, NextIcon, PauseIcon, PlayIcon, PrevIcon } from '@/components/icons/icons';
 import { squareName } from '@/lib/replay';
@@ -154,6 +154,7 @@ const GameInfo: FC<{ game: TGame; versionOf: Props['versionOf'] }> = ({ game: g,
       {' (rouge) contre '}
       {player('black')}
       {` (noir) : ${g[g.winner].team} gagne, ${ending}.`}
+      {g.node && <NodeBadge />}
     </>
   );
 };
