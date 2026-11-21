@@ -5,6 +5,7 @@ import { AnalysisChart } from '@/components/analysis/analysis-chart';
 import { Board } from '@/components/board/board';
 import { FirstIcon, LastIcon, NextIcon, PrevIcon } from '@/components/icons/icons';
 import { Masthead } from '@/components/masthead/masthead';
+import { ProfileSection } from '@/components/profile/profile-section';
 import { GameInfo } from '@/components/replay/replay-section';
 import { useGetGame } from '@/dao/hooks/use-games';
 import { useGetSummary } from '@/dao/hooks/use-ladder';
@@ -269,6 +270,8 @@ const AnalysePage = () => {
                 </table>
               </div>
             </section>
+
+            <ProfileSection game={game} />
           </>
         )}
       </main>

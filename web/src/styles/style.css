@@ -3637,7 +3637,8 @@ details[open]>summary~* {
             'head head'
             'board charts'
             'moves charts'
-            'stats stats';
+            'stats stats'
+            'profile profile';
     }
 
     .analyse-head {
@@ -3659,6 +3660,10 @@ details[open]>summary~* {
     .analyse-stats {
         grid-area: stats;
     }
+
+    .analyse-profile {
+        grid-area: profile;
+    }
 }
 
 .analyse-layout th {
@@ -3674,6 +3679,129 @@ details[open]>summary~* {
     flex-direction: column;
     align-items: center;
     gap: var(--space-3);
+}
+
+/* Profil : arbre d'appels d'isola, une grille par ligne pour que les colonnes s'alignent. */
+.analyse-profile h3 {
+    margin: var(--space-3) 0 var(--space-1);
+    font-size: var(--font-size-base);
+}
+
+.profile-facts {
+    margin: var(--space-2) 0;
+    padding-left: var(--space-5);
+}
+
+.profile-doubtful {
+    color: var(--color-warning);
+}
+
+.profile-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    align-items: end;
+    max-width: 40rem;
+}
+
+.profile-settings {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin-top: var(--space-3);
+}
+
+.profile-settings fieldset {
+    display: grid;
+    gap: var(--space-1);
+    flex-basis: 100%;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+button.link {
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--color-accent-text);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.ptree {
+    margin: var(--space-2) 0;
+    overflow-x: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+.prow {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) 6ch minmax(4rem, 10rem) 5ch 7ch;
+    gap: var(--space-2);
+    align-items: center;
+    padding: 1px var(--space-1);
+    text-align: right;
+}
+
+.prow.head {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.prow.leaf,
+.prow.more {
+    padding-left: calc(var(--space-1) + 0.45em + var(--space-2));
+}
+
+.prow.more {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+details>summary.prow {
+    cursor: pointer;
+}
+
+/* Le triangle des <details> ouvre la ligne sans décaler ses colonnes. */
+details>summary.prow::before {
+    position: absolute;
+    left: calc(var(--space-1) + var(--d, 0) * 1rem);
+}
+
+summary.prow {
+    position: relative;
+    padding-left: calc(var(--space-1) + 0.45em + var(--space-2));
+}
+
+summary.prow:hover {
+    background: var(--color-surface-hover);
+}
+
+.prow .fn {
+    padding-left: calc(var(--d, 0) * 1rem);
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.prow .fn small {
+    color: var(--color-text-muted);
+}
+
+.pbar i {
+    display: block;
+    height: 0.6em;
+    border-radius: 2px;
+}
+
+.pbar b {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
 }
 
 /* Hors du plein écran du classement : la page défile, le plateau garde sa propre taille. */

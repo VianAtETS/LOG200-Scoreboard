@@ -11,4 +11,7 @@ export const queryKeys = {
   tournament: 'tournament',
   game: 'game',
   pairs: 'pairs',
+  profile: 'profile',
+  profiling: 'profiling',
+  templateShare: 'templateShare',
 };
