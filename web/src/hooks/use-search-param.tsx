@@ -11,7 +11,7 @@ const useSearchParam = (key: string, keepEmpty = false) => {
       setParam(key, next, keepEmpty);
       setValue(next);
     },
-    [key, keepEmpty]
+    [key, keepEmpty],
   );
 
   return [value, update] as const;

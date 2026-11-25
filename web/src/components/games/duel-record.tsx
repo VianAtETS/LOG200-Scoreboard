@@ -30,7 +30,11 @@ const DuelRecord: FC<Props> = ({ teams, games, ratings, versionOf }) => {
   };
 
   return (
-    <p id="duel" className="graph-link" title="Version actuelle de chaque équipe, contre toutes les versions de l'autre">
+    <p
+      id="duel"
+      className="graph-link"
+      title="Version actuelle de chaque équipe, contre toutes les versions de l'autre"
+    >
       {`${line(teams[0], teams[1])} · ${line(teams[1], teams[0])} · `}
       <a href={pageUrl('duel.html', { builds: sides.map((s) => s.build ?? '*').join(',') })}>
         {pairs ? `Duel : ${pairs.length} paire${pairs.length > 1 ? 's' : ''}` : 'Duel'}

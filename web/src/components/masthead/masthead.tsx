@@ -1,7 +1,14 @@
 import { CloseIcon, MenuIcon } from '@/components/icons/icons';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
-import { useEffect, useRef, useState, type FC, type PropsWithChildren, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FC,
+  type PropsWithChildren,
+  type ReactNode,
+} from 'react';
 import { Logo } from './logo';
 import { pages, type TPageKey } from './masthead.data';
 import { VersionBadge } from './version-badge';
@@ -15,7 +22,10 @@ type Props = PropsWithChildren & {
 
 const MOBILE = '(max-width: 640px)';
 
-const Brand: FC<{ heading?: boolean; showVersion: boolean }> = ({ heading = false, showVersion }) => {
+const Brand: FC<{ heading?: boolean; showVersion: boolean }> = ({
+  heading = false,
+  showVersion,
+}) => {
   const Title = heading ? 'h1' : 'p';
   return (
     <div className="brand" aria-hidden={heading ? undefined : true}>
@@ -77,17 +87,19 @@ const Masthead: FC<Props> = ({ current, showVersion = true, status, children }) 
       <div id="site-menu" className="menu">
         <div className="menu-head">
           <Brand showVersion={showVersion} />
-          <button ref={closeRef} className="menu-toggle" type="button" aria-label="Fermer le menu" onClick={() => setOpen(false)}>
+          <button
+            ref={closeRef}
+            className="menu-toggle"
+            type="button"
+            aria-label="Fermer le menu"
+            onClick={() => setOpen(false)}
+          >
             <CloseIcon />
           </button>
         </div>
         <nav className="pages" aria-label="Pages">
           {pages.map(({ key, label, href }) => (
-            <a
-              key={key}
-              href={pageUrl(href)}
-              aria-current={key === current ? 'page' : undefined}
-            >
+            <a key={key} href={pageUrl(href)} aria-current={key === current ? 'page' : undefined}>
               {label}
             </a>
           ))}

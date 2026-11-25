@@ -26,7 +26,11 @@ const CHART_MODES = [
 
 const GraphePage = () => {
   const { data: summary, error, dataUpdatedAt } = useGetSummary();
-  const { data: timeline, error: timelineError, dataUpdatedAt: timelineUpdatedAt } = useGetTimeline();
+  const {
+    data: timeline,
+    error: timelineError,
+    dataUpdatedAt: timelineUpdatedAt,
+  } = useGetTimeline();
 
   const [sessionChoice, setSessionChoice] = useSearchParam('session', true);
   const [verifiedParam, setVerifiedParam] = useSearchParam('verified');
@@ -45,7 +49,10 @@ const GraphePage = () => {
   const scope = summary ? (verified ? summary.verified! : summary.scopes)[session] : undefined;
   const ratings = useMemo(() => scope?.ratings ?? [], [scope]);
   const builds = useMemo(() => new Map(Object.entries(summary?.builds ?? {})), [summary]);
-  const version = useCallback((team: string, build?: string) => versionOf(builds, team, build), [builds]);
+  const version = useCallback(
+    (team: string, build?: string) => versionOf(builds, team, build),
+    [builds],
+  );
 
   const selected = useMemo(() => {
     if (teamsParam === null) return topTeams(ratings);
@@ -55,7 +62,8 @@ const GraphePage = () => {
 
   const cutoff = dataUpdatedAt - (WINDOWS[window] ?? Infinity);
   const { columns, series } = useMemo(() => {
-    const rows = session === GLOBAL ? (timeline ?? []).filter((t) => !t.tournament) : (timeline ?? []);
+    const rows =
+      session === GLOBAL ? (timeline ?? []).filter((t) => !t.tournament) : (timeline ?? []);
     return rankSeries(rows, {
       key: session === GLOBAL ? 'all' : 'session',
       session,
@@ -85,13 +93,26 @@ const GraphePage = () => {
 
   return (
     <>
-      <Masthead current="graphe" status={<LiveStatus dot={failure ? 'error' : summary && timeline ? 'on' : ''} text={status} pulses={pulses} />}>
+      <Masthead
+        current="graphe"
+        status={
+          <LiveStatus
+            dot={failure ? 'error' : summary && timeline ? 'on' : ''}
+            text={status}
+            pulses={pulses}
+          />
+        }
+      >
         <VerifiedFilter
           hidden={!summary?.verified}
           checked={verifiedParam === '1'}
           onChange={(checked) => setVerifiedParam(checked ? '1' : null)}
         />
-        <SessionSelect value={session} options={sessionOptions(summary?.sessions)} onChange={setSessionChoice} />
+        <SessionSelect
+          value={session}
+          options={sessionOptions(summary?.sessions)}
+          onChange={setSessionChoice}
+        />
       </Masthead>
 
       <main className="layout graph-layout">
@@ -125,7 +146,12 @@ const GraphePage = () => {
               color={(team) => palette.get(team) ?? 'var(--color-text-muted)'}
               idle={(team) => !series.get(team)?.length}
             />
-            <button id="picker-top" className="picker-top" type="button" onClick={() => choose(null)}>
+            <button
+              id="picker-top"
+              className="picker-top"
+              type="button"
+              onClick={() => choose(null)}
+            >
               Top 10
             </button>
           </div>

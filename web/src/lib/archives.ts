@@ -3,7 +3,13 @@ import type { TColor, TGameRow } from '../types/games.types';
 import type { TSummary, TTeamRating } from '../types/summary.types';
 import { isRemote, ratingOf } from './elo.ts';
 
-export type TArchiveOption = { team: string; build: string; version: number; key: string; label: string };
+export type TArchiveOption = {
+  team: string;
+  build: string;
+  version: number;
+  key: string;
+  label: string;
+};
 
 export type TRankingRow = TTeamRating & { archived?: boolean };
 
@@ -13,10 +19,14 @@ export function currentBuilds(summary: TSummary) {
   const latest = new Map<string, TTeamRating>();
   for (const scope of Object.values(summary.scopes))
     for (const r of scope.ratings) {
-      if (r.build && (!latest.has(r.team) || r.last! > latest.get(r.team)!.last!)) latest.set(r.team, r);
+      if (r.build && (!latest.has(r.team) || r.last! > latest.get(r.team)!.last!))
+        latest.set(r.team, r);
     }
   return new Map(
-    Object.entries(summary.builds).map(([team, builds]) => [team, latest.get(team)?.build ?? builds.at(-1)])
+    Object.entries(summary.builds).map(([team, builds]) => [
+      team,
+      latest.get(team)?.build ?? builds.at(-1),
+    ]),
   );
 }
 
@@ -26,8 +36,16 @@ export function archiveOptions(summary: TSummary): TArchiveOption[] {
     builds.flatMap((build, i) =>
       build === current.get(team)
         ? []
-        : [{ team, build, version: i + 1, key: archiveKey(team, build), label: `${team} v${i + 1}` }]
-    )
+        : [
+            {
+              team,
+              build,
+              version: i + 1,
+              key: archiveKey(team, build),
+              label: `${team} v${i + 1}`,
+            },
+          ],
+    ),
   );
 }
 
@@ -35,7 +53,7 @@ export function archiveOptions(summary: TSummary): TArchiveOption[] {
 export function archivedRows(
   rows: readonly TGameRow[],
   selected: TArchiveOption[],
-  { session = '', verified = false }: { session?: string; verified?: boolean } = {}
+  { session = '', verified = false }: { session?: string; verified?: boolean } = {},
 ): TRankingRow[] {
   const wanted = new Map(selected.map((s) => [s.key, s]));
   const out = new Map<string, TRankingRow>();

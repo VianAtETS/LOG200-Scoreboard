@@ -23,15 +23,19 @@ const DuelPage = () => {
   const [buildsParam, setBuildsParam] = useSearchParam('builds');
   const teams = (teamsParam ?? '').split(',').filter(Boolean);
   const builds = useMemo(() => new Map(Object.entries(summary?.builds ?? {})), [summary]);
-  const current = (team: string) => summary?.scopes['']?.ratings.find((r) => r.team === team)?.build;
+  const current = (team: string) =>
+    summary?.scopes['']?.ratings.find((r) => r.team === team)?.build;
 
   // Le build choisi de chaque équipe, ALL pour toutes ses versions.
   const chosen = teams.map((team, i) => buildsParam?.split(',')[i] || current(team) || ALL);
   const sides: TDuelSide[] | null =
-    teams.length === 2 && summary ? teams.map((team, i) => ({ team, build: chosen[i] === ALL ? undefined : chosen[i] })) : null;
+    teams.length === 2 && summary
+      ? teams.map((team, i) => ({ team, build: chosen[i] === ALL ? undefined : chosen[i] }))
+      : null;
   const { data: pairs, error: pairsError } = useGetDuelPairs(sides);
 
-  const choose = (i: number, build: string) => setBuildsParam(chosen.map((b, j) => (j === i ? build : b)).join(','));
+  const choose = (i: number, build: string) =>
+    setBuildsParam(chosen.map((b, j) => (j === i ? build : b)).join(','));
   const name = (i: number) => {
     const build = chosen[i] === ALL ? undefined : chosen[i];
     return `${teams[i]} ${build ? versionOf(builds, teams[i], build) : '(toutes versions)'}`.trim();
@@ -45,8 +49,8 @@ const DuelPage = () => {
           <section className="section">
             <h2>Duel</h2>
             <p>
-              Choisissez deux équipes dans le <a href={pageUrl('./')}>Classement</a>, puis ouvrez leur duel depuis la ligne de
-              face-à-face.
+              Choisissez deux équipes dans le <a href={pageUrl('./')}>Classement</a>, puis ouvrez
+              leur duel depuis la ligne de face-à-face.
             </p>
           </section>
         </main>
@@ -71,7 +75,11 @@ const DuelPage = () => {
               return (
                 <label key={team}>
                   <span>Version de {team}</span>
-                  <select value={chosen[i]} onChange={(e) => choose(i, e.target.value)} disabled={!own.length}>
+                  <select
+                    value={chosen[i]}
+                    onChange={(e) => choose(i, e.target.value)}
+                    disabled={!own.length}
+                  >
                     {own.map((build, n) => (
                       <option key={build} value={build}>
                         {`v${n + 1} (${build})${build === current(team) ? ', actuelle' : ''}`}
@@ -116,7 +124,9 @@ const DuelPage = () => {
                       <td>{pair.opening.join(' · ')}</td>
                       {pair.games.map((id, g) => (
                         <td key={id}>
-                          <a href={pageUrl('analyse.html', { game: id })}>{pair.winners[g]} gagne</a>
+                          <a href={pageUrl('analyse.html', { game: id })}>
+                            {pair.winners[g]} gagne
+                          </a>
                         </td>
                       ))}
                     </tr>
@@ -156,7 +166,8 @@ const Verdict = ({ names, counts, pairs, allVersions, onAllVersions }: VerdictPr
         {verdict === 'a' && `${names[0]} est meilleur.`}
         {verdict === 'b' && `${names[1]} est meilleur.`}
         {verdict === 'close' && 'Pas de grand écart entre les deux.'}
-        {verdict === 'undecided' && `Indécis : ${plural(decisive, 'paire')} ${decisive > 1 ? 'décisives' : 'décisive'}, environ ${SPRT_EXPECTED} nécessaires.`}
+        {verdict === 'undecided' &&
+          `Indécis : ${plural(decisive, 'paire')} ${decisive > 1 ? 'décisives' : 'décisive'}, environ ${SPRT_EXPECTED} nécessaires.`}
         {verdict === 'undecided' && !allVersions && (
           <button type="button" className="share" onClick={onAllVersions}>
             Toutes les versions
@@ -165,16 +176,21 @@ const Verdict = ({ names, counts, pairs, allVersions, onAllVersions }: VerdictPr
       </p>
       <ul className="duel-detail">
         <li>
-          {plural(pairs, 'paire')} : {counts.a} gagnées 2-0 par {names[0]}, {counts.b} par {names[1]}, {counts.split} à 1-1 (décidées par
-          l'ouverture)
+          {plural(pairs, 'paire')} : {counts.a} gagnées 2-0 par {names[0]}, {counts.b} par{' '}
+          {names[1]}, {counts.split} à 1-1 (décidées par l'ouverture)
         </li>
         {games > 0 && (
           <li>
-            Score de {names[0]} : {percent(score)} des parties (IC 95 % : {percent(low)} à {percent(high)}), écart Elo{' '}
-            {Number.isFinite(elo) ? signed(Math.round(elo)) : '–'}
+            Score de {names[0]} : {percent(score)} des parties (IC 95 % : {percent(low)} à{' '}
+            {percent(high)}), écart Elo {Number.isFinite(elo) ? signed(Math.round(elo)) : '–'}
           </li>
         )}
-        {decisive > 0 && <li>Test du signe sur les paires 2-0 : p {p < 0.001 ? '< 0,001' : `= ${p.toLocaleString('fr-CA', { maximumFractionDigits: 3 })}`}</li>}
+        {decisive > 0 && (
+          <li>
+            Test du signe sur les paires 2-0 : p{' '}
+            {p < 0.001 ? '< 0,001' : `= ${p.toLocaleString('fr-CA', { maximumFractionDigits: 3 })}`}
+          </li>
+        )}
       </ul>
     </>
   );

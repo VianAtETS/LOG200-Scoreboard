@@ -15,7 +15,16 @@ export type TAnalysis = {
   tip: number | null;
 };
 
-const DIRS = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+const DIRS = [
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
+];
 // Écart de territoire minimal d'un coup critique, et leur nombre maximal.
 const SWING = 8;
 const CRITICAL = 8;
@@ -29,7 +38,11 @@ function distances(cells: number[], pawn: number) {
   for (let h = 0; h < queue.length; h++) {
     const cur = queue[h];
     for (const [dx, dy] of DIRS) {
-      for (let s = 1, x = (cur % SIZE) + dx, y = Math.floor(cur / SIZE) + dy; s <= 3; s++, x += dx, y += dy) {
+      for (
+        let s = 1, x = (cur % SIZE) + dx, y = Math.floor(cur / SIZE) + dy;
+        s <= 3;
+        s++, x += dx, y += dy
+      ) {
         if (x < 0 || x >= SIZE || y < 0 || y >= SIZE || cells[y * SIZE + x] !== EMPTY) break;
         const i = y * SIZE + x;
         if (dist[i] < 0) {
@@ -95,7 +108,14 @@ export function analyse(steps: TStep[], game: { winner?: TColor; reason?: string
   return a;
 }
 
-export type TDescription = { min: number; mean: number; median: number; max: number; sd: number; n: number };
+export type TDescription = {
+  min: number;
+  mean: number;
+  median: number;
+  max: number;
+  sd: number;
+  n: number;
+};
 
 export function describe(values: number[]): TDescription | null {
   if (!values.length) return null;

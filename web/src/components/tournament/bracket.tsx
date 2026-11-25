@@ -23,8 +23,10 @@ const Bracket: FC<Props> = ({ view, model, running, describe }) => {
         const matches = view.matches.filter((m) => m.side === side);
         const last = Math.max(...matches.map((m) => m.round));
         const rounds: [string, TMatch[]][] = [];
-        for (let r = 1; r <= last; r++) rounds.push([roundTitle(side, r, last), matches.filter((m) => m.round === r)]);
-        if (side === 'winners') rounds.push([roundTitle('final'), view.matches.filter((m) => m.side === 'final')]);
+        for (let r = 1; r <= last; r++)
+          rounds.push([roundTitle(side, r, last), matches.filter((m) => m.round === r)]);
+        if (side === 'winners')
+          rounds.push([roundTitle('final'), view.matches.filter((m) => m.side === 'final')]);
         return (
           <BracketSection key={side} side={side} title={title} rounds={rounds}>
             {(list) =>
@@ -82,7 +84,11 @@ const BracketSection: FC<SectionProps> = ({ title, rounds, children }) => {
       }
       const next = { width: node.scrollWidth, height: node.scrollHeight, paths };
       setLinks((prev) =>
-        prev.width === next.width && prev.height === next.height && prev.paths.join() === next.paths.join() ? prev : next
+        prev.width === next.width &&
+        prev.height === next.height &&
+        prev.paths.join() === next.paths.join()
+          ? prev
+          : next,
       );
     };
     const frame = requestAnimationFrame(draw);

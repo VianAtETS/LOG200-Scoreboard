@@ -27,14 +27,15 @@ export function ratingOf(side: TSide, key: TRatingKey, verified = false): TRatin
   return (verified && side.verified?.[key]) || side[key];
 }
 
-export const isRemote = (g: Pick<TGameRow, 'red' | 'black'>) => Boolean(g.red.remote || g.black.remote);
+export const isRemote = (g: Pick<TGameRow, 'red' | 'black'>) =>
+  Boolean(g.red.remote || g.black.remote);
 
 // Parties des équipes `selected` dans l'ordre, une seule fois chacune : une partie entre deux équipes
 // choisies est dans leurs deux fichiers. BETWEEN : seulement les parties entre équipes choisies.
 export function gamesOf(
   rowsByTeam: Map<string, TGameRow[]>,
   selected: string[],
-  { mode = '', session = '' }: { mode?: string; session?: string } = {}
+  { mode = '', session = '' }: { mode?: string; session?: string } = {},
 ) {
   const chosen = new Set(selected);
   const between = mode === BETWEEN && chosen.size > 1;

@@ -53,7 +53,9 @@ const DuelBadge: FC<Props> = ({ team, opponent, color, chance, id, tournament })
       )}
       <Tooltip {...tipProps}>
         <p className="tip-head">
-          {tournament ? `Tournoi, match ${tournament.match}, partie ${tournament.game}` : 'Partie en cours'}
+          {tournament
+            ? `Tournoi, match ${tournament.match}, partie ${tournament.game}`
+            : 'Partie en cours'}
         </p>
         <p className="tip-match">
           <span className="tip-side">

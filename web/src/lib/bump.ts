@@ -35,7 +35,13 @@ export function rankSeries(
     selected = [],
     cutoff = -Infinity,
     verified = false,
-  }: { key?: TRatingKey; session?: string; selected?: string[]; cutoff?: number; verified?: boolean } = {}
+  }: {
+    key?: TRatingKey;
+    session?: string;
+    selected?: string[];
+    cutoff?: number;
+    verified?: boolean;
+  } = {},
 ) {
   const ratings = new Map<string, number>();
   const bots = new Set<string>();
@@ -70,7 +76,12 @@ export function rankSeries(
   return { columns, series };
 }
 
-function rankOf(team: string, rating: number, ratings: Map<string, number>, counted: (team: string) => boolean) {
+function rankOf(
+  team: string,
+  rating: number,
+  ratings: Map<string, number>,
+  counted: (team: string) => boolean,
+) {
   let ahead = 0;
   for (const [other, r] of ratings) {
     if (other === team || !counted(other)) continue;
@@ -102,7 +113,7 @@ export function smooth(points: TRankPoint[], count: number, buckets: number): TS
     const start = Math.max(Math.round(b * size), points[0].x);
     if (start >= end) continue;
     let sum = 0;
-    for (let col = start; col < end; ) {
+    for (let col = start; col < end;) {
       while (i + 1 < points.length && points[i + 1].x <= col) i++;
       const next = Math.min(points[i + 1]?.x ?? end, end);
       sum += points[i].rank * (next - col);

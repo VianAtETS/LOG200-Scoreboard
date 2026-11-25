@@ -17,7 +17,19 @@ export function pageUrl(href: string, extra: Record<string, string> = {}) {
   const url = new URL(href, location.href);
   const here = searchParams();
   for (const key of [
-    'data', 'session', 'window', 'teams', 'match', 'verified', 'metric', 'elo', 'record', 'pace', 'sort', 'order', 'side',
+    'data',
+    'session',
+    'window',
+    'teams',
+    'match',
+    'verified',
+    'metric',
+    'elo',
+    'record',
+    'pace',
+    'sort',
+    'order',
+    'side',
   ]) {
     const value = here.get(key);
     if (value !== null) url.searchParams.set(key, value);

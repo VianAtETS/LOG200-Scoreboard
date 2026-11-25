@@ -67,4 +67,5 @@ export function wilson(k: number, n: number): [number, number] {
 }
 
 // Écart Elo qui donne ce score ; NaN à 0 ou 1.
-export const eloGap = (score: number) => (score > 0 && score < 1 ? -400 * Math.log10(1 / score - 1) : NaN);
+export const eloGap = (score: number) =>
+  score > 0 && score < 1 ? -400 * Math.log10(1 / score - 1) : NaN;

@@ -1,4 +1,12 @@
-import { useCallback, useLayoutEffect, useRef, useState, type FC, type KeyboardEvent, type PointerEvent } from 'react';
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FC,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react';
 
 type Props = {
   above: string;
@@ -75,7 +83,7 @@ const SplitHandle: FC<Props> = ({ above, below, label, storageKey }) => {
       n.layout.style.setProperty('--split-height', `${next}px`);
       return next;
     },
-    [nodes]
+    [nodes],
   );
 
   useLayoutEffect(() => {

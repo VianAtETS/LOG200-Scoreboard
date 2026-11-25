@@ -8,7 +8,9 @@ type Props = {
 
 // Classement final, une fois le tournoi joué.
 const Places: FC<Props> = ({ view }) => {
-  const ranked = view.places ? view.entrants.map((e, i) => ({ team: e.team, place: view.places![i] })) : [];
+  const ranked = view.places
+    ? view.entrants.map((e, i) => ({ team: e.team, place: view.places![i] }))
+    : [];
   ranked.sort((a, b) => a.place - b.place || a.team.localeCompare(b.team));
 
   return (

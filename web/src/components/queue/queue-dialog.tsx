@@ -25,7 +25,14 @@ const QueueDialog: FC<Props> = ({ open, onClose, running }) => {
   }, [open]);
 
   return (
-    <dialog ref={dialog} id="queue" className="queue" aria-labelledby="queue-title" aria-describedby="queue-lede" onClose={onClose}>
+    <dialog
+      ref={dialog}
+      id="queue"
+      className="queue"
+      aria-labelledby="queue-title"
+      aria-describedby="queue-lede"
+      onClose={onClose}
+    >
       {/* Démonté à la fermeture : l'entrée se rejoue à la prochaine ouverture. */}
       {open && isFetched ? (
         <QueueView teams={file?.teams ?? null} running={running} announced={file?.next ?? []} />
@@ -49,7 +56,9 @@ const QueueView: FC<ViewProps> = ({ teams, running, announced }) => {
   useInterval(() => setNow(Date.now()), announced.length ? 1000 : null);
 
   if (!teams?.length) {
-    const text = teams ? 'Aucune équipe en file pour le moment.' : "Ce ladder ne publie pas encore sa file d'attente.";
+    const text = teams
+      ? 'Aucune équipe en file pour le moment.'
+      : "Ce ladder ne publie pas encore sa file d'attente.";
     return (
       <QueueFrame lede={null}>
         <p className="queue-empty">{text}</p>
@@ -57,7 +66,9 @@ const QueueView: FC<ViewProps> = ({ teams, running, announced }) => {
     );
   }
 
-  const busy = new Map<string, TColor>(running.flatMap((g) => [[g.red, 'red'] as const, [g.black, 'black'] as const]));
+  const busy = new Map<string, TColor>(
+    running.flatMap((g) => [[g.red, 'red'] as const, [g.black, 'black'] as const]),
+  );
   const called = new Set(announced.flatMap((a) => a.teams));
   const marks: TQueueMarks = { busy, called };
   const free = teams.filter((t) => !busy.has(t.id) && !called.has(t.id));
@@ -67,7 +78,10 @@ const QueueView: FC<ViewProps> = ({ teams, running, announced }) => {
   const drawKey = JSON.stringify([teams, [...busy], announced]);
 
   return (
-    <QueueFrame lede={<Headline announced={announced} after={after} games={running.length} now={now} />} shape={shape}>
+    <QueueFrame
+      lede={<Headline announced={announced} after={after} games={running.length} now={now} />}
+      shape={shape}
+    >
       {shape === 'list' ? (
         <QueueList teams={teams} marks={marks} next={next} />
       ) : (
@@ -98,7 +112,13 @@ const QueueFrame: FC<FrameProps> = ({ lede, shape, children }) => (
         </button>
       </form>
     </header>
-    <div id="queue-tree" className="queue-tree" tabIndex={0} aria-label="Arbre de la file d'attente" data-shape={shape}>
+    <div
+      id="queue-tree"
+      className="queue-tree"
+      tabIndex={0}
+      aria-label="Arbre de la file d'attente"
+      data-shape={shape}
+    >
       {children}
     </div>
     <QueueKey />
@@ -106,12 +126,20 @@ const QueueFrame: FC<FrameProps> = ({ lede, shape, children }) => (
 );
 
 // Les mêmes cases, dans l'ordre de la file, de gauche à droite puis de haut en bas.
-const QueueList: FC<{ teams: TQueueTeam[]; marks: TQueueMarks; next: number }> = ({ teams, marks, next }) => (
+const QueueList: FC<{ teams: TQueueTeam[]; marks: TQueueMarks; next: number }> = ({
+  teams,
+  marks,
+  next,
+}) => (
   <ol className="queue-list">
     {teams.map((team, i) => {
       const pawn = marks.busy.get(team.id);
       return (
-        <li key={team.id} className={cn(...kinds(team, marks, i === next))} title={describe(team, marks)}>
+        <li
+          key={team.id}
+          className={cn(...kinds(team, marks, i === next))}
+          title={describe(team, marks)}
+        >
           <span className="name">{team.id}</span>
           <span className="ahead">{signed(team.ahead)}</span>
           {pawn && <span className={cn('pawn', pawn)} />}
@@ -220,12 +248,14 @@ const QueueKey: FC = () => (
     </dl>
     <div className="queue-notes">
       <p>
-        Chaque paire lancée fait avancer ses deux équipes de 2, un bot de 4. Une nouvelle équipe entre tout à gauche.
-        Le match suivant est tiré au début de la pause d'un slot, d'où l'annonce exacte ; elle tombe si une équipe
-        soumet un nouveau jar ou part en tournoi. Au-delà, la file dit qui joue bientôt, pas contre qui.
+        Chaque paire lancée fait avancer ses deux équipes de 2, un bot de 4. Une nouvelle équipe
+        entre tout à gauche. Le match suivant est tiré au début de la pause d'un slot, d'où
+        l'annonce exacte ; elle tombe si une équipe soumet un nouveau jar ou part en tournoi.
+        Au-delà, la file dit qui joue bientôt, pas contre qui.
       </p>
       <p className="queue-fine">
-        Arbre binaire calculé pour l'affichage, dans l'ordre de la file. En mémoire, la file est un B-tree plat.
+        Arbre binaire calculé pour l'affichage, dans l'ordre de la file. En mémoire, la file est un
+        B-tree plat.
       </p>
     </div>
   </div>

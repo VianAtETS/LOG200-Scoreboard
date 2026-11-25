@@ -1,6 +1,13 @@
 import { NodeBadge, RemoteBadge } from '@/components/badge/badge';
 import { Board } from '@/components/board/board';
-import { FirstIcon, LastIcon, NextIcon, PauseIcon, PlayIcon, PrevIcon } from '@/components/icons/icons';
+import {
+  FirstIcon,
+  LastIcon,
+  NextIcon,
+  PauseIcon,
+  PlayIcon,
+  PrevIcon,
+} from '@/components/icons/icons';
 import { squareName } from '@/lib/replay';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
@@ -28,7 +35,13 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as Element;
       const queue = document.querySelector<HTMLDialogElement>('#queue');
-      if (target.closest('input, select, textarea, [contenteditable], [role="slider"], .ranking-scroll') || queue?.open) return;
+      if (
+        target.closest(
+          'input, select, textarea, [contenteditable], [role="slider"], .ranking-scroll',
+        ) ||
+        queue?.open
+      )
+        return;
       if (e.key === 'ArrowLeft') actions.browse(actions.current().index - 1);
       if (e.key === 'ArrowRight') actions.browse(actions.current().index + 1);
     };
@@ -108,10 +121,22 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
           </span>
         </p>
         <div className="replay-controls">
-          <button id="first" className="icon" type="button" aria-label="Début de la partie" onClick={() => actions.browse(0)}>
+          <button
+            id="first"
+            className="icon"
+            type="button"
+            aria-label="Début de la partie"
+            onClick={() => actions.browse(0)}
+          >
             <FirstIcon />
           </button>
-          <button id="prev" className="icon" type="button" aria-label="Coup précédent" onClick={() => actions.browse(index - 1)}>
+          <button
+            id="prev"
+            className="icon"
+            type="button"
+            aria-label="Coup précédent"
+            onClick={() => actions.browse(index - 1)}
+          >
             <PrevIcon />
           </button>
           <button
@@ -124,10 +149,22 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
             <PlayIcon className="i-play" />
             <PauseIcon className="i-pause" />
           </button>
-          <button id="next" className="icon" type="button" aria-label="Coup suivant" onClick={() => actions.browse(index + 1)}>
+          <button
+            id="next"
+            className="icon"
+            type="button"
+            aria-label="Coup suivant"
+            onClick={() => actions.browse(index + 1)}
+          >
             <NextIcon />
           </button>
-          <button id="last" className="icon" type="button" aria-label="Fin de la partie" onClick={() => actions.browse(total)}>
+          <button
+            id="last"
+            className="icon"
+            type="button"
+            aria-label="Fin de la partie"
+            onClick={() => actions.browse(total)}
+          >
             <LastIcon />
           </button>
         </div>
@@ -151,7 +188,9 @@ const GameInfo: FC<{ game: TGame; versionOf: Props['versionOf'] }> = ({ game: g,
   const ending = ENDINGS[g.reason]?.(g[loser].team) ?? g.reason;
   const player = (color: TColor) => (
     <>
-      <strong>{[g[color].team, versionOf(g[color].team, g[color].build)].filter(Boolean).join(' ')}</strong>
+      <strong>
+        {[g[color].team, versionOf(g[color].team, g[color].build)].filter(Boolean).join(' ')}
+      </strong>
       {g[color].remote && <RemoteBadge />}
     </>
   );

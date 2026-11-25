@@ -15,7 +15,12 @@ const VerifiedFilter: FC<Props> = ({ hidden, checked, onChange }) => {
       title="Sans les parties distantes : l'Elo est recalculé sur les seules parties jouées sur le serveur"
       hidden={hidden}
     >
-      <input id="verified" type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input
+        id="verified"
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
       <span>Vérifiées seulement</span>
     </label>
   );

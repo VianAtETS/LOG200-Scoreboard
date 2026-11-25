@@ -10,7 +10,14 @@ type Props = {
   disabled?: boolean;
 };
 
-const SessionSelect: FC<Props> = ({ value, onChange, options, label = 'Session', id = 'session', disabled }) => {
+const SessionSelect: FC<Props> = ({
+  value,
+  onChange,
+  options,
+  label = 'Session',
+  id = 'session',
+  disabled,
+}) => {
   return (
     <label className="session">
       <span>{label}</span>

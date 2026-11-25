@@ -11,7 +11,7 @@ export function winProbability(
   model: TModel | null | undefined,
   team: string | null,
   opponent: string | null,
-  color?: TColor
+  color?: TColor,
 ) {
   if (!model?.teams || team === null || opponent === null) return null;
   const a = model.teams[team];

@@ -19,14 +19,18 @@ const SubmitSection: FC = () => {
     e.preventDefault();
     if (!file || state === 'pending') return;
     setState('pending');
-    setMessage("Parties de test en cours : une à deux minutes, plus si d'autres soumissions attendent…");
+    setMessage(
+      "Parties de test en cours : une à deux minutes, plus si d'autres soumissions attendent…",
+    );
     try {
       const verdict = await submitJar(token.trim(), file);
       setState(verdict.ok ? 'ok' : 'error');
       setMessage(verdict.message);
     } catch (err) {
       setState('error');
-      setMessage(`Envoi impossible : ${(err as Error).message}. Vérifiez la connexion, puis réessayez.`);
+      setMessage(
+        `Envoi impossible : ${(err as Error).message}. Vérifiez la connexion, puis réessayez.`,
+      );
     }
   };
 
@@ -48,7 +52,13 @@ const SubmitSection: FC = () => {
         </label>
         <label className="field file" htmlFor="submit-file">
           <span>Jar</span>
-          <input id="submit-file" type="file" accept=".jar" required onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input
+            id="submit-file"
+            type="file"
+            accept=".jar"
+            required
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
           <span className="file-button" aria-hidden="true">
             <span id="submit-file-name">{file?.name ?? 'Choisir le jar'}</span>
           </span>
@@ -57,7 +67,13 @@ const SubmitSection: FC = () => {
           Envoyer le jar
         </button>
       </form>
-      <p id="submit-status" className="submit-status" role="status" aria-live="polite" data-state={state}>
+      <p
+        id="submit-status"
+        className="submit-status"
+        role="status"
+        aria-live="polite"
+        data-state={state}
+      >
         {message}
       </p>
     </details>

@@ -69,7 +69,8 @@ const useReplay = () => {
         try {
           g = await getGame(row);
         } catch (e) {
-          if (current === seq.current) commit({ message: `Partie pas encore disponible (${(e as Error).message}).` });
+          if (current === seq.current)
+            commit({ message: `Partie pas encore disponible (${(e as Error).message}).` });
           return;
         }
         if (current !== seq.current) return;
@@ -77,7 +78,16 @@ const useReplay = () => {
         const steps = positions(g);
         const moveMs = g.move_ms?.length === g.moves.length ? g.move_ms : [];
         setParam('game', pinned ? g.id : null);
-        commit({ id: g.id, game: g, live: null, steps, moveMs, index: steps.length - 1, pinned, message: null });
+        commit({
+          id: g.id,
+          game: g,
+          live: null,
+          steps,
+          moveMs,
+          index: steps.length - 1,
+          pinned,
+          message: null,
+        });
       },
 
       showLive(g: TLiveGame) {

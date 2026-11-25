@@ -54,7 +54,8 @@ const DirectPage = () => {
         <section className="section tournament" aria-labelledby="direct-title">
           <h2 id="direct-title">Parties en cours</h2>
           <p id="direct-empty" className="empty" hidden={shown.length > 0 || !on}>
-            Aucune partie en cours. Les parties du ladder et du tournoi apparaissent ici dès leur premier coup.
+            Aucune partie en cours. Les parties du ladder et du tournoi apparaissent ici dès leur
+            premier coup.
           </p>
           <div id="grid" className="live-grid">
             {shown.map((g) => (

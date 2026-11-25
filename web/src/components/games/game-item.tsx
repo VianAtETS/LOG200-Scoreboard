@@ -16,8 +16,16 @@ type Props = {
   onSelect: (game: TGameRow) => void;
 };
 
-const GameItem: FC<Props> = ({ game: g, rating, current, selectedTeam, sideOrder = 'color', onSelect }) => {
-  const selectedColor = g.red.team === selectedTeam ? 'red' : g.black.team === selectedTeam ? 'black' : undefined;
+const GameItem: FC<Props> = ({
+  game: g,
+  rating,
+  current,
+  selectedTeam,
+  sideOrder = 'color',
+  onSelect,
+}) => {
+  const selectedColor =
+    g.red.team === selectedTeam ? 'red' : g.black.team === selectedTeam ? 'black' : undefined;
   let left: TColor = 'red';
   if (selectedColor && sideOrder !== 'color') {
     const opponent = selectedColor === 'red' ? 'black' : 'red';
@@ -35,7 +43,10 @@ const GameItem: FC<Props> = ({ game: g, rating, current, selectedTeam, sideOrder
         <span>{g[color].team}</span>
         {g[color].remote && <RemoteBadge />}
         {d ? (
-          <span className={cn('delta', d > 0 ? 'up' : 'down')} title={`Elo après la partie : ${Math.round(rating(g[color])[0])}`}>
+          <span
+            className={cn('delta', d > 0 ? 'up' : 'down')}
+            title={`Elo après la partie : ${Math.round(rating(g[color])[0])}`}
+          >
             {signed(d)}
           </span>
         ) : null}

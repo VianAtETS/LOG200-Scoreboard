@@ -5,7 +5,10 @@ export type TTailState<T> = { offset: number | null; rows: T[] };
 export const tailState = <T>(): TTailState<T> => ({ offset: null, rows: [] });
 
 // JSONL en ajout seul : lu en entier, puis seulement la suite (Range). Vrai si des lignes sont arrivées.
-export async function tail<T extends { v: number }>(url: string, state: TTailState<T>): Promise<boolean> {
+export async function tail<T extends { v: number }>(
+  url: string,
+  state: TTailState<T>,
+): Promise<boolean> {
   const headers: HeadersInit = state.offset ? { Range: `bytes=${state.offset}-` } : {};
   const res = await fetch(url, { cache: 'no-store', headers });
   if (res.status === 416) {

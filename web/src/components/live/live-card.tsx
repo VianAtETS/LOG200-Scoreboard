@@ -22,7 +22,8 @@ function context(g: TLiveGame, bracket?: TTournament) {
   if (!g.tournament) return 'Ladder';
   const { match, game } = g.tournament;
   const m = bracket?.matches.find((x) => x.id === match);
-  const score = m?.teams[0] && m.teams[1] ? ` · ${m.teams[0]} ${m.score[0]}–${m.score[1]} ${m.teams[1]}` : '';
+  const score =
+    m?.teams[0] && m.teams[1] ? ` · ${m.teams[0]} ${m.score[0]}–${m.score[1]} ${m.teams[1]}` : '';
   return `Tournoi · ${match} · manche ${game}${score}`;
 }
 
@@ -51,7 +52,11 @@ const LiveCard: FC<Props> = memo(({ game: g, model, bracket }) => {
         )}
       </p>
       <p className="live-meta">{context(g, bracket)}</p>
-      <Board step={steps[index]} index={index} label={`${g.red} contre ${g.black}, coup ${index}`} />
+      <Board
+        step={steps[index]}
+        index={index}
+        label={`${g.red} contre ${g.black}, coup ${index}`}
+      />
       <LiveClock game={g} />
       {g.ended && <p className="live-result">{result(g)}</p>}
     </a>
@@ -70,7 +75,11 @@ const LiveClock: FC<{ game: TLiveGame }> = ({ game: g }) => {
     const left = Math.max(0, g.time_ms - (now - g.turnAt)) / 1000;
     const last = g.move_ms.at(-1);
     const thinking = `${g[mover(g)]} réfléchit : ${left.toFixed(1)} s`;
-    text = [`Coup ${n + 1}`, thinking, ...(last === undefined ? [] : [`dernier en ${last} ms`])].join(' · ');
+    text = [
+      `Coup ${n + 1}`,
+      thinking,
+      ...(last === undefined ? [] : [`dernier en ${last} ms`]),
+    ].join(' · ');
   }
 
   return (

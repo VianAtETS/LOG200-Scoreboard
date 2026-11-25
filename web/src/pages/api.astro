@@ -15,7 +15,8 @@ import Layout from '@/layouts/layout.astro';
       is:inline
       src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.34.1/swagger-ui-bundle.js"
       integrity="sha384-XFYN47VzPiDY6qPtxYKg0nqUeW/upo20xf1j2SUE7gT/i35FJB4cuS/71Iegzk8Z"
-      crossorigin="anonymous"></script>
+      crossorigin="anonymous"
+    ></script>
   </Fragment>
 
   <ApiHeader client:only="react" />
@@ -34,6 +35,10 @@ import Layout from '@/layouts/layout.astro';
     dark.addEventListener('change', theme);
 
     // POST n'est pas autorisé par le préflight CORS de Caddy : PUT suffit pour soumettre.
-    SwaggerUIBundle({ url: `${SERVER}/api/openapi.json`, dom_id: '#swagger', supportedSubmitMethods: ['get', 'put'] });
+    SwaggerUIBundle({
+      url: `${SERVER}/api/openapi.json`,
+      dom_id: '#swagger',
+      supportedSubmitMethods: ['get', 'put'],
+    });
   </script>
 </Layout>

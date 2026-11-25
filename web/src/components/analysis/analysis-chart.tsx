@@ -21,15 +21,32 @@ type Props = {
 
 // Courbe ou barres d'une mesure au fil de la partie ; un clic choisit la position. Le clavier et la
 // liste des coups font la même chose : le graphe n'est qu'un raccourci.
-const AnalysisChart: FC<Props> = ({ title, lines = [], bars = [], last, cursor, crit, tip, reference, onPick }) => {
-  const max = Math.max(1, reference ?? 0, ...lines.flatMap((l) => l.values), ...bars.map((b) => b.value));
+const AnalysisChart: FC<Props> = ({
+  title,
+  lines = [],
+  bars = [],
+  last,
+  cursor,
+  crit,
+  tip,
+  reference,
+  onPick,
+}) => {
+  const max = Math.max(
+    1,
+    reference ?? 0,
+    ...lines.flatMap((l) => l.values),
+    ...bars.map((b) => b.value),
+  );
   const x = (k: number) => (k / Math.max(1, last)) * W;
   const y = (v: number) => H - (v / max) * (H - 4);
   const pick = (e: MouseEvent<SVGSVGElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
     onPick(Math.round(((e.clientX - box.left) / box.width) * last));
   };
-  const mark = (k: number, className: string) => <line key={`${className}-${k}`} className={className} x1={x(k)} x2={x(k)} y1={0} y2={H} />;
+  const mark = (k: number, className: string) => (
+    <line key={`${className}-${k}`} className={className} x1={x(k)} x2={x(k)} y1={0} y2={H} />
+  );
 
   return (
     <figure className="analysis-chart">
@@ -48,12 +65,18 @@ const AnalysisChart: FC<Props> = ({ title, lines = [], bars = [], last, cursor, 
             opacity={b.at > cursor ? 0.3 : 1}
           />
         ))}
-        {reference !== undefined && <line className="chart-reference" x1={0} x2={W} y1={y(reference)} y2={y(reference)} />}
+        {reference !== undefined && (
+          <line className="chart-reference" x1={0} x2={W} y1={y(reference)} y2={y(reference)} />
+        )}
         {crit.map((k) => mark(k, 'chart-crit'))}
         {tip !== null && mark(tip, 'chart-tip')}
         {mark(cursor, 'chart-cursor')}
         {lines.map((l) => (
-          <polyline key={l.color} points={l.values.map((v, k) => `${x(k)},${y(v)}`).join(' ')} stroke={l.color} />
+          <polyline
+            key={l.color}
+            points={l.values.map((v, k) => `${x(k)},${y(v)}`).join(' ')}
+            stroke={l.color}
+          />
         ))}
       </svg>
     </figure>

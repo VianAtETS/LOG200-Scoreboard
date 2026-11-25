@@ -1,7 +1,15 @@
 import { ChevronDownIcon, CloseIcon } from '@/components/icons/icons';
 import { cn } from '@/lib/utils';
 import type { TTeamRating } from '@/types/summary.types';
-import { useEffect, useLayoutEffect, useRef, useState, type FC, type KeyboardEvent, type PointerEventHandler } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FC,
+  type KeyboardEvent,
+  type PointerEventHandler,
+} from 'react';
 
 type Props = {
   // Classement de la session, meilleure d'abord.
@@ -20,7 +28,16 @@ const keepMouseFocus: PointerEventHandler<HTMLElement> = (e) => {
   if (e.pointerType === 'mouse') e.preventDefault();
 };
 
-const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chipsLabel, className, color, idle }) => {
+const TeamPicker: FC<Props> = ({
+  ratings,
+  selected,
+  onChange,
+  placeholder,
+  chipsLabel,
+  className,
+  color,
+  idle,
+}) => {
   const root = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -48,7 +65,8 @@ const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chips
   }, []);
 
   useLayoutEffect(() => {
-    if (open && current >= 0) list.current?.querySelector(`#pick-${current}`)?.scrollIntoView({ block: 'nearest' });
+    if (open && current >= 0)
+      list.current?.querySelector(`#pick-${current}`)?.scrollIntoView({ block: 'nearest' });
   }, [open, current]);
 
   const openList = (next: boolean) => {
@@ -70,7 +88,9 @@ const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chips
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     const last = options.length - 1;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      setActive(!open ? -1 : e.key === 'ArrowDown' ? Math.min(current + 1, last) : Math.max(current - 1, 0));
+      setActive(
+        !open ? -1 : e.key === 'ArrowDown' ? Math.min(current + 1, last) : Math.max(current - 1, 0),
+      );
       setOpen(true);
     } else if (e.key === 'Enter' && open && current >= 0) add(options[current].team);
     else if (e.key === 'Escape' && open) openList(false);
@@ -100,10 +120,21 @@ const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chips
         {selected.map((team) => {
           const quiet = idle?.(team) ?? false;
           return (
-            <li key={team} className={cn('chip', quiet && 'idle')} title={quiet ? `${team} : aucune partie dans cette fenêtre` : team}>
-              {color && <span className="chip-dot" aria-hidden="true" style={{ background: color(team) }} />}
+            <li
+              key={team}
+              className={cn('chip', quiet && 'idle')}
+              title={quiet ? `${team} : aucune partie dans cette fenêtre` : team}
+            >
+              {color && (
+                <span className="chip-dot" aria-hidden="true" style={{ background: color(team) }} />
+              )}
               <span>{team}</span>
-              <button type="button" className="chip-remove" aria-label={`Retirer ${team}`} onClick={() => remove(team)}>
+              <button
+                type="button"
+                className="chip-remove"
+                aria-label={`Retirer ${team}`}
+                onClick={() => remove(team)}
+              >
                 ×
               </button>
             </li>
@@ -166,7 +197,14 @@ const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chips
       >
         <ChevronDownIcon />
       </button>
-      <ul ref={list} id="picker-list" className="picker-list" role="listbox" aria-label="Équipes" hidden={!open}>
+      <ul
+        ref={list}
+        id="picker-list"
+        className="picker-list"
+        role="listbox"
+        aria-label="Équipes"
+        hidden={!open}
+      >
         {!open ? null : options.length ? (
           options.map((r, i) => (
             <li

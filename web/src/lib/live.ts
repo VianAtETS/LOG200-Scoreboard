@@ -15,7 +15,11 @@ export function liveUrl(server: string, base: string) {
   return url.href;
 }
 
-export function apply(games: TLiveGames, msg: TLiveMessage, now: number): TLiveGames | 'outdated' | 'resync' {
+export function apply(
+  games: TLiveGames,
+  msg: TLiveMessage,
+  now: number,
+): TLiveGames | 'outdated' | 'resync' {
   if (msg.v !== LIVE_VERSION) return 'outdated';
   games = forget(games, now);
   const next = new Map(games);
@@ -36,14 +40,23 @@ export function apply(games: TLiveGames, msg: TLiveMessage, now: number): TLiveG
       const g = games.get(msg.id);
       if (!g || g.ended) return games;
       if (msg.n !== g.moves.length) return 'resync';
-      next.set(msg.id, { ...g, moves: [...g.moves, msg.move], move_ms: [...g.move_ms, msg.ms], turnAt: now });
+      next.set(msg.id, {
+        ...g,
+        moves: [...g.moves, msg.move],
+        move_ms: [...g.move_ms, msg.ms],
+        turnAt: now,
+      });
       return next;
     }
     case 'ended': {
       const g = games.get(msg.id);
       if (!g) return games;
       const { winner, reason, cancelled } = msg;
-      next.set(msg.id, { ...g, ended: { winner, reason, cancelled: Boolean(cancelled) }, endedAt: now });
+      next.set(msg.id, {
+        ...g,
+        ended: { winner, reason, cancelled: Boolean(cancelled) },
+        endedAt: now,
+      });
       return next;
     }
     default:
@@ -59,13 +72,17 @@ export function forget(games: TLiveGames, now: number): TLiveGames {
 export function pickLive(games: TLiveGames, teams: string[], between: boolean, shownId?: string) {
   const both = between && teams.length > 1;
   const plays = (team: string) => teams.includes(team);
-  const fits = (g: TLiveGame) => both ? plays(g.red) && plays(g.black) : plays(g.red) || plays(g.black);
-  const playing = [...games.values()].filter((g) => !g.ended && fits(g)).sort((a, b) => (a.since < b.since ? 1 : -1))[0];
+  const fits = (g: TLiveGame) =>
+    both ? plays(g.red) && plays(g.black) : plays(g.red) || plays(g.black);
+  const playing = [...games.values()]
+    .filter((g) => !g.ended && fits(g))
+    .sort((a, b) => (a.since < b.since ? 1 : -1))[0];
   const shown = shownId ? games.get(shownId) : undefined;
   return playing ?? (shown && fits(shown) ? shown : undefined);
 }
 
-export const mover = (g: TLiveGame): TColor => ((g.opening.length + g.moves.length) % 2 === 0 ? 'red' : 'black');
+export const mover = (g: TLiveGame): TColor =>
+  (g.opening.length + g.moves.length) % 2 === 0 ? 'red' : 'black';
 
 // Rend une fonction qui coupe la connexion et arrête les reconnexions.
 export function connectLive(url: string, onChange: (games: TLiveGames, state: TLiveState) => void) {

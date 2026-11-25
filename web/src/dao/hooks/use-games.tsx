@@ -18,14 +18,18 @@ export const useGetTeamRows = (teams: string[], use = 'picked') => {
   return useQuery({
     queryKey: [queryKeys.teamRows, use, teams.join(',')],
     queryFn: () => {
-      for (const team of followed.current.keys()) if (!teams.includes(team)) followed.current.delete(team);
-      for (const team of teams) if (!followed.current.has(team)) followed.current.set(team, tailState());
+      for (const team of followed.current.keys())
+        if (!teams.includes(team)) followed.current.delete(team);
+      for (const team of teams)
+        if (!followed.current.has(team)) followed.current.set(team, tailState());
       const states = [...followed.current];
       const run = following.current
         .catch(() => {})
         .then(() => Promise.all(states.map(([team, state]) => tail(teamUrl(team), state))))
         .then((added) => {
-          const same = last.current?.size === states.length && states.every(([team]) => last.current?.has(team));
+          const same =
+            last.current?.size === states.length &&
+            states.every(([team]) => last.current?.has(team));
           if (same && !added.some(Boolean)) return last.current!;
           last.current = new Map(states.map(([team, state]) => [team, state.rows]));
           return last.current;

@@ -25,7 +25,12 @@ export type TQueueMarks = { busy: Map<string, TColor>; called: Set<string> };
 
 // Nœuds dans l'ordre de la file : `parent` est un indice, `path` marque le chemin de la racine à `next`.
 export function layout(teams: TQueueTeam[], next: number) {
-  const nodes: TQueueNode[] = teams.map((team) => ({ ...team, depth: 0, parent: null, path: false }));
+  const nodes: TQueueNode[] = teams.map((team) => ({
+    ...team,
+    depth: 0,
+    parent: null,
+    path: false,
+  }));
   const place = (lo: number, hi: number, depth: number, parent: number | null) => {
     if (lo >= hi) return;
     const mid = (lo + hi - 1) >> 1;
@@ -49,7 +54,12 @@ export function bend(a: TPoint, b: TPoint, to: number) {
 
 // Ce que la case montre.
 export function kinds(team: TQueueTeam, { busy, called }: TQueueMarks, next: boolean) {
-  return [team.bot ? 'bot' : 'team', next && 'next', busy.has(team.id) && 'busy', called.has(team.id) && 'called'];
+  return [
+    team.bot ? 'bot' : 'team',
+    next && 'next',
+    busy.has(team.id) && 'busy',
+    called.has(team.id) && 'called',
+  ];
 }
 
 export function describe(team: TQueueTeam, { busy, called }: TQueueMarks) {
@@ -62,5 +72,7 @@ export function describe(team: TQueueTeam, { busy, called }: TQueueMarks) {
 export function countdown(at: string, now: number) {
   const s = Math.ceil((Date.parse(at) - now) / 1000);
   if (!(s > 0)) return 'maintenant';
-  return s < 60 ? `dans ${s} s` : `dans ${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`;
+  return s < 60
+    ? `dans ${s} s`
+    : `dans ${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`;
 }

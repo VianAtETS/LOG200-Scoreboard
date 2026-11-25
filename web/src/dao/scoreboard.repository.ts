@@ -55,14 +55,18 @@ export function getDuelPairs([a, b]: TDuelSide[]) {
 }
 
 export async function getGame(row: Pick<TGameRow, 'id' | 'at'>): Promise<TGame> {
-  const g = row.at ? await getGameFromJsonl(row.at) : await json<TGame>(`${API}/games/${encodeURIComponent(row.id)}`, {});
+  const g = row.at
+    ? await getGameFromJsonl(row.at)
+    : await json<TGame>(`${API}/games/${encodeURIComponent(row.id)}`, {});
   if (g.id !== row.id) throw new Error('partie introuvable');
   return g;
 }
 
 // shortcut: ladder d'avant la base (lignes avec `at`), le temps que page et ladder se déploient ; à retirer ensuite.
 async function getGameFromJsonl([start, length]: [number, number]): Promise<TGame> {
-  const res = await fetch(`${DATA}/games.jsonl`, { headers: { Range: `bytes=${start}-${start + length - 1}` } });
+  const res = await fetch(`${DATA}/games.jsonl`, {
+    headers: { Range: `bytes=${start}-${start + length - 1}` },
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const bytes = new Uint8Array(await res.arrayBuffer());
   const line = res.status === 200 ? bytes.subarray(start, start + length) : bytes;
@@ -70,12 +74,17 @@ async function getGameFromJsonl([start, length]: [number, number]): Promise<TGam
 }
 
 export const getTournamentIndex = () =>
-  json<TTournamentIndex>(`${DATA}/tournaments/index.json`).catch((): TTournamentIndex => ({ next: null, tournaments: [] }));
+  json<TTournamentIndex>(`${DATA}/tournaments/index.json`).catch((): TTournamentIndex => ({
+    next: null,
+    tournaments: [],
+  }));
 
-export const getTournament = (id: string) => json<TTournament>(`${DATA}/tournaments/${encodeURIComponent(id)}.json`);
+export const getTournament = (id: string) =>
+  json<TTournament>(`${DATA}/tournaments/${encodeURIComponent(id)}.json`);
 
 // Texte brut : la page compare au précédent pour savoir s'il a changé.
-export const getTournamentText = (id: string) => text(`${DATA}/tournaments/${encodeURIComponent(id)}.json`);
+export const getTournamentText = (id: string) =>
+  text(`${DATA}/tournaments/${encodeURIComponent(id)}.json`);
 
 export async function getTournamentPreviewText() {
   return fetch(`${DATA}/tournament-preview.json`, noStore)

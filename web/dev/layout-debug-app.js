@@ -11,7 +11,7 @@ const load = () => {
   try {
     return sessionStorage.getItem(KEY);
   } catch (err) {
-    console.warn('[layout-debug] échec du chargement de l\'état :', err);
+    console.warn("[layout-debug] échec du chargement de l'état :", err);
     return null;
   }
 };
@@ -20,7 +20,7 @@ const save = (on) => {
   try {
     sessionStorage.setItem(KEY, on ? '1' : '0');
   } catch (err) {
-    console.warn('[layout-debug] échec de la sauvegarde de l\'état :', err);
+    console.warn("[layout-debug] échec de la sauvegarde de l'état :", err);
   }
 };
 

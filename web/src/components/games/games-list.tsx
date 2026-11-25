@@ -30,7 +30,15 @@ const GamesList: FC<Props> = ({ games, rating, currentId, selectedTeam, sideOrde
     >
       {items.length ? (
         items.map((g) => (
-          <GameItem key={g.id} game={g} rating={rating} current={g.id === currentId} selectedTeam={selectedTeam} sideOrder={sideOrder} onSelect={onSelect} />
+          <GameItem
+            key={g.id}
+            game={g}
+            rating={rating}
+            current={g.id === currentId}
+            selectedTeam={selectedTeam}
+            sideOrder={sideOrder}
+            onSelect={onSelect}
+          />
         ))
       ) : (
         <li className="empty">Les parties jouées apparaîtront ici.</li>

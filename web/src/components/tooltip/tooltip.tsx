@@ -1,6 +1,15 @@
 import {
-  useCallback, useEffect, useId, useLayoutEffect, useRef, useState,
-  type FC, type FocusEvent, type PointerEvent, type PropsWithChildren, type RefObject,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FC,
+  type FocusEvent,
+  type PointerEvent,
+  type PropsWithChildren,
+  type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -22,7 +31,10 @@ const Tooltip: FC<Props> = ({ id, anchor, pinned, tipRef, children }) => {
     const a = anchor.getBoundingClientRect();
     const t = tip.getBoundingClientRect();
     const below = a.top - GAP - t.height < MARGIN;
-    const left = Math.min(Math.max(a.left + a.width / 2 - t.width / 2, MARGIN), innerWidth - MARGIN - t.width);
+    const left = Math.min(
+      Math.max(a.left + a.width / 2 - t.width / 2, MARGIN),
+      innerWidth - MARGIN - t.width,
+    );
     tip.style.left = `${left}px`;
     tip.style.top = `${below ? a.bottom + GAP : a.top - GAP - t.height}px`;
     tip.dataset.side = below ? 'below' : 'above';
@@ -30,10 +42,15 @@ const Tooltip: FC<Props> = ({ id, anchor, pinned, tipRef, children }) => {
 
   if (!anchor) return null;
   return createPortal(
-    <div ref={tipRef} id={id} className={pinned ? 'tooltip pinned' : 'tooltip'} role={pinned ? 'dialog' : 'tooltip'}>
+    <div
+      ref={tipRef}
+      id={id}
+      className={pinned ? 'tooltip pinned' : 'tooltip'}
+      role={pinned ? 'dialog' : 'tooltip'}
+    >
       {children}
     </div>,
-    document.body
+    document.body,
   );
 };
 

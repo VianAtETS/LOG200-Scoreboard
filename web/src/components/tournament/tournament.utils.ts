@@ -10,8 +10,16 @@ export const PREVIEW = 'apercu';
 // Tournois terminés qui calibrent la durée prévue.
 export const CALIBRATION = 5;
 
-export const dateFormat = new Intl.DateTimeFormat('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
-export const shortDate = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' });
+export const dateFormat = new Intl.DateTimeFormat('fr-CA', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+});
+export const shortDate = new Intl.DateTimeFormat('fr-CA', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
 
 export function span(ms: number) {
   const minutes = Math.round(ms / 60_000);

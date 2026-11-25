@@ -27,8 +27,11 @@ export const PACE_WARN = 0.8;
 
 export const DEFAULT_STATS = { pace: 'p95', record: 'all', elo: 'rating' } as const;
 
-export const statOf = <T extends string>(stats: Record<T, unknown>, value: string | null, fallback: T): T =>
-  value !== null && Object.hasOwn(stats, value) ? (value as T) : fallback;
+export const statOf = <T extends string>(
+  stats: Record<T, unknown>,
+  value: string | null,
+  fallback: T,
+): T => (value !== null && Object.hasOwn(stats, value) ? (value as T) : fallback);
 
 export const SORT_COLUMNS = {
   rank: 'Rang officiel',
@@ -54,26 +57,35 @@ export const recordOf = (r: TTeamRating, stat: TRecordStat) =>
     ? { wins: r.build_wins, losses: r.build_games - r.build_wins, games: r.build_games }
     : { wins: r.wins, losses: r.losses, games: r.games };
 
-export const winRate = (r: TTeamRating) => (r.build_games ? r.build_wins / r.build_games : undefined);
+export const winRate = (r: TTeamRating) =>
+  r.build_games ? r.build_wins / r.build_games : undefined;
 
 const teamNames = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
 
 export function rankingView(
   ratings: readonly TRankingRow[],
   sort: TRankingSort,
-  measures: { elo: TEloStat; record: TRecordStat; pace: TPaceStat }
+  measures: { elo: TEloStat; record: TRecordStat; pace: TPaceStat },
 ) {
   const ranks = new Map(ratings.filter((r) => !r.archived).map((r, i) => [r.team, i + 1]));
   const value = (r: TRankingRow) => {
     switch (sort.column) {
-      case 'rank': return r.archived ? undefined : ranks.get(r.team);
-      case 'elo': return r[measures.elo];
-      case 'record': return recordOf(r, measures.record).wins;
-      case 'games': return recordOf(r, measures.record).games;
-      case 'pct': return winRate(r);
-      case 'pace': return r.pace?.[measures.pace];
-      case 'last': return r.last ? Date.parse(r.last) : undefined;
-      case 'team': return undefined;
+      case 'rank':
+        return r.archived ? undefined : ranks.get(r.team);
+      case 'elo':
+        return r[measures.elo];
+      case 'record':
+        return recordOf(r, measures.record).wins;
+      case 'games':
+        return recordOf(r, measures.record).games;
+      case 'pct':
+        return winRate(r);
+      case 'pace':
+        return r.pace?.[measures.pace];
+      case 'last':
+        return r.last ? Date.parse(r.last) : undefined;
+      case 'team':
+        return undefined;
     }
   };
   const direction = sort.direction === 'ascending' ? 1 : -1;

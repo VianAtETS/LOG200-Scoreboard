@@ -29,7 +29,10 @@ export function gamesPlayed(a: number, b: number): [number, number] {
 }
 
 function wave(series: TSeries[]) {
-  return Math.max(...series.map((s) => s.mean)) + Math.max(...series.map((s) => s.sd)) * expectedMax(series.length);
+  return (
+    Math.max(...series.map((s) => s.mean)) +
+    Math.max(...series.map((s) => s.sd)) * expectedMax(series.length)
+  );
 }
 
 export function tournamentDuration(view: TTournament, fromStart = false) {
@@ -58,7 +61,8 @@ export function tournamentDuration(view: TTournament, fromStart = false) {
   for (const round of rounds.filter(Boolean)) {
     const queues = round.map((series, kind) => {
       let mean = 0;
-      for (let i = 0; i < series.length; i += slots[kind]) mean += wave(series.slice(i, i + slots[kind]));
+      for (let i = 0; i < series.length; i += slots[kind])
+        mean += wave(series.slice(i, i + slots[kind]));
       return { mean, sd: Math.max(0, ...series.map((s) => s.sd)) };
     });
     total += wave(queues.filter((q) => q.mean));
@@ -68,7 +72,9 @@ export function tournamentDuration(view: TTournament, fromStart = false) {
 
 export function correction(finished: TTournament[]) {
   const ratios = finished
-    .map((view) => (Date.parse(view.ended!) - Date.parse(view.ts)) / tournamentDuration(view, true)!)
+    .map(
+      (view) => (Date.parse(view.ended!) - Date.parse(view.ts)) / tournamentDuration(view, true)!,
+    )
     .filter((r) => Number.isFinite(r) && r > 0);
   return ratios.length ? ratios.reduce((a, b) => a + b) / ratios.length : 1;
 }

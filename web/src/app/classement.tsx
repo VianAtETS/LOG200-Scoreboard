@@ -13,7 +13,14 @@ import { TeamPicker } from '@/components/picker/team-picker';
 import { QueueDialog } from '@/components/queue/queue-dialog';
 import { ArchiveFilter } from '@/components/ranking/archive-filter';
 import { RankingSection } from '@/components/ranking/ranking-section';
-import { DEFAULT_STATS, ELO_STATS, PACE_STATS, RECORD_STATS, sortOf, statOf } from '@/components/ranking/ranking.data';
+import {
+  DEFAULT_STATS,
+  ELO_STATS,
+  PACE_STATS,
+  RECORD_STATS,
+  sortOf,
+  statOf,
+} from '@/components/ranking/ranking.data';
 import { ReplaySection } from '@/components/replay/replay-section';
 import { useReplay } from '@/components/replay/use-replay';
 import { SplitHandle } from '@/components/split-handle/split-handle';
@@ -62,10 +69,13 @@ const ClassementPage = () => {
   const [orderParam, setOrderParam] = useSearchParam('order');
   const [sideParam, setSideParam] = useSearchParam('side');
   // Aucune équipe choisie : les dernières parties de toutes les équipes.
-  const [chosen, setChosen] = useState(() => (initial.get('teams') ?? initial.get('team') ?? '').split(',').filter(Boolean));
+  const [chosen, setChosen] = useState(() =>
+    (initial.get('teams') ?? initial.get('team') ?? '').split(',').filter(Boolean),
+  );
   const [queueOpen, setQueueOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<'ranking' | 'games' | null>(null);
-  const toggle = (section: 'ranking' | 'games') => setCollapsed((c) => (c === section ? null : section));
+  const toggle = (section: 'ranking' | 'games') =>
+    setCollapsed((c) => (c === section ? null : section));
   const [liveWanted, setLiveWanted] = useState(false);
   const live = useLiveGames(liveWanted);
 
@@ -85,44 +95,61 @@ const ClassementPage = () => {
   const scope = summary ? (verified ? summary.verified! : summary.scopes)[session] : undefined;
   const ratings = scope?.ratings ?? [];
   const builds = useMemo(() => new Map(Object.entries(summary?.builds ?? {})), [summary]);
-  const version = useCallback((team: string, build?: string) => versionOf(builds, team, build), [builds]);
+  const version = useCallback(
+    (team: string, build?: string) => versionOf(builds, team, build),
+    [builds],
+  );
   const rating = useCallback((side: TSide) => ratingOf(side, key, verified), [key, verified]);
 
-  const known = useMemo(() => new Set(summary?.scopes[GLOBAL].ratings.map((r) => r.team)), [summary]);
+  const known = useMemo(
+    () => new Set(summary?.scopes[GLOBAL].ratings.map((r) => r.team)),
+    [summary],
+  );
   const teamsKey = summary ? chosen.filter((t) => known.has(t)).join(',') : '';
   const teams = useMemo(() => teamsKey.split(',').filter(Boolean), [teamsKey]);
   const { data: rows, isPlaceholderData } = useGetTeamRows(teams);
 
   // Versions archivées : seulement avec un ladder lancé avec --archives.
   const [archivesParam, setArchivesParam] = useSearchParam('archives');
-  const archiveChoices = useMemo(() => (summary?.archives ? archiveOptions(summary) : []), [summary]);
-  const wantedArchives = useMemo(() => (archivesParam ?? '').split(',').filter(Boolean), [archivesParam]);
+  const archiveChoices = useMemo(
+    () => (summary?.archives ? archiveOptions(summary) : []),
+    [summary],
+  );
+  const wantedArchives = useMemo(
+    () => (archivesParam ?? '').split(',').filter(Boolean),
+    [archivesParam],
+  );
   const pickedArchives = useMemo(
     () => archiveChoices.filter((o) => wantedArchives.includes(o.key)),
-    [archiveChoices, wantedArchives]
+    [archiveChoices, wantedArchives],
   );
   const archiveTeamsKey = [...new Set(pickedArchives.map((o) => o.team))].join(',');
   const archiveTeams = useMemo(() => archiveTeamsKey.split(',').filter(Boolean), [archiveTeamsKey]);
   const { data: archiveFiles, error: archiveError } = useGetTeamRows(archiveTeams, 'archives');
   const rankingRows = useMemo(() => {
     const games = new Map([...(archiveFiles?.values() ?? [])].flat().map((g) => [g.id, g]));
-    return withArchivedRows(scope?.ratings ?? [], archivedRows([...games.values()], pickedArchives, { session, verified }));
+    return withArchivedRows(
+      scope?.ratings ?? [],
+      archivedRows([...games.values()], pickedArchives, { session, verified }),
+    );
   }, [archiveFiles, pickedArchives, scope, session, verified]);
 
   const list = useMemo(() => {
     if (!scope) return [];
     if (!teams.length) return scope.recent;
-    return gamesOf(rows ?? new Map(), teams, { mode: match, session }).filter((g) => inGameScope(g, session, verified));
+    return gamesOf(rows ?? new Map(), teams, { mode: match, session }).filter((g) =>
+      inGameScope(g, session, verified),
+    );
   }, [scope, teams, rows, match, session, verified]);
 
   const duelGames = useMemo(
     () =>
       teams.length === 2
-        ? gamesOf(rows ?? new Map(), teams, { mode: BETWEEN, session }).filter(
-            (g) => inGameScope(g, session, verified)
+        ? gamesOf(rows ?? new Map(), teams, { mode: BETWEEN, session }).filter((g) =>
+            inGameScope(g, session, verified),
           )
         : [],
-    [teams, rows, session, verified]
+    [teams, rows, session, verified],
   );
 
   // Le point du direct pulse quand des parties arrivent, pas au chargement ni à un changement d'équipes.
@@ -140,8 +167,11 @@ const ClassementPage = () => {
   // Le direct ne s'ouvre que s'il sert : partie liée en cours, ou équipe choisie en partie. Une fois ouvert,
   // il le reste.
   const linkedRunning = Boolean(linkedGame) && running.some((g) => g.id === linkedGame);
-  const teamPlaying = running.some((g) => g.id && (teams.includes(g.red) || teams.includes(g.black)));
-  if (!liveWanted && summary && runningFetched && (linkedRunning || teamPlaying)) setLiveWanted(true);
+  const teamPlaying = running.some(
+    (g) => g.id && (teams.includes(g.red) || teams.includes(g.black)),
+  );
+  if (!liveWanted && summary && runningFetched && (linkedRunning || teamPlaying))
+    setLiveWanted(true);
 
   // ?game= d'une partie terminée : retrouvée dans le fichier de l'équipe rouge.
   const linked = useRef(false);
@@ -203,7 +233,12 @@ const ClassementPage = () => {
 
   return (
     <>
-      <Masthead current="classement" status={<LiveStatus dot={error ? 'error' : summary ? 'on' : ''} text={status} pulses={pulses} />}>
+      <Masthead
+        current="classement"
+        status={
+          <LiveStatus dot={error ? 'error' : summary ? 'on' : ''} text={status} pulses={pulses} />
+        }
+      >
         <VerifiedFilter
           hidden={!summary?.verified}
           checked={verifiedParam === '1'}
@@ -268,7 +303,12 @@ const ClassementPage = () => {
         </div>
 
         <section id="games-section" className="section games" aria-labelledby="games-title">
-          <SectionToggle id="games-title" collapsed={collapsed === 'games'} controls="games-section" onToggle={() => toggle('games')}>
+          <SectionToggle
+            id="games-title"
+            collapsed={collapsed === 'games'}
+            controls="games-section"
+            onToggle={() => toggle('games')}
+          >
             Parties récentes
           </SectionToggle>
           <TeamPicker
@@ -284,7 +324,13 @@ const ClassementPage = () => {
               {teams.length === 1 ? (
                 <label className="side-order" htmlFor="game-side-order">
                   <span>Position de {teams[0]}</span>
-                  <select id="game-side-order" value={sideOrder} onChange={(e) => setSideParam(e.target.value === 'color' ? null : e.target.value)}>
+                  <select
+                    id="game-side-order"
+                    value={sideOrder}
+                    onChange={(e) =>
+                      setSideParam(e.target.value === 'color' ? null : e.target.value)
+                    }
+                  >
                     <option value="color">Ordre des couleurs</option>
                     <option value="left">Toujours à gauche</option>
                     <option value="right">Toujours à droite</option>
@@ -305,12 +351,10 @@ const ClassementPage = () => {
               )}
             </div>
           )}
-          <a
-            id="graph-link"
-            className="graph-link"
-            href={pageUrl('graphe.html')}
-          >
-            {teams.length ? 'Voir les rangs et l’Elo des équipes choisies' : 'Voir les graphes du classement'}
+          <a id="graph-link" className="graph-link" href={pageUrl('graphe.html')}>
+            {teams.length
+              ? 'Voir les rangs et l’Elo des équipes choisies'
+              : 'Voir les graphes du classement'}
           </a>
           <DuelRecord teams={teams} games={duelGames} ratings={ratings} versionOf={version} />
           <GamesList

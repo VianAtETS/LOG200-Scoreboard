@@ -54,7 +54,9 @@ const TournoiPage = () => {
   const runningId = tournaments.find((t) => !t.winner)?.id;
   const ready = Boolean(index) && previewFetched;
   const id = ready
-    ? ([shown, runningId, previewText && PREVIEW, ids[0]].find((v): v is string => Boolean(v) && ids.includes(v!)) ?? '')
+    ? ([shown, runningId, previewText && PREVIEW, ids[0]].find(
+        (v): v is string => Boolean(v) && ids.includes(v!),
+      ) ?? '')
     : '';
 
   if (ready && id !== (shown ?? '')) setShown(id || null);
@@ -62,7 +64,10 @@ const TournoiPage = () => {
   const { data: viewText, error } = useGetTournamentText(id && id !== PREVIEW ? id : null);
   const text = id === PREVIEW ? previewText : id ? viewText : null;
   const view = useMemo<TTournament | null>(() => (text ? JSON.parse(text) : null), [text]);
-  const preview = useMemo<TTournament | null>(() => (previewText ? JSON.parse(previewText) : null), [previewText]);
+  const preview = useMemo<TTournament | null>(
+    () => (previewText ? JSON.parse(previewText) : null),
+    [previewText],
+  );
 
   // Pulse quand le tableau affiché change, pas quand on en choisit un autre.
   const pulses = usePulse(text ?? undefined, id);
@@ -70,7 +75,9 @@ const TournoiPage = () => {
   const describe = (team: string) => {
     const entrant = view?.entrants.find((e) => e.team === team);
     const n = (builds.get(team)?.indexOf(entrant?.build ?? '') ?? -1) + 1;
-    return [team, n ? `v${n}` : '', entrant ? `· ${Math.round(entrant.rating)} Elo` : ''].filter(Boolean).join(' ');
+    return [team, n ? `v${n}` : '', entrant ? `· ${Math.round(entrant.rating)} Elo` : '']
+      .filter(Boolean)
+      .join(' ');
   };
 
   const timing = (v: TTournament) => {
@@ -110,7 +117,12 @@ const TournoiPage = () => {
 
   return (
     <>
-      <Masthead current="tournoi" status={<LiveStatus dot={error ? 'error' : index ? 'on' : ''} text={status} pulses={pulses} />}>
+      <Masthead
+        current="tournoi"
+        status={
+          <LiveStatus dot={error ? 'error' : index ? 'on' : ''} text={status} pulses={pulses} />
+        }
+      >
         <SessionSelect
           id="tournament"
           label="Tournoi"
@@ -143,9 +155,13 @@ const TournoiPage = () => {
           ) : (
             <ol id="places" className="places" aria-label="Classement final" hidden />
           )}
-          <p id="tournament-empty" className="empty" hidden={!ready || Boolean(view) || (Boolean(id) && !text && !error)}>
-            Aucun tournoi pour l'instant. Chaque semaine, le ladder joue une répétition du tournoi final : double
-            élimination à 5 s par coup, entre les équipes qui ont un jar accepté.
+          <p
+            id="tournament-empty"
+            className="empty"
+            hidden={!ready || Boolean(view) || (Boolean(id) && !text && !error)}
+          >
+            Aucun tournoi pour l'instant. Chaque semaine, le ladder joue une répétition du tournoi
+            final : double élimination à 5 s par coup, entre les équipes qui ont un jar accepté.
           </p>
           {view ? (
             <Bracket view={view} model={model} running={running} describe={describe} />

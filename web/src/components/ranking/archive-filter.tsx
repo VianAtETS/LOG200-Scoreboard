@@ -51,8 +51,8 @@ const ArchiveFilter: FC<Props> = ({ options, wanted, onChange, error }) => {
         {!shown.length && <p>Aucune version archivée ne correspond.</p>}
       </fieldset>
       <p className="archive-help">
-        Archives : anciennes versions, sans nouveaux matchs. Elo figé au dernier match de la version ; hors classement
-        actuel.
+        Archives : anciennes versions, sans nouveaux matchs. Elo figé au dernier match de la version
+        ; hors classement actuel.
       </p>
       <p className="archive-status" role="status">
         {error && `Archives indisponibles : ${error}`}

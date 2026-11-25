@@ -19,7 +19,7 @@ const Board: FC<Props> = ({ step, index, label, id }) => {
     cells.push(
       <div key={`row-${y}`} className="label">
         {SIZE - y}
-      </div>
+      </div>,
     );
     for (let x = 0; x < SIZE; x++) {
       const i = y * SIZE + x;
@@ -32,18 +32,24 @@ const Board: FC<Props> = ({ step, index, label, id }) => {
             v === DESTROYED && 'hole',
             step.move?.from === i && 'from',
             step.move?.to === i && 'to',
-            step.move?.destroyed === i && 'destroyed-now'
+            step.move?.destroyed === i && 'destroyed-now',
           )}
         >
           {v === RED && <div className="pawn red" />}
           {v === BLACK && <div className="pawn black" />}
-        </div>
+        </div>,
       );
     }
   }
 
   return (
-    <div id={id} className="board" role="img" aria-label={label} data-mover={index % 2 === 1 ? 'red' : 'black'}>
+    <div
+      id={id}
+      className="board"
+      role="img"
+      aria-label={label}
+      data-mover={index % 2 === 1 ? 'red' : 'black'}
+    >
       {cells}
       <div />
       {COLUMNS.map((c) => (

@@ -1,6 +1,9 @@
 export const timeFormat = new Intl.DateTimeFormat('fr-CA', { timeStyle: 'short' });
 export const dayFormat = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short' });
-export const fullFormat = new Intl.DateTimeFormat('fr-CA', { dateStyle: 'long', timeStyle: 'short' });
+export const fullFormat = new Intl.DateTimeFormat('fr-CA', {
+  dateStyle: 'long',
+  timeStyle: 'short',
+});
 
 export const signed = (n: number) => `${n > 0 ? '+' : '−'}${Math.abs(n).toLocaleString('fr-CA')}`;
 export const roundDelta = (d: number) => Math.round(d) || Math.round(d * 10) / 10;

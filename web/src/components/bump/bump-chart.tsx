@@ -32,7 +32,15 @@ type TPointerPosition = { clientX: number; clientY: number };
 
 const muted = 'var(--color-text-muted)';
 
-const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, versionOf, loading = false }) => {
+const BumpChart: FC<Props> = ({
+  columns,
+  series,
+  selected,
+  metric,
+  palette,
+  versionOf,
+  loading = false,
+}) => {
   const figure = useRef<HTMLElement>(null);
   const plot = useRef<HTMLDivElement>(null);
   const tip = useRef<HTMLDivElement>(null);
@@ -53,7 +61,7 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
 
   const geom = useMemo(
     () => chartGeometry(columns.length, series, selected, metric, size),
-    [columns.length, series, selected, metric, size]
+    [columns.length, series, selected, metric, size],
   );
 
   const lines = useMemo(() => {
@@ -63,7 +71,7 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
         .filter(([, path]) => path.length > geom.inner.w)
         .sort(([, a], [, b]) => b.length - a.length)
         .slice(0, 10)
-        .map(([t]) => t)
+        .map(([t]) => t),
     );
     return geom.paintOrder.map((t) => {
       const path = geom.paths.get(t)!;
@@ -87,9 +95,17 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
   // Rang ou Elo exact, pas lissé, meilleure d'abord.
   const standingsAt = (col: number) =>
     (geom?.drawn ?? [])
-      .map((team) => ({ team, p: pointAt(series.get(team)!, col), before: pointAt(series.get(team)!, col - 1) }))
-      .filter((r): r is { team: string; p: TRankPoint; before: TRankPoint | undefined } => Boolean(r.p))
-      .sort((a, b) => metric === 'rank' ? a.p.rank - b.p.rank : b.p.rating - a.p.rating || a.p.rank - b.p.rank);
+      .map((team) => ({
+        team,
+        p: pointAt(series.get(team)!, col),
+        before: pointAt(series.get(team)!, col - 1),
+      }))
+      .filter((r): r is { team: string; p: TRankPoint; before: TRankPoint | undefined } =>
+        Boolean(r.p),
+      )
+      .sort((a, b) =>
+        metric === 'rank' ? a.p.rank - b.p.rank : b.p.rating - a.p.rating || a.p.rank - b.p.rank,
+      );
 
   const clampColumn = (col: number) => Math.max(0, Math.min(columns.length - 1, col));
 
@@ -104,12 +120,14 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
     if (!geom) return hide();
     cancelPointer();
     const next = inspectAt(col, team);
-    setHover((h) => h.col === next.col && h.team === next.team ? h : { col: next.col, team: next.team });
+    setHover((h) =>
+      h.col === next.col && h.team === next.team ? h : { col: next.col, team: next.team },
+    );
   };
 
   const hide = () => {
     cancelPointer();
-    setHover((h) => h.col === null ? h : { ...h, col: null });
+    setHover((h) => (h.col === null ? h : { ...h, col: null }));
   };
 
   const toolTipOpenned = hover.col !== null;
@@ -176,9 +194,12 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
   const team = inspection?.team ?? null;
   const game = col === null ? null : columns[col];
   // Session deltas also describe tournament games, whose global deltas are both zero.
-  const winner = game && game.red.session[1] !== game.black.session[1]
-    ? (game.red.session[1] > game.black.session[1] ? game.red.team : game.black.team)
-    : null;
+  const winner =
+    game && game.red.session[1] !== game.black.session[1]
+      ? game.red.session[1] > game.black.session[1]
+        ? game.red.team
+        : game.black.team
+      : null;
   const loser = game ? (winner === game.red.team ? game.black.team : game.red.team) : '';
   const matchup = game ? `${game.red.team} contre ${game.black.team}` : '';
   const result = winner ? `${winner} bat ${loser}` : matchup;
@@ -195,22 +216,32 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
   if (loading) {
     summary = 'Chargement du graphe…';
   } else if (!geom) {
-    summary = !selected.length ? 'Aucune équipe choisie.' : 'Aucune partie de ces équipes dans cette fenêtre.';
+    summary = !selected.length
+      ? 'Aucune équipe choisie.'
+      : 'Aucune partie de ces équipes dans cette fenêtre.';
   } else {
     const from = dayFormat.format(new Date(columns[0].ts));
     const to = dayFormat.format(new Date(columns[columns.length - 1].ts));
-    const parts = [`${metric === 'rank' ? 'Rang' : 'Elo'} de ${geom.drawn.length} équipes sur ${columns.length} parties, du ${from} au ${to}`];
+    const parts = [
+      `${metric === 'rank' ? 'Rang' : 'Elo'} de ${geom.drawn.length} équipes sur ${columns.length} parties, du ${from} au ${to}`,
+    ];
     const teams = geom.drawn.filter((t) => !series.get(t)![0].bot);
     if (teams.length) {
       const value = (t: string) => series.get(t)!.at(-1)![metric];
-      const leader = teams.reduce((a, b) => (metric === 'rank' ? value(a) <= value(b) : value(a) >= value(b)) ? a : b);
-      parts.push(`en tête des équipes suivies : ${leader}, ${metric === 'rank' ? ordinal(value(leader)) : `${Math.round(value(leader))} Elo`}`);
+      const leader = teams.reduce((a, b) =>
+        (metric === 'rank' ? value(a) <= value(b) : value(a) >= value(b)) ? a : b,
+      );
+      parts.push(
+        `en tête des équipes suivies : ${leader}, ${metric === 'rank' ? ordinal(value(leader)) : `${Math.round(value(leader))} Elo`}`,
+      );
     }
     summary = `${parts.join(' ; ')}.`;
   }
 
   const focus = rows.find((r) => r.team === team);
-  const reading = focus ? `${team} ${ordinal(focus.p.rank)}, ${Math.round(focus.p.rating)} Elo, ` : '';
+  const reading = focus
+    ? `${team} ${ordinal(focus.p.rank)}, ${Math.round(focus.p.rating)} Elo, `
+    : '';
   const on = (t: string) => t === team;
 
   return (
@@ -233,7 +264,9 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
         aria-valuemin={0}
         aria-valuemax={geom ? columns.length - 1 : undefined}
         aria-valuenow={col ?? undefined}
-        aria-valuetext={game ? `${reading}${fullFormat.format(new Date(game.ts))}, ${result}` : undefined}
+        aria-valuetext={
+          game ? `${reading}${fullFormat.format(new Date(game.ts))}, ${result}` : undefined
+        }
         aria-describedby="bump-summary"
         aria-label="Parties : flèches gauche et droite pour parcourir, haut et bas pour changer d'équipe, Entrée pour rejouer"
         onPointerMove={(e) => {
@@ -250,7 +283,13 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
           });
         }}
         onPointerDown={(e) => {
-          if (!geom || !e.isPrimary || e.button !== 0 || (e.target as Element).closest('.tip-dismiss')) return;
+          if (
+            !geom ||
+            !e.isPrimary ||
+            e.button !== 0 ||
+            (e.target as Element).closest('.tip-dismiss')
+          )
+            return;
           cancelPointer();
           e.currentTarget.focus({ preventScroll: true });
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -272,12 +311,25 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
               <g className="bump-grid">
                 {geom.ticks.map((value) => (
                   <Fragment key={value}>
-                    <line x1={geom.margin.left} x2={geom.margin.left + geom.inner.w} y1={geom.y(value)} y2={geom.y(value)} />
-                    <text x={geom.margin.left - 8} y={geom.y(value)} className="rank">{value}</text>
+                    <line
+                      x1={geom.margin.left}
+                      x2={geom.margin.left + geom.inner.w}
+                      y1={geom.y(value)}
+                      y2={geom.y(value)}
+                    />
+                    <text x={geom.margin.left - 8} y={geom.y(value)} className="rank">
+                      {value}
+                    </text>
                   </Fragment>
                 ))}
                 {dateTicks(columns, geom.inner.w).map((t) => (
-                  <text key={t.col} x={geom.x(t.col)} y={geom.height - 8} className="date" textAnchor={t.anchor}>
+                  <text
+                    key={t.col}
+                    x={geom.x(t.col)}
+                    y={geom.height - 8}
+                    className="date"
+                    textAnchor={t.anchor}
+                  >
                     {t.text}
                   </text>
                 ))}
@@ -287,7 +339,11 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
                 {lines.map(({ team: t, d, cached }) => (
                   <g
                     key={t}
-                    className={cn(series.get(t)![0].bot && 'bot', on(t) && 'on', cached && 'cached')}
+                    className={cn(
+                      series.get(t)![0].bot && 'bot',
+                      on(t) && 'on',
+                      cached && 'cached',
+                    )}
                     style={{ stroke: palette.get(t) ?? muted }}
                     data-team={t}
                   >
@@ -327,7 +383,12 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
                                 style={fill}
                                 data-team={t}
                               />
-                              <text x={geom.x(p.x)} y={cy - 9} className={cn('version-label', on(t) && 'on')} data-team={t}>
+                              <text
+                                x={geom.x(p.x)}
+                                y={cy - 9}
+                                className={cn('version-label', on(t) && 'on')}
+                                data-team={t}
+                              >
                                 {versionOf(t, p.build)}
                               </text>
                             </Fragment>
@@ -348,7 +409,10 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
                       data-team={t}
                     >
                       <circle r={4} style={{ fill: palette.get(t) ?? muted }} />
-                      <text x={8}><title>{t}</title>{t.length > 11 ? `${t.slice(0, 10)}…` : t}</text>
+                      <text x={8}>
+                        <title>{t}</title>
+                        {t.length > 11 ? `${t.slice(0, 10)}…` : t}
+                      </text>
                     </g>
                   );
                 })}
@@ -365,7 +429,11 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
           id="bump-cursor"
           className="bump-cursor"
           hidden={col === null}
-          style={geom ? { left: `${left}px`, top: `${geom.margin.top}px`, height: `${geom.inner.h}px` } : undefined}
+          style={
+            geom
+              ? { left: `${left}px`, top: `${geom.margin.top}px`, height: `${geom.inner.h}px` }
+              : undefined
+          }
         />
         <div ref={tip} id="bump-tip" className="bump-tip" aria-hidden="true" hidden={!game}>
           {game && (
@@ -379,13 +447,16 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
               </p>
               <ol className="tip-rows">
                 {rows.map(({ team: t, p, before }) => {
-                  const move = before && before.rank !== p.rank ? (p.rank < before.rank ? ' ▲' : ' ▼') : '';
+                  const move =
+                    before && before.rank !== p.rank ? (p.rank < before.rank ? ' ▲' : ' ▼') : '';
                   const played = t === game.red.team || t === game.black.team;
                   return (
                     <li key={t} className={cn(t === team && 'on', played && 'played')}>
                       <span className="chip-dot" style={{ background: palette.get(t) ?? muted }} />
                       <span className="tip-rank">{`${ordinal(p.rank)}${move}`}</span>
-                      <span className="tip-team">{[t, p.bot ? 'bot' : versionOf(t, p.build)].filter(Boolean).join(' ')}</span>
+                      <span className="tip-team">
+                        {[t, p.bot ? 'bot' : versionOf(t, p.build)].filter(Boolean).join(' ')}
+                      </span>
                       <span className="tip-elo">{Math.round(p.rating)} Elo</span>
                     </li>
                   );
@@ -393,7 +464,13 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
               </ol>
             </>
           )}
-          <button type="button" className="tip-dismiss" tabIndex={-1} aria-label="Fermer" onClick={hide}>
+          <button
+            type="button"
+            className="tip-dismiss"
+            tabIndex={-1}
+            aria-label="Fermer"
+            onClick={hide}
+          >
             <CloseIcon />
           </button>
         </div>
@@ -401,7 +478,10 @@ const BumpChart: FC<Props> = ({ columns, series, selected, metric, palette, vers
       <figcaption id="bump-summary" className="bump-summary">
         {summary}
         {/* Toujours rendu pour éviter de faire sauter l'interface. */}
-        <a className={cn('graph-link bump-replay', !game && 'idle')} href={game ? gameUrl(game.id) : undefined}>
+        <a
+          className={cn('graph-link bump-replay', !game && 'idle')}
+          href={game ? gameUrl(game.id) : undefined}
+        >
           Rejouer la partie sélectionnée
         </a>
       </figcaption>

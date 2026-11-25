@@ -38,7 +38,12 @@ const QueueTree: FC<Props> = ({ teams, marks, next, drawKey }) => {
   const depth = Math.max(...nodes.map((n) => n.depth));
   const width = nodes.length * COLUMN;
   const height = TOP + depth * ROW + TILE.h + BELOW;
-  const at = new Map(nodes.map((n, i) => [n.id, { x: i * COLUMN + COLUMN / 2, y: TOP + n.depth * ROW + TILE.h / 2 }]));
+  const at = new Map(
+    nodes.map((n, i) => [
+      n.id,
+      { x: i * COLUMN + COLUMN / 2, y: TOP + n.depth * ROW + TILE.h / 2 },
+    ]),
+  );
   const center = (i: number) => at.get(nodes[i].id)!;
   const reveal = (depth + 1) * STEP_MS + 120;
 
@@ -47,7 +52,8 @@ const QueueTree: FC<Props> = ({ teams, marks, next, drawKey }) => {
   let trail = '';
   if (chain.length > 1) {
     trail = `M${center(chain[0]).x} ${center(chain[0]).y}`;
-    for (let k = 1; k < chain.length; k++) trail += bend(center(chain[k - 1]), center(chain[k]), center(chain[k]).y);
+    for (let k = 1; k < chain.length; k++)
+      trail += bend(center(chain[k - 1]), center(chain[k]), center(chain[k]).y);
   }
   const axis = height - 16;
 
@@ -132,7 +138,14 @@ const QueueTree: FC<Props> = ({ teams, marks, next, drawKey }) => {
             <text className="ahead" x={x} y={y + 12}>
               {signed(node.ahead)}
             </text>
-            {pawn && <circle className={cn('pawn', pawn)} cx={x + TILE.w / 2 - 4} cy={y - TILE.h / 2 + 4} r={6} />}
+            {pawn && (
+              <circle
+                className={cn('pawn', pawn)}
+                cx={x + TILE.w / 2 - 4}
+                cy={y - TILE.h / 2 + 4}
+                r={6}
+              />
+            )}
             {i === next && (
               <text className="next-label" x={x} y={y + TILE.h / 2 + 15}>
                 prochaine
@@ -141,7 +154,10 @@ const QueueTree: FC<Props> = ({ teams, marks, next, drawKey }) => {
           </g>
         );
       })}
-      <path className="axis" d={`M8 ${axis}H${width - 8}M${width - 13} ${axis - 4}L${width - 8} ${axis}L${width - 13} ${axis + 4}`} />
+      <path
+        className="axis"
+        d={`M8 ${axis}H${width - 8}M${width - 13} ${axis - 4}L${width - 8} ${axis}L${width - 13} ${axis + 4}`}
+      />
       <text className="axis-label" x={8} y={axis + 13}>
         en retard
       </text>

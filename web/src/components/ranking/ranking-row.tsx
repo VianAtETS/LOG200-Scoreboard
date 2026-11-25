@@ -8,7 +8,13 @@ import type { FC } from 'react';
 import { DuelBadge } from './duel-badge';
 import { PACE_WARN, recordOf, winRate, type TEloStat, type TRecordStat } from './ranking.data';
 
-export type TDuel = { id?: string; opponent: string; color: TColor; chance: number | null; tournament?: TTournamentRef };
+export type TDuel = {
+  id?: string;
+  opponent: string;
+  color: TColor;
+  chance: number | null;
+  tournament?: TTournamentRef;
+};
 
 type Props = {
   // Absent pour une version archivée : hors classement actuel.
@@ -23,7 +29,16 @@ type Props = {
   highlight?: boolean;
 };
 
-const RankingRow: FC<Props> = ({ rank, rating: r, version: v, duel, eloStat, recordStat, paceStat, highlight }) => {
+const RankingRow: FC<Props> = ({
+  rank,
+  rating: r,
+  version: v,
+  duel,
+  eloStat,
+  recordStat,
+  paceStat,
+  highlight,
+}) => {
   const bot = !r.build;
   const all = recordOf(r, 'all');
   const build = recordOf(r, 'build');
@@ -35,11 +50,21 @@ const RankingRow: FC<Props> = ({ rank, rating: r, version: v, duel, eloStat, rec
 
   return (
     <tr
-      className={cn(bot && 'bot', rank === 1 && 'leader', r.archived && 'archived-row', highlight && 'opponent')}
+      className={cn(
+        bot && 'bot',
+        rank === 1 && 'leader',
+        r.archived && 'archived-row',
+        highlight && 'opponent',
+      )}
       data-team={r.team}
       title={r.archived ? 'Dernier Elo de cette version, hors classement actuel' : undefined}
     >
-      <td className="num rank" title={rank ? 'Rang officiel selon l’Elo actuel' : 'Version archivée, hors classement'}>{rank ?? '–'}</td>
+      <td
+        className="num rank"
+        title={rank ? 'Rang officiel selon l’Elo actuel' : 'Version archivée, hors classement'}
+      >
+        {rank ?? '–'}
+      </td>
       <th scope="row" className="team" title={r.team}>
         <div className="team-line">
           <span className="team-name">{r.team}</span>
@@ -68,14 +93,26 @@ const RankingRow: FC<Props> = ({ rank, rating: r, version: v, duel, eloStat, rec
       <td className="num elo">{elo === undefined ? '' : Math.round(elo)}</td>
       <td
         className="num record"
-        title={r.archived ? `${v}, version archivée uniquement : ${buildText}` : `Toutes versions ${allText}, ${v || 'version actuelle'} ${buildText}`}
+        title={
+          r.archived
+            ? `${v}, version archivée uniquement : ${buildText}`
+            : `Toutes versions ${allText}, ${v || 'version actuelle'} ${buildText}`
+        }
       >
         {shown.wins}–{shown.losses}
       </td>
-      <td className="num games-count" title={recordStat === 'build' ? 'Parties de la version actuelle' : 'Parties toutes versions'}>
+      <td
+        className="num games-count"
+        title={
+          recordStat === 'build' ? 'Parties de la version actuelle' : 'Parties toutes versions'
+        }
+      >
         {shown.games}
       </td>
-      <td className="num pct" title={`${r.build_wins} victoires sur ${r.build_games} parties${v ? ` de ${v}` : ''}`}>
+      <td
+        className="num pct"
+        title={`${r.build_wins} victoires sur ${r.build_games} parties${v ? ` de ${v}` : ''}`}
+      >
         {pct === undefined ? '' : `${Math.round(100 * pct)} %`}
       </td>
       <PaceCell rating={r} stat={paceStat} />
