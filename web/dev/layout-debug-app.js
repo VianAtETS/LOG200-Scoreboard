@@ -2,6 +2,7 @@
 // de dev/layout-debug.css qui affiche des contours aux éléments de la page.
 
 import { defineToolbarApp } from 'astro/toolbar';
+// oxlint-disable-next-line import/no-unassigned-import -- Vite adds the dev toolbar's outline stylesheet through this import.
 import './layout-debug.css';
 
 const KEY = 'layout-debug';
@@ -10,8 +11,8 @@ const root = document.documentElement;
 const load = () => {
   try {
     return sessionStorage.getItem(KEY);
-  } catch (err) {
-    console.warn('[layout-debug] échec du chargement de l\'état :', err);
+  } catch (error) {
+    console.warn("[layout-debug] échec du chargement de l'état :", error);
     return null;
   }
 };
@@ -19,8 +20,8 @@ const load = () => {
 const save = (on) => {
   try {
     sessionStorage.setItem(KEY, on ? '1' : '0');
-  } catch (err) {
-    console.warn('[layout-debug] échec de la sauvegarde de l\'état :', err);
+  } catch (error) {
+    console.warn("[layout-debug] échec de la sauvegarde de l'état :", error);
   }
 };
 
@@ -28,7 +29,9 @@ export default defineToolbarApp({
   init(_canvas, app) {
     const on = load() === '1';
     root.classList.toggle(KEY, on);
-    if (on) app.toggleState({ state: true });
+    if (on) {
+      app.toggleState({ state: true });
+    }
     app.onToggled(({ state }) => {
       root.classList.toggle(KEY, state);
       save(state);

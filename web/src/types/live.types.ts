@@ -1,8 +1,8 @@
-import type { TColor, TReason, TTournamentRef } from './games.types';
+import type { TColor, TTournamentRef } from './games.types';
 
 export type TLiveEnded = {
-  winner?: TColor;
-  reason?: TReason | string;
+  winner?: TColor | undefined;
+  reason?: string | undefined;
   cancelled?: boolean;
   interrupted?: boolean;
 };

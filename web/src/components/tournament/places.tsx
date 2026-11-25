@@ -8,11 +8,17 @@ type Props = {
 
 // Classement final, une fois le tournoi joué.
 const Places: FC<Props> = ({ view }) => {
-  const ranked = view.places ? view.entrants.map((e, i) => ({ team: e.team, place: view.places![i] })) : [];
-  ranked.sort((a, b) => a.place - b.place || a.team.localeCompare(b.team));
+  const { places } = view;
+  const ranked = places
+    ? view.entrants.map((entrant, index) => ({ team: entrant.team, place: places[index] }))
+    : [];
+  ranked.sort(
+    (left, right) =>
+      Number(left.place) - Number(right.place) || left.team.localeCompare(right.team),
+  );
 
   return (
-    <ol id="places" className="places" aria-label="Classement final" hidden={!ranked.length}>
+    <ol id="places" className="places" aria-label="Classement final" hidden={ranked.length === 0}>
       {ranked.map(({ team, place }) => (
         <li key={team} className={cn(place === 1 && 'first')}>
           <span className="place">{place === 1 ? '1er' : `${place}e`}</span>

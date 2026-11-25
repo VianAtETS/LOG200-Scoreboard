@@ -27,8 +27,18 @@ export const PACE_WARN = 0.8;
 
 export const DEFAULT_STATS = { pace: 'p95', record: 'all', elo: 'rating' } as const;
 
-export const statOf = <T extends string>(stats: Record<T, unknown>, value: string | null, fallback: T): T =>
-  value !== null && Object.hasOwn(stats, value) ? (value as T) : fallback;
+export const statOf = <T extends string>(
+  stats: Record<T, unknown>,
+  value: string | null,
+  fallback: T,
+): T => {
+  for (const key in stats) {
+    if (key === value && Object.hasOwn(stats, key)) {
+      return key;
+    }
+  }
+  return fallback;
+};
 
 export const SORT_COLUMNS = {
   rank: 'Rang officiel',
@@ -49,48 +59,96 @@ export const sortOf = (column: string | null, order: string | null): TRankingSor
   direction: order === 'asc' ? 'ascending' : 'descending',
 });
 
-export const recordOf = (r: TTeamRating, stat: TRecordStat) =>
+export const recordOf = (
+  rating: TTeamRating,
+  stat: TRecordStat,
+): { wins: number; losses: number; games: number } =>
   stat === 'build'
-    ? { wins: r.build_wins, losses: r.build_games - r.build_wins, games: r.build_games }
-    : { wins: r.wins, losses: r.losses, games: r.games };
+    ? {
+        wins: rating.build_wins,
+        losses: rating.build_games - rating.build_wins,
+        games: rating.build_games,
+      }
+    : { wins: rating.wins, losses: rating.losses, games: rating.games };
 
-export const winRate = (r: TTeamRating) => (r.build_games ? r.build_wins / r.build_games : undefined);
+export const winRate = (rating: TTeamRating): number | undefined =>
+  rating.build_games ? rating.build_wins / rating.build_games : undefined;
 
 const teamNames = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
 
 export function rankingView(
   ratings: readonly TRankingRow[],
   sort: TRankingSort,
-  measures: { elo: TEloStat; record: TRecordStat; pace: TPaceStat }
-) {
-  const ranks = new Map(ratings.filter((r) => !r.archived).map((r, i) => [r.team, i + 1]));
-  const value = (r: TRankingRow) => {
+  measures: { elo: TEloStat; record: TRecordStat; pace: TPaceStat },
+): { rows: TRankingRow[]; ranks: Map<string, number> } {
+  const ranks = new Map<string, number>();
+  let rank = 0;
+  for (const rating of ratings) {
+    if (!rating.archived) {
+      rank += 1;
+      ranks.set(rating.team, rank);
+    }
+  }
+  const value = (rating: TRankingRow): number | undefined => {
     switch (sort.column) {
-      case 'rank': return r.archived ? undefined : ranks.get(r.team);
-      case 'elo': return r[measures.elo];
-      case 'record': return recordOf(r, measures.record).wins;
-      case 'games': return recordOf(r, measures.record).games;
-      case 'pct': return winRate(r);
-      case 'pace': return r.pace?.[measures.pace];
-      case 'last': return r.last ? Date.parse(r.last) : undefined;
-      case 'team': return undefined;
+      case 'rank': {
+        return rating.archived ? undefined : ranks.get(rating.team);
+      }
+      case 'elo': {
+        return rating[measures.elo];
+      }
+      case 'record': {
+        return recordOf(rating, measures.record).wins;
+      }
+      case 'games': {
+        return recordOf(rating, measures.record).games;
+      }
+      case 'pct': {
+        return winRate(rating);
+      }
+      case 'pace': {
+        return rating.pace?.[measures.pace];
+      }
+      case 'last': {
+        return rating.last !== undefined && rating.last !== ''
+          ? Date.parse(rating.last)
+          : undefined;
+      }
+      case 'team': {
+        return Number.NaN;
+      }
+      default: {
+        throw new Error('Unknown ranking column');
+      }
     }
   };
   const direction = sort.direction === 'ascending' ? 1 : -1;
   // Stable sorting starts from the official order, never the previous displayed order.
-  const rows = [...ratings].sort((a, b) => {
-    if (sort.column === 'team') return direction * teamNames.compare(a.team, b.team);
-    const av = value(a);
-    const bv = value(b);
+  const rows = ratings.toSorted((left, right) => {
+    if (sort.column === 'team') {
+      return direction * teamNames.compare(left.team, right.team);
+    }
+    const av = value(left);
+    const bv = value(right);
     const missingA = av === undefined || !Number.isFinite(av);
     const missingB = bv === undefined || !Number.isFinite(bv);
-    if (missingA && missingB) return 0;
-    if (missingA) return 1;
-    if (missingB) return -1;
-    const difference = av! - bv!;
-    if (difference || sort.column !== 'record') return direction * difference;
+    if (missingA && missingB) {
+      return 0;
+    }
+    if (missingA) {
+      return 1;
+    }
+    if (missingB) {
+      return -1;
+    }
+    const difference = av - bv;
+    if (difference !== 0 || sort.column !== 'record') {
+      return direction * difference;
+    }
     // With equal wins, fewer losses comes first in descending order.
-    return direction * (recordOf(b, measures.record).losses - recordOf(a, measures.record).losses);
+    return (
+      direction * (recordOf(right, measures.record).losses - recordOf(left, measures.record).losses)
+    );
   });
   return { rows, ranks };
 }

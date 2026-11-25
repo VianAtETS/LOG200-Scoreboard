@@ -41,7 +41,7 @@ export type TTimelineRow = TRatingRow & { tournament?: true };
 // Ligne de summary.json (recent) et de teams/<équipe>.jsonl.
 export type TGameRow = TRatingRow & {
   winner: TColor;
-  reason: TReason | string;
+  reason: string;
   moves: number;
   duration_ms: number;
   time_ms?: number;

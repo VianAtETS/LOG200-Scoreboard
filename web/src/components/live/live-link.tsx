@@ -8,12 +8,10 @@ type Props = {
 };
 
 // Lien vers une partie en cours, suivie en direct par le replay : une icône d'antenne.
-const LiveLink: FC<Props> = ({ id, title }) => {
-  return (
-    <a className="live-link" href={pageUrl('./', { game: id })} title={title} aria-label={title}>
-      <LiveIcon />
-    </a>
-  );
-};
+const LiveLink: FC<Props> = ({ id, title }) => (
+  <a className="live-link" href={pageUrl('./', { game: id })} title={title} aria-label={title}>
+    <LiveIcon />
+  </a>
+);
 
 export { LiveLink };

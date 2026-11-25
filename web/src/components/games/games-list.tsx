@@ -1,8 +1,10 @@
 import { useScrollEdges } from '@/hooks/use-scroll-edges';
 import { cn } from '@/lib/utils';
 import type { TGameRow, TRatingChange, TSide } from '@/types/games.types';
-import { useRef, type FC } from 'react';
-import { GameItem, type TSideOrder } from './game-item';
+import { useRef } from 'react';
+import type { FC } from 'react';
+import { GameItem } from './game-item';
+import type { TSideOrder } from './game-item';
 
 const RECENT_GAMES = 50;
 
@@ -10,7 +12,7 @@ type Props = {
   games: TGameRow[];
   rating: (side: TSide) => TRatingChange;
   currentId: string | null;
-  selectedTeam?: string;
+  selectedTeam?: string | undefined;
   sideOrder?: TSideOrder;
   onSelect: (game: TGameRow) => void;
 };
@@ -18,7 +20,8 @@ type Props = {
 const GamesList: FC<Props> = ({ games, rating, currentId, selectedTeam, sideOrder, onSelect }) => {
   const ref = useRef<HTMLOListElement>(null);
   const scroll = useScrollEdges(ref);
-  const items = games.slice(-RECENT_GAMES).reverse();
+  const handleScroll = scroll.onScroll;
+  const items = games.slice(-RECENT_GAMES).toReversed();
 
   return (
     <ol
@@ -26,11 +29,19 @@ const GamesList: FC<Props> = ({ games, rating, currentId, selectedTeam, sideOrde
       id="games"
       className={cn('scroll games-list', scroll.edges.less && 'less', scroll.edges.more && 'more')}
       tabIndex={-1}
-      onScroll={scroll.onScroll}
+      onScroll={handleScroll}
     >
-      {items.length ? (
-        items.map((g) => (
-          <GameItem key={g.id} game={g} rating={rating} current={g.id === currentId} selectedTeam={selectedTeam} sideOrder={sideOrder} onSelect={onSelect} />
+      {items.length > 0 ? (
+        items.map((game) => (
+          <GameItem
+            key={game.id}
+            game={game}
+            rating={rating}
+            current={game.id === currentId}
+            selectedTeam={selectedTeam}
+            sideOrder={sideOrder}
+            onSelect={onSelect}
+          />
         ))
       ) : (
         <li className="empty">Les parties jouées apparaîtront ici.</li>

@@ -8,7 +8,7 @@ if [ -n "${SCOREBOARD_SERVER:-}" ]; then
         echo "SCOREBOARD_SERVER invalide : $SCOREBOARD_SERVER (attendu : https://domaine, sans / final)" >&2
         exit 1
     fi
-    sed -i "s|<meta name=\"scoreboard-server\" content=\"[^\"]*\"|<meta name=\"scoreboard-server\" content=\"$SCOREBOARD_SERVER\"|" /srv/web/*.html
+    sed -i "s|<meta content=\"[^\"]*\" name=\"scoreboard-server\"|<meta content=\"$SCOREBOARD_SERVER\" name=\"scoreboard-server\"|" /srv/web/*.html
 fi
 
 exec caddy file-server --root /srv --listen :80

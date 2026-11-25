@@ -3,6 +3,7 @@ export type TBracketSide = 'winners' | 'losers' | 'final';
 export type TMatchStatus = 'pending' | 'running' | 'suspended' | 'done';
 
 export type TMatchSource = {
+  seed?: number;
   winner?: string;
   loser?: string;
 };

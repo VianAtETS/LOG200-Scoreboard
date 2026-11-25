@@ -1,8 +1,12 @@
-import { BLACK, DESTROYED, RED, SIZE, type TStep } from '@/lib/replay';
+import { BLACK, DESTROYED, RED, SIZE } from '@/lib/replay';
+import type { TStep } from '@/lib/replay';
 import { cn } from '@/lib/utils';
 import type { FC } from 'react';
 
-const COLUMNS = Array.from({ length: SIZE }, (_, x) => String.fromCharCode(65 + x));
+const FIRST_COLUMN = 'A'.codePointAt(0) ?? 0;
+const COLUMNS = Array.from({ length: SIZE }, (_, column) =>
+  String.fromCodePoint(FIRST_COLUMN + column),
+);
 
 type Props = {
   step: TStep;
@@ -19,36 +23,44 @@ const Board: FC<Props> = ({ step, index, label, id }) => {
     cells.push(
       <div key={`row-${y}`} className="label">
         {SIZE - y}
-      </div>
+      </div>,
     );
     for (let x = 0; x < SIZE; x++) {
-      const i = y * SIZE + x;
-      const v = step.cells[i];
+      const cellIndex = y * SIZE + x;
+      const value = step.cells[cellIndex];
       cells.push(
         <div
-          key={i}
+          key={cellIndex}
           className={cn(
             'cell',
-            v === DESTROYED && 'hole',
-            step.move?.from === i && 'from',
-            step.move?.to === i && 'to',
-            step.move?.destroyed === i && 'destroyed-now'
+            value === DESTROYED && 'hole',
+            step.move?.from === cellIndex && 'from',
+            step.move?.to === cellIndex && 'to',
+            step.move?.destroyed === cellIndex && 'destroyed-now',
           )}
         >
-          {v === RED && <div className="pawn red" />}
-          {v === BLACK && <div className="pawn black" />}
-        </div>
+          {value === RED && <div className="pawn red" />}
+          {value === BLACK && <div className="pawn black" />}
+        </div>,
       );
     }
   }
 
   return (
-    <div id={id} className="board" role="img" aria-label={label} data-mover={index % 2 === 1 ? 'red' : 'black'}>
+    <div
+      id={id}
+      className="board"
+      // The board is drawn with child elements, so an img element cannot represent it.
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+      role="img"
+      aria-label={label}
+      data-mover={index % 2 === 1 ? 'red' : 'black'}
+    >
       {cells}
       <div />
-      {COLUMNS.map((c) => (
-        <div key={`col-${c}`} className="label">
-          {c}
+      {COLUMNS.map((column) => (
+        <div key={`col-${column}`} className="label">
+          {column}
         </div>
       ))}
     </div>

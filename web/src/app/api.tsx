@@ -2,9 +2,8 @@
 
 import { Masthead } from '@/components/masthead/masthead';
 import { withProviders } from '@/providers/with-providers';
+import type { JSX } from 'react';
 
-const ApiHeader = () => {
-  return <Masthead current="api" showVersion={false} />;
-};
+const ApiHeader = (): JSX.Element => <Masthead current="api" showVersion={false} />;
 
-export default withProviders(ApiHeader);
+export const ApiPage = withProviders(ApiHeader);

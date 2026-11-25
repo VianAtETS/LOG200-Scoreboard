@@ -16,8 +16,22 @@
     --gutter: clamp(var(--space-3), 1.2vw, var(--space-4));
     --section-padding: clamp(var(--space-3), 1.2vw, var(--space-4));
     /* Bord du contenu, partagé par l'en-tête et les sections. */
-    --content-inset-start: calc(max(var(--gutter), env(safe-area-inset-left), (100% - var(--page-max-width)) / 2 + var(--gutter)) + var(--section-padding));
-    --content-inset-end: calc(max(var(--gutter), env(safe-area-inset-right), (100% - var(--page-max-width)) / 2 + var(--gutter)) + var(--section-padding));
+    --content-inset-start: calc(
+        max(
+                var(--gutter),
+                env(safe-area-inset-left),
+                (100% - var(--page-max-width)) / 2 + var(--gutter)
+            ) +
+            var(--section-padding)
+    );
+    --content-inset-end: calc(
+        max(
+                var(--gutter),
+                env(safe-area-inset-right),
+                (100% - var(--page-max-width)) / 2 + var(--gutter)
+            ) +
+            var(--section-padding)
+    );
     --page-max-width: 1680px;
 
     /* État du direct, flottant en bas à droite. */
@@ -213,7 +227,8 @@
     --gradient-page: none;
     --shadow-panel: 0 0 #0000;
     /* En-tête en découpe : ombre en haut, lèvre éclairée en bas. */
-    --shadow-masthead: inset 0 3px 6px -2px rgb(60 40 20 / 0.14), inset 0 -1px 0 rgb(255 255 255 / 0.45);
+    --shadow-masthead:
+        inset 0 3px 6px -2px rgb(60 40 20 / 0.14), inset 0 -1px 0 rgb(255 255 255 / 0.45);
     --texture-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
 
     /* Équipes du graphe : l'ordre garde les voisines distinctes pour les daltoniens. */
@@ -276,9 +291,14 @@
         --shadow-field: inset 0 1px 2px rgb(0 0 0 / 0.35);
         --icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a9a6a1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
 
-        --gradient-page: radial-gradient(120% 60% at 50% -10%, rgb(255 255 255 / 0.06), transparent 70%);
+        --gradient-page: radial-gradient(
+            120% 60% at 50% -10%,
+            rgb(255 255 255 / 0.06),
+            transparent 70%
+        );
         --shadow-panel: inset 0 1px 0 rgb(255 255 255 / 0.05);
-        --shadow-masthead: inset 0 4px 8px -2px rgb(0 0 0 / 0.6), inset 0 -1px 0 rgb(255 255 255 / 0.06);
+        --shadow-masthead:
+            inset 0 4px 8px -2px rgb(0 0 0 / 0.6), inset 0 -1px 0 rgb(255 255 255 / 0.06);
 
         --color-series-1: #3987e5;
         --color-series-2: #d95926;

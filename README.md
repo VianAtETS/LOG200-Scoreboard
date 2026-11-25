@@ -69,7 +69,7 @@ The relay starts the jar for every game and keeps reconnecting until stopped. Th
 
 1. Optional, for conformance checks: copy the official game server from the course (`BoardGame.exe` and its DLLs and folders) into `official-server/`. It is never committed (the folder is git-ignored). Without it, everything else still works.
 2. Open the folder in VS Code and choose Reopen in Container. Docker Compose starts two containers:
-   - `dev`: Rust, JDK 25, Node 24, and Docker with gVisor for the player sandboxes. VS Code attaches to this one.
+   - `dev`: Rust, JDK 25, Node 26.13.1, Bun 1.4.5, and Docker with gVisor for the player sandboxes. VS Code attaches to this one.
    - `server`: the official game server under Wine, shown in a VS Code tab (noVNC on port 6080) and listening on `localhost:8888`, if `official-server/` contains it.
 
 ## Components
@@ -101,23 +101,23 @@ sandbox/build.sh                     # sandbox images (needs Docker with gVisor)
 cp ladder.example.toml ladder.toml   # teams, time per move, session
 target/release/isolation-ladder ladder.toml
 target/release/isolation-ladder tournament start ladder.toml  # from another terminal: a tournament right away
-npx http-server . -p 8000            # serves data/ to the page
-(cd web && npm ci && SCOREBOARD_DEV_SERVER=http://localhost:8000 npm run dev)  # then open http://localhost:3000
+bunx http-server . -p 8000            # serves data/ to the page
+(cd web && bun install --frozen-lockfile && SCOREBOARD_DEV_SERVER=http://localhost:8000 bun run dev)  # then open http://localhost:3000
 ```
 
 Optional for local-only builds: `export RUSTFLAGS="-C target-cpu=native"` before building, then `unset RUSTFLAGS` afterward. Do not distribute these CPU-specific binaries or images.
 
-Tests: `cargo test --workspace` and `npm test --prefix web`.
+Tests and frontend checks: `cargo test --workspace` and `(cd web && bun run suite)` (see [`docs/frontend-workflow.md`](docs/frontend-workflow.md)).
 
-`npm run dev:golden --prefix web` shows the page on the ladder's golden test data, with a fake live stream, a small tournament and a queue (`web/dev/golden-server.mjs`): no ladder or Docker needed.
+`(cd web && bun run dev:golden)` shows the page on the ladder's golden test data, with a fake live stream, a small tournament and a queue (`web/dev/golden-server.mjs`): no ladder or Docker needed.
 
-For phone access on a trusted local network, run `npm run dev:golden --prefix web -- --host 0.0.0.0` on the host, then open `http://<computer-LAN-IP>:3000` on the same network. From a dev container, port 3000 must also be published or forwarded on the host's LAN interface. This is a fixture demo, not the public ladder: do not enter real team tokens or expose it to the Internet.
+For phone access on a trusted local network, run `(cd web && bun run dev:golden -- --host 0.0.0.0)` on the host, then open `http://<computer-LAN-IP>:3000` on the same network. From a dev container, port 3000 must also be published or forwarded on the host's LAN interface. This is a fixture demo, not the public ladder: do not enter real team tokens or expose it to the Internet.
 
 Styles use only the design tokens in `web/src/styles/tokens.css`: a 4 px spacing grid, type, radius and motion scales, and the light and dark palettes, whose text and control colors meet WCAG AA contrast. Change a value there rather than in `style.css`.
 
 To adjust the layout, the **Layout** button in Astro's dev toolbar outlines every element, one color per nesting depth (`web/dev/layout-debug.css`). Outlines do not shift the layout, and the choice persists across pages for the browser tab. It exists only in `astro dev`.
 
-The page proxies `/api` and `/data` to `SCOREBOARD_DEV_SERVER` in dev (`npm run dev`, default `http://localhost:8080`, the compose stack). `npm run build` writes the static site to `web/dist`; the Pages workflow and `deploy/web.Dockerfile` build it the same way.
+The page proxies `/api` and `/data` to `SCOREBOARD_DEV_SERVER` in dev (`bun run dev`, default `http://localhost:8080`, the compose stack). `bun run build` writes the static site to `web/dist`; the Pages workflow and `deploy/web.Dockerfile` build it the same way (preceded by `bun run typecheck`).
 
 ## Conformance against the official server
 

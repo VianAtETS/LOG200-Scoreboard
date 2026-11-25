@@ -11,12 +11,15 @@ const layoutDebug = {
   name: 'layout-debug',
   hooks: {
     'astro:config:setup': ({ command, addDevToolbarApp }) => {
-      if (command !== 'dev') return;
+      if (command !== 'dev') {
+        return;
+      }
+
       addDevToolbarApp({
         id: 'layout-debug',
         name: 'Layout',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 3"/><rect x="8" y="8" width="8" height="8"/></svg>',
-        entrypoint: fileURLToPath(new URL('./dev/layout-debug-app.js', import.meta.url)),
+        entrypoint: fileURLToPath(new URL('dev/layout-debug-app.js', import.meta.url)),
       });
     },
   },

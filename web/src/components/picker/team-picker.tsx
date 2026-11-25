@@ -1,7 +1,16 @@
 import { ChevronDownIcon, CloseIcon } from '@/components/icons/icons';
 import { cn } from '@/lib/utils';
 import type { TTeamRating } from '@/types/summary.types';
-import { useEffect, useLayoutEffect, useRef, useState, type FC, type KeyboardEvent, type PointerEventHandler } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type {
+  ChangeEvent,
+  FC,
+  FocusEvent,
+  KeyboardEvent,
+  MouseEvent,
+  PointerEventHandler,
+  RefObject,
+} from 'react';
 
 type Props = {
   // Classement de la session, meilleure d'abord.
@@ -10,17 +19,90 @@ type Props = {
   onChange: (teams: string[]) => void;
   placeholder: string;
   chipsLabel: string;
-  className?: string;
-  color?: (team: string) => string;
-  idle?: (team: string) => boolean;
+  className?: string | undefined;
+  color?: ((team: string) => string) | undefined;
+  idle?: ((team: string) => boolean) | undefined;
 };
 
 // On iOS, cancelling touch pointerdown or closing on a null blur can prevent option activation.
-const keepMouseFocus: PointerEventHandler<HTMLElement> = (e) => {
-  if (e.pointerType === 'mouse') e.preventDefault();
+const keepMouseFocus: PointerEventHandler<HTMLElement> = (event) => {
+  if (event.pointerType === 'mouse') {
+    event.preventDefault();
+  }
 };
 
-const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chipsLabel, className, color, idle }) => {
+type TOption = TTeamRating & { rank: number };
+
+function teamOptions(ratings: TTeamRating[], selected: string[], search: string): TOption[] {
+  const taken = new Set(selected);
+  let rank = 0;
+  const options: TOption[] = [];
+  for (const rating of ratings) {
+    if (rating.build !== undefined && rating.build !== '') {
+      rank += 1;
+    }
+    if (!taken.has(rating.team) && rating.team.toLowerCase().includes(search)) {
+      options.push({
+        ...rating,
+        rank: rating.build !== undefined && rating.build !== '' ? rank : 0,
+      });
+    }
+  }
+  return options;
+}
+
+type TPicker = {
+  root: RefObject<HTMLDivElement | null>;
+  field: RefObject<HTMLInputElement | null>;
+  list: RefObject<HTMLUListElement | null>;
+  query: string;
+  search: string;
+  current: number;
+  open: boolean;
+  options: TOption[];
+  handleBlur: (event: FocusEvent<HTMLDivElement>) => void;
+  handleFieldClick: (event: MouseEvent<HTMLDivElement>) => void;
+  handleKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  handleFocus: () => void;
+  handleInput: (event: ChangeEvent<HTMLInputElement>) => void;
+  handleClear: () => void;
+  handleToggle: () => void;
+  remove: (event: MouseEvent<HTMLButtonElement>) => void;
+  handlePick: (event: MouseEvent<HTMLLIElement>) => void;
+};
+
+function usePickerFocus(
+  root: TPicker['root'],
+  list: TPicker['list'],
+  open: boolean,
+  current: number,
+  close: () => void,
+): void {
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) {
+        close();
+      }
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  }, [root, close]);
+  useLayoutEffect(() => {
+    if (open && current >= 0) {
+      list.current?.querySelector(`#pick-${current}`)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [open, current, list]);
+}
+
+function nextOption(key: 'ArrowDown' | 'ArrowUp', current: number, last: number): number {
+  return key === 'ArrowDown' ? Math.min(current + 1, last) : Math.max(current - 1, 0);
+}
+
+function usePicker(
+  ratings: TTeamRating[],
+  selected: string[],
+  onChange: Props['onChange'],
+): TPicker {
   const root = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -29,87 +111,182 @@ const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chips
   const [active, setActive] = useState(-1);
 
   const search = query.trim().toLowerCase();
-  const taken = new Set(selected);
-  let rank = 0;
-  const options = ratings
-    .map((r) => ({ ...r, rank: r.build ? ++rank : 0 }))
-    .filter((r) => !taken.has(r.team) && r.team.toLowerCase().includes(search));
+  const options = teamOptions(ratings, selected, search);
   const current = Math.min(active, options.length - 1);
 
-  useEffect(() => {
-    const closeOutside = (e: PointerEvent) => {
-      if (e.target instanceof Node && !root.current?.contains(e.target)) {
-        setOpen(false);
-        setActive(-1);
-      }
-    };
-    document.addEventListener('pointerdown', closeOutside);
-    return () => document.removeEventListener('pointerdown', closeOutside);
+  const close = useCallback((): void => {
+    setOpen(false);
+    setActive(-1);
   }, []);
 
-  useLayoutEffect(() => {
-    if (open && current >= 0) list.current?.querySelector(`#pick-${current}`)?.scrollIntoView({ block: 'nearest' });
-  }, [open, current]);
+  usePickerFocus(root, list, open, current, close);
 
-  const openList = (next: boolean) => {
+  const openList = (next: boolean): void => {
     setOpen(next);
-    if (!next) setActive(-1);
+    if (!next) {
+      setActive(-1);
+    }
   };
 
-  const add = (team: string) => {
+  const add = (team: string): void => {
     onChange([...selected, team]);
     setQuery('');
     setActive(-1);
   };
 
-  const remove = (team: string) => {
-    onChange(selected.filter((t) => t !== team));
+  const remove = (team: string): void => {
+    onChange(selected.filter((item) => item !== team));
     field.current?.focus();
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    const last = options.length - 1;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      setActive(!open ? -1 : e.key === 'ArrowDown' ? Math.min(current + 1, last) : Math.max(current - 1, 0));
-      setOpen(true);
-    } else if (e.key === 'Enter' && open && current >= 0) add(options[current].team);
-    else if (e.key === 'Escape' && open) openList(false);
-    else if (e.key === 'Escape') setQuery('');
-    else if (e.key === 'Backspace' && !query && selected.length) {
-      remove(selected[selected.length - 1]);
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.nativeEvent.isComposing) {
       return;
-    } else return;
-    e.preventDefault();
+    }
+    const last = options.length - 1;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      setActive(open ? nextOption(event.key, current, last) : -1);
+      setOpen(true);
+    } else if (event.key === 'Enter' && open && current >= 0) {
+      const option = options[current];
+      if (!option) {
+        return;
+      }
+      add(option.team);
+    } else if (event.key === 'Escape' && open) {
+      openList(false);
+    } else if (event.key === 'Escape') {
+      setQuery('');
+    } else if (event.key === 'Backspace' && query === '') {
+      const lastSelected = selected.at(-1);
+      if (lastSelected !== undefined) {
+        remove(lastSelected);
+      }
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+  };
+  const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+      openList(false);
+    }
+  };
+  const handleFieldClick = (event: MouseEvent<HTMLDivElement>): void => {
+    if (!(event.target instanceof Element) || !event.target.closest('button, li')) {
+      field.current?.focus();
+    }
+  };
+  const handleFocus = (): void => openList(true);
+  const handleInput = (event: ChangeEvent<HTMLInputElement>): void => {
+    const { value } = event.currentTarget;
+    setQuery(value);
+    setActive(value.trim() ? 0 : -1);
+    setOpen(true);
+  };
+  const handleClear = (): void => {
+    onChange([]);
+    field.current?.focus();
   };
 
+  const handleToggle = (): void => {
+    if (open) {
+      openList(false);
+    } else {
+      field.current?.focus();
+      openList(true);
+    }
+  };
+  const handlePick = (event: MouseEvent<HTMLLIElement>): void => {
+    const { team } = event.currentTarget.dataset;
+    if (team !== undefined) {
+      add(team);
+    }
+  };
+  return {
+    root,
+    field,
+    list,
+    search,
+    options,
+    current,
+    open,
+    query,
+    handleBlur,
+    handleFieldClick,
+    handleKeyDown,
+    handleFocus,
+    handleInput,
+    handleClear,
+    handleToggle,
+    handlePick,
+    remove: (event: MouseEvent<HTMLButtonElement>): void => remove(event.currentTarget.value),
+  };
+}
+
+function renderChips(
+  selected: string[],
+  chipsLabel: string,
+  color: Props['color'],
+  idle: Props['idle'],
+  remove: TPicker['remove'],
+): React.JSX.Element {
+  return (
+    <ul id="chips" className="chips" aria-label={chipsLabel}>
+      {selected.map((team) => {
+        const quiet = idle?.(team) ?? false;
+        return (
+          <li
+            key={team}
+            className={cn('chip', quiet && 'idle')}
+            title={quiet ? `${team} : aucune partie dans cette fenêtre` : team}
+          >
+            {color && (
+              // oxlint-disable-next-line react-perf/jsx-no-new-object-as-prop -- A per-team native colour swatch does not benefit from memoization.
+              <span className="chip-dot" aria-hidden="true" style={{ background: color(team) }} />
+            )}
+            <span>{team}</span>
+            <button
+              type="button"
+              className="chip-remove"
+              aria-label={`Retirer ${team}`}
+              value={team}
+              onClick={remove}
+            >
+              ×
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const TeamPicker: FC<Props> = ({
+  ratings,
+  selected,
+  onChange,
+  placeholder,
+  chipsLabel,
+  className,
+  color,
+  idle,
+}) => {
+  const picker = usePicker(ratings, selected, onChange);
+  const { root, field, list, search, options, open, current, query } = picker;
   const empty = search ? 'Aucune équipe ne correspond.' : 'Toutes les équipes sont choisies.';
 
   return (
+    // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- The blank background delegates pointer focus to the input; Tab reaches the input directly.
     <div
       ref={root}
       id="picker"
       className={cn('picker', className)}
-      onBlur={(e) => {
-        if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) openList(false);
-      }}
-      onClick={(e) => {
-        if (!(e.target as Element).closest('button, li')) field.current?.focus();
-      }}
+      onBlur={picker.handleBlur}
+      onClick={picker.handleFieldClick}
     >
-      <ul id="chips" className="chips" aria-label={chipsLabel}>
-        {selected.map((team) => {
-          const quiet = idle?.(team) ?? false;
-          return (
-            <li key={team} className={cn('chip', quiet && 'idle')} title={quiet ? `${team} : aucune partie dans cette fenêtre` : team}>
-              {color && <span className="chip-dot" aria-hidden="true" style={{ background: color(team) }} />}
-              <span>{team}</span>
-              <button type="button" className="chip-remove" aria-label={`Retirer ${team}`} onClick={() => remove(team)}>
-                ×
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {renderChips(selected, chipsLabel, color, idle, picker.remove)}
       <input
         ref={field}
         id="picker-input"
@@ -125,26 +302,18 @@ const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chips
         autoComplete="off"
         spellCheck={false}
         value={query}
-        onFocus={() => openList(true)}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          // Avec une saisie, Entrée ajoute la première équipe qui correspond.
-          setActive(e.target.value.trim() ? 0 : -1);
-          setOpen(true);
-        }}
-        onKeyDown={handleKeyDown}
+        onFocus={picker.handleFocus}
+        onChange={picker.handleInput}
+        onKeyDown={picker.handleKeyDown}
       />
       <button
         id="picker-clear"
         className="picker-icon"
         type="button"
         aria-label="Retirer toutes les équipes"
-        hidden={!selected.length}
+        hidden={selected.length === 0}
         onPointerDown={keepMouseFocus}
-        onClick={() => {
-          onChange([]);
-          field.current?.focus();
-        }}
+        onClick={picker.handleClear}
       >
         <CloseIcon />
       </button>
@@ -156,35 +325,43 @@ const TeamPicker: FC<Props> = ({ ratings, selected, onChange, placeholder, chips
         aria-expanded={open}
         aria-controls="picker-list"
         onPointerDown={keepMouseFocus}
-        onClick={() => {
-          if (open) openList(false);
-          else {
-            field.current?.focus();
-            openList(true);
-          }
-        }}
+        onClick={picker.handleToggle}
       >
         <ChevronDownIcon />
       </button>
-      <ul ref={list} id="picker-list" className="picker-list" role="listbox" aria-label="Équipes" hidden={!open}>
-        {!open ? null : options.length ? (
-          options.map((r, i) => (
+      <ul
+        ref={list}
+        id="picker-list"
+        className="picker-list"
+        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-to-interactive-role -- An editable combobox keeps focus on its input while controlling this custom listbox.
+        role="listbox"
+        aria-label="Équipes"
+        hidden={!open}
+      >
+        {open &&
+          options.length > 0 &&
+          options.map((rating, index) => (
+            // oxlint-disable-next-line jsx-a11y/click-events-have-key-events -- Enter is handled on the combobox through aria-activedescendant.
             <li
-              key={r.team}
-              id={`pick-${i}`}
+              key={rating.team}
+              id={`pick-${index}`}
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-to-interactive-role -- Each option carries multiple formatted fields inside the controlled listbox.
               role="option"
               className="picker-option"
-              aria-selected={i === current}
+              aria-selected={index === current}
               onPointerDown={keepMouseFocus}
-              onClick={() => add(r.team)}
+              data-team={rating.team}
+              onClick={picker.handlePick}
             >
-              <span className="option-rank">{r.rank ? String(r.rank) : 'bot'}</span>
-              <span className="option-team">{r.team}</span>
-              <span className="option-elo">{Math.round(r.rating)} Elo</span>
+              <span className="option-rank">{rating.rank ? String(rating.rank) : 'bot'}</span>
+              <span className="option-team">{rating.team}</span>
+              <span className="option-elo">{Math.round(rating.rating)} Elo</span>
             </li>
-          ))
-        ) : (
-          <li className="picker-empty">{empty}</li>
+          ))}
+        {open && options.length === 0 && (
+          <li className="picker-empty" role="presentation">
+            {empty}
+          </li>
         )}
       </ul>
     </div>

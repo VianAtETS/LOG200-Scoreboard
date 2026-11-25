@@ -6,7 +6,7 @@
     "workspaceFolder": "/workspaces/LOG200-Scoreboard",
     "shutdownAction": "stopCompose",
     "features": {
-        "ghcr.io/devcontainers/features/node:1": { "version": "24" },
+        "ghcr.io/devcontainers/features/node:1": { "version": "26.13.1", "nodeGypDependencies": false },
         "ghcr.io/devcontainers/features/rust:1": { "version": "latest", "profile": "minimal" },
         // dockerd dans le conteneur, ou runsc peut etre enregistre (Docker Desktop ne le permet pas)
         "ghcr.io/devcontainers/features/docker-in-docker:4": { "moby": false }
@@ -27,12 +27,17 @@
             "extensions": [
                 "ms-azuretools.vscode-docker",
                 "EditorConfig.EditorConfig",
-                "rust-lang.rust-analyzer"
+                "rust-lang.rust-analyzer",
+                "astro-build.astro-vscode",
+                "dbaeumer.vscode-eslint",
+                "oxc.oxc-vscode",
+                "TypeScriptTeam.native-preview"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash"
             }
         }
     },
+    "postCreateCommand": "cd web && bun install --frozen-lockfile",
     "remoteUser": "vscode"
 }

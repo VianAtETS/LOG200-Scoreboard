@@ -1,6 +1,7 @@
 import { useGetHealth } from '@/dao/hooks/use-ladder';
 import { submitJar } from '@/dao/scoreboard.repository';
-import { useState, type FC, type SubmitEvent } from 'react';
+import { useCallback, useState } from 'react';
+import type { ChangeEvent, FC, SubmitEvent } from 'react';
 
 type TSubmitState = 'pending' | 'ok' | 'error';
 
@@ -15,40 +16,66 @@ const SubmitSection: FC = () => {
   const [state, setState] = useState<TSubmitState>();
   const [message, setMessage] = useState(INTRO);
 
-  const handleSubmit = async (e: SubmitEvent) => {
-    e.preventDefault();
-    if (!file || state === 'pending') return;
+  const handleTokenChange = useCallback((event: ChangeEvent<HTMLInputElement>): void => {
+    setToken(event.target.value);
+  }, []);
+  const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>): void => {
+    setFile(event.target.files?.[0] ?? null);
+  }, []);
+  const submit = useCallback(async (): Promise<void> => {
+    if (!file || state === 'pending') {
+      return;
+    }
     setState('pending');
-    setMessage("Parties de test en cours : une à deux minutes, plus si d'autres soumissions attendent…");
+    setMessage(
+      "Parties de test en cours : une à deux minutes, plus si d'autres soumissions attendent…",
+    );
     try {
       const verdict = await submitJar(token.trim(), file);
       setState(verdict.ok ? 'ok' : 'error');
       setMessage(verdict.message);
-    } catch (err) {
+    } catch (error) {
       setState('error');
-      setMessage(`Envoi impossible : ${(err as Error).message}. Vérifiez la connexion, puis réessayez.`);
+      setMessage(
+        `Envoi impossible : ${error instanceof Error ? error.message : String(error)}. Vérifiez la connexion, puis réessayez.`,
+      );
     }
-  };
+  }, [file, state, token]);
+  const handleSubmit = useCallback(
+    (event: SubmitEvent): void => {
+      event.preventDefault();
+      void submit();
+    },
+    [submit],
+  );
 
   return (
     <details id="submit-section" className="section submit" hidden={!available}>
       <summary id="submit-title">Soumettre un JAR</summary>
       <form id="submit-form" className="submit-form" onSubmit={handleSubmit}>
         <label className="field" htmlFor="submit-token">
-          <span>Token de l'équipe</span>
+          <span>Token de l&apos;équipe</span>
           <input
             id="submit-token"
+            name="token"
             type="password"
             autoComplete="off"
             spellCheck={false}
             required
             value={token}
-            onChange={(e) => setToken(e.target.value)}
+            onChange={handleTokenChange}
           />
         </label>
         <label className="field file" htmlFor="submit-file">
           <span>Jar</span>
-          <input id="submit-file" type="file" accept=".jar" required onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input
+            id="submit-file"
+            name="file"
+            type="file"
+            accept=".jar"
+            required
+            onChange={handleFileChange}
+          />
           <span className="file-button" aria-hidden="true">
             <span id="submit-file-name">{file?.name ?? 'Choisir le jar'}</span>
           </span>
@@ -57,9 +84,9 @@ const SubmitSection: FC = () => {
           Envoyer le jar
         </button>
       </form>
-      <p id="submit-status" className="submit-status" role="status" aria-live="polite" data-state={state}>
+      <output id="submit-status" className="submit-status" aria-live="polite" data-state={state}>
         {message}
-      </p>
+      </output>
     </details>
   );
 };

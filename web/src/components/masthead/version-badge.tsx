@@ -10,7 +10,9 @@ const RELEASE_TITLES = {
 const VersionBadge: FC = () => {
   const { data } = useGetVersion();
 
-  if (!data) return null;
+  if (!data) {
+    return null;
+  }
 
   const { version, tag, state } = data;
   const title = state === 'unknown' ? 'Version du ladder' : RELEASE_TITLES[state](tag);

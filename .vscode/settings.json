@@ -5,6 +5,34 @@
     "files.insertFinalNewline": true,
     "files.trimFinalNewlines": true,
     "files.trimTrailingWhitespace": true,
+    "eslint.workingDirectories": ["./web"],
+    "eslint.validate": ["astro"],
+    "oxc.enable.oxlint": true,
+    "oxc.path.oxlint": "${workspaceFolder}/web/node_modules/.bin/oxlint",
+    "oxc.configPath": "${workspaceFolder}/web/.oxlintrc.json",
+    "oxc.tsConfigPath": "${workspaceFolder}/web/tsconfig.json",
+    "js/ts.experimental.useTsgo": true,
+    "oxc.path.oxfmt": "${workspaceFolder}/web/node_modules/.bin/oxfmt",
+    "oxc.fmt.configPath": "${workspaceFolder}/web/.oxfmtrc.json",
+    "[javascript]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.tabSize": 2
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.tabSize": 2
+    },
+    "[typescriptreact]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.tabSize": 2
+    },
+    "[astro]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode",
+        "editor.tabSize": 2
+    },
+    "[css]": {
+        "editor.defaultFormatter": "oxc.oxc-vscode"
+    },
     "[yaml]": {
         "editor.tabSize": 2
     }
