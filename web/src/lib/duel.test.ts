@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import type { TDuelPair } from '@/types/games.types';
 import { SPRT_EXPECTED, eloGap, pairCounts, signTest, sprt, wilson } from './duel.ts';
 
 // Valeurs attendues calculées par signTest, sprt, wilson et elo d'arena/web/app.js (arène isola).
-const close = (actual: number, expected: number) =>
+const close = (actual: number, expected: number): void =>
   assert.ok(Math.abs(actual - expected) < 1e-12, `${actual} ≠ ${expected}`);
-
-test('test du signe identique à isola, même au-delà de 1075 paires', () => {
+void test('test du signe identique à isola, même au-delà de 1075 paires', () => {
   assert.ok(Number.isNaN(signTest(0, 0)));
-  for (const [a, b, p] of [
+  for (const [first, second, probability] of [
     [3, 0, 0.25000000000000006],
     [10, 3, 0.09228515625000003],
     [30, 20, 0.2026387510645394],
@@ -19,14 +19,14 @@ test('test du signe identique à isola, même au-delà de 1075 paires', () => {
     [300, 280, 0.4301768979847971],
     [700, 650, 0.18231034946697916],
     [1100, 0, 0],
-  ]) {
-    close(signTest(a, b), p);
+  ] as const) {
+    close(signTest(first, second), probability);
   }
 });
 
-test('SPRT identique à isola', () => {
+void test('SPRT identique à isola', () => {
   const verdict = { 0: 'undecided', 1: 'a', 2: 'b', 3: 'close' } as const;
-  for (const [a, b, v] of [
+  for (const [first, second, result] of [
     [0, 0, 0],
     [3, 0, 0],
     [10, 3, 0],
@@ -44,41 +44,42 @@ test('SPRT identique à isola', () => {
     [18, 4, 0],
     [15, 45, 2],
   ] as const) {
-    assert.equal(sprt(a, b), verdict[v], `${a}-${b}`);
+    assert.equal(sprt(first, second), verdict[result], `${first}-${second}`);
   }
   assert.equal(SPRT_EXPECTED, 78);
 });
 
-test('Wilson et Elo identiques à isola', () => {
-  for (const [k, n, low, high] of [
+void test('Wilson et Elo identiques à isola', () => {
+  for (const [wins, games, low, high] of [
     [0, 10, -2.7755575615628914e-17, 0.2775401687666166],
     [7, 10, 0.39677321997956516, 0.892210712513788],
     [50, 100, 0.40382982859014716, 0.5961701714098528],
     [100, 100, 0.9630051925239981, 0.9999999999999999],
     [1, 3, 0.0614903152761605, 0.7923450448735121],
-  ]) {
-    const [l, h] = wilson(k, n);
-    close(l, low);
-    close(h, high);
+  ] as const) {
+    const [actualLow, actualHigh] = wilson(wins, games);
+    close(actualLow, low);
+    close(actualHigh, high);
   }
   assert.deepEqual(wilson(0, 0), [Number.NaN, Number.NaN]);
-  for (const [s, e] of [
+  for (const [score, expected] of [
     [0.5, 0],
     [0.75, 190.848501887865],
     [0.25, -190.84850188786498],
     [0.9, 381.69700377572985],
-  ]) {
-    close(eloGap(s), e);
+  ] as const) {
+    close(eloGap(score), expected);
   }
   assert.ok(Number.isNaN(eloGap(0)) && Number.isNaN(eloGap(1)));
 });
 
-test('paires 2-0 de chaque côté et paires 1-1', () => {
-  const pair = (winners: [string, string]) => ({
-    games: ['g1', 'g2'] as [string, string],
-    winners,
-    opening: [],
-  });
+const pair = (winners: [string, string]): TDuelPair => ({
+  games: ['g1', 'g2'],
+  winners,
+  opening: [],
+});
+
+void test('paires 2-0 de chaque côté et paires 1-1', () => {
   const pairs = [
     pair(['eq07', 'eq07']),
     pair(['eq12', 'eq12']),

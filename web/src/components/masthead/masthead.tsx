@@ -1,12 +1,11 @@
 import { CloseIcon, MenuIcon } from '@/components/icons/icons';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FC, PropsWithChildren, ReactNode } from 'react';
-import { Logo } from './logo';
+import { Brand } from './brand';
 import { pages } from './masthead.data';
 import type { TPageKey } from './masthead.data';
-import { VersionBadge } from './version-badge';
 
 type Props = PropsWithChildren & {
   // Absent : une page hors du menu (Duel).
@@ -17,30 +16,14 @@ type Props = PropsWithChildren & {
 
 const MOBILE = '(max-width: 640px)';
 
-const Brand: FC<{ heading?: boolean; showVersion: boolean }> = ({
-  heading = false,
-  showVersion,
-}) => {
-  const Title = heading ? 'h1' : 'p';
-  return (
-    <div className="brand" aria-hidden={heading ? undefined : true}>
-      <Logo />
-      <Title className="title">
-        Ladder Isolation{' '}
-        <span className="title-meta">
-          <span className="title-course">LOG200</span>
-          {showVersion && <VersionBadge />}
-        </span>
-      </Title>
-    </div>
-  );
-};
-
 const Masthead: FC<Props> = ({ current, showVersion = true, status, children }) => {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
+  const hasChildren = Boolean(children);
+  const openMenu = useCallback((): void => setOpen(true), []);
+  const closeMenu = useCallback((): void => setOpen(false), []);
 
   useEffect(() => {
     if (!open) {
@@ -48,15 +31,25 @@ const Masthead: FC<Props> = ({ current, showVersion = true, status, children }) 
         toggleRef.current?.focus();
       }
       wasOpen.current = false;
-      return;
+      return () => {
+        wasOpen.current = false;
+      };
     }
     wasOpen.current = true;
     closeRef.current?.focus();
     const main = document.querySelector('main');
     main?.setAttribute('inert', '');
     const mobile = matchMedia(MOBILE);
-    const handleChange = () => !mobile.matches && setOpen(false);
-    const handleKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const handleChange = (): void => {
+      if (!mobile.matches) {
+        closeMenu();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        closeMenu();
+      }
+    };
     mobile.addEventListener('change', handleChange);
     document.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -64,7 +57,7 @@ const Masthead: FC<Props> = ({ current, showVersion = true, status, children }) 
       mobile.removeEventListener('change', handleChange);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [open]);
+  }, [open, closeMenu]);
 
   return (
     <header className={cn('masthead', open && 'menu-open')}>
@@ -77,7 +70,7 @@ const Masthead: FC<Props> = ({ current, showVersion = true, status, children }) 
         aria-expanded={open}
         aria-controls="site-menu"
         inert={open}
-        onClick={() => setOpen(true)}
+        onClick={openMenu}
       >
         <MenuIcon />
       </button>
@@ -89,7 +82,7 @@ const Masthead: FC<Props> = ({ current, showVersion = true, status, children }) 
             className="menu-toggle"
             type="button"
             aria-label="Fermer le menu"
-            onClick={() => setOpen(false)}
+            onClick={closeMenu}
           >
             <CloseIcon />
           </button>
@@ -101,7 +94,7 @@ const Masthead: FC<Props> = ({ current, showVersion = true, status, children }) 
             </a>
           ))}
         </nav>
-        {children && <div className="controls">{children}</div>}
+        {hasChildren ? <div className="controls">{children}</div> : children}
       </div>
       {status}
     </header>

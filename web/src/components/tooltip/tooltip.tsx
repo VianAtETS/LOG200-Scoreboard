@@ -19,21 +19,21 @@ const Tooltip: FC<Props> = ({ id, anchor, pinned, tipRef, children }) => {
     if (!anchor || !tip) {
       return;
     }
-    const a = anchor.getBoundingClientRect();
-    const t = tip.getBoundingClientRect();
-    const below = a.top - GAP - t.height < MARGIN;
+    const anchorRect = anchor.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const below = anchorRect.top - GAP - tipRect.height < MARGIN;
     const left = Math.min(
-      Math.max(a.left + a.width / 2 - t.width / 2, MARGIN),
-      innerWidth - MARGIN - t.width,
+      Math.max(anchorRect.left + anchorRect.width / 2 - tipRect.width / 2, MARGIN),
+      innerWidth - MARGIN - tipRect.width,
     );
     tip.style.left = `${left}px`;
-    tip.style.top = `${below ? a.bottom + GAP : a.top - GAP - t.height}px`;
-    tip.dataset.side = below ? 'below' : 'above';
-  }, [anchor, pinned, tipRef, children]);
-
-  if (!anchor) {
+    tip.style.top = `${below ? anchorRect.bottom + GAP : anchorRect.top - GAP - tipRect.height}px`;
+    tip.dataset['side'] = below ? 'below' : 'above';
+  });
+  if (!anchor || typeof document === 'undefined') {
     return null;
   }
+
   return createPortal(
     <div
       ref={tipRef}
@@ -50,21 +50,46 @@ const Tooltip: FC<Props> = ({ id, anchor, pinned, tipRef, children }) => {
 type TState<T> = { anchor: T; pinned: boolean } | null;
 
 // pin() : au tactile, sans survol, la bulle reste ouverte jusqu'à un tap ailleurs.
-const useTooltip = <T extends HTMLElement>() => {
+type TooltipResult<T extends HTMLElement> = {
+  anchorProps: {
+    'aria-describedby': string;
+    title: string;
+    onPointerEnter: (event: PointerEvent<T>) => void;
+    onPointerLeave: (event: PointerEvent<T>) => void;
+    onFocus: (event: FocusEvent<T>) => void;
+    onBlur: () => void;
+  };
+  tipProps: Omit<Props, 'children'>;
+  pin: (anchor: T) => void;
+};
+
+const useTooltip = <T extends HTMLElement>(): TooltipResult<T> => {
   const id = useId();
   const tipRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<TState<T>>(null);
-  const hide = useCallback(() => setState(null), []);
-  const unpinned = useCallback(() => setState((s) => (s?.pinned ? s : null)), []);
+  const hide = useCallback((): void => {
+    setState(null);
+  }, []);
+  const unpinned = useCallback((): void => {
+    setState((previous) => (previous?.pinned ? previous : null));
+  }, []);
 
   useEffect(() => {
     if (!state) {
-      return;
+      return () => {
+        /* No listeners were registered. */
+      };
     }
-    const handleKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && hide();
-    const handlePointerDown = (e: globalThis.PointerEvent) => {
-      const target = e.target as Node;
-      if (!state.anchor.contains(target) && !tipRef.current?.contains(target)) {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        hide();
+      }
+    };
+    const handlePointerDown = (ev: globalThis.PointerEvent): void => {
+      if (
+        !(ev.target instanceof Node) ||
+        (!state.anchor.contains(ev.target) && !tipRef.current?.contains(ev.target))
+      ) {
         hide();
       }
     };
@@ -80,9 +105,11 @@ const useTooltip = <T extends HTMLElement>() => {
     };
   }, [state, hide]);
 
-  const show = (anchor: T) => setState((s) => (s?.pinned ? s : { anchor, pinned: false }));
+  const show = (anchor: T): void => {
+    setState((previous) => (previous?.pinned ? previous : { anchor, pinned: false }));
+  };
 
-  const pin = (anchor: T) => {
+  const pin = (anchor: T): void => {
     if (state?.pinned && state.anchor === anchor) {
       setState(null);
       anchor.blur();
@@ -96,9 +123,17 @@ const useTooltip = <T extends HTMLElement>() => {
     'aria-describedby': id,
     // Un title vide coupe aussi celui, natif, de la cellule.
     title: '',
-    onPointerEnter: (e: PointerEvent<T>) => e.pointerType === 'mouse' && show(e.currentTarget),
-    onPointerLeave: (e: PointerEvent<T>) => e.pointerType === 'mouse' && unpinned(),
-    onFocus: (e: FocusEvent<T>) => show(e.currentTarget),
+    onPointerEnter: (event: PointerEvent<T>): void => {
+      if (event.pointerType === 'mouse') {
+        show(event.currentTarget);
+      }
+    },
+    onPointerLeave: (event: PointerEvent<T>): void => {
+      if (event.pointerType === 'mouse') {
+        unpinned();
+      }
+    },
+    onFocus: (event: FocusEvent<T>): void => show(event.currentTarget),
     onBlur: unpinned,
   };
 
@@ -106,4 +141,6 @@ const useTooltip = <T extends HTMLElement>() => {
   return { anchorProps, tipProps, pin };
 };
 
+// The hook and component form one tooltip API.
+// oxlint-disable-next-line react/only-export-components
 export { Tooltip, useTooltip };

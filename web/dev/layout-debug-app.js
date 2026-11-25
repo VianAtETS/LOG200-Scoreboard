@@ -2,6 +2,7 @@
 // de dev/layout-debug.css qui affiche des contours aux éléments de la page.
 
 import { defineToolbarApp } from 'astro/toolbar';
+// oxlint-disable-next-line import/no-unassigned-import -- Vite adds the dev toolbar's outline stylesheet through this import.
 import './layout-debug.css';
 
 const KEY = 'layout-debug';

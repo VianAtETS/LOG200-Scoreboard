@@ -1,24 +1,15 @@
-import { NodeBadge, RemoteBadge } from '@/components/badge/badge';
 import { Board } from '@/components/board/board';
-import {
-  FirstIcon,
-  LastIcon,
-  NextIcon,
-  PauseIcon,
-  PlayIcon,
-  PrevIcon,
-} from '@/components/icons/icons';
 import { squareName } from '@/lib/replay';
 import { pageUrl } from '@/lib/url';
-import { cn } from '@/lib/utils';
-import type { TColor, TGame } from '@/types/games.types';
-import type { TLiveGame } from '@/types/live.types';
-import { useEffect, useState } from 'react';
-import type { CSSProperties, FC } from 'react';
-import { ENDINGS } from './replay.data';
+import { useCallback, useEffect, useState } from 'react';
+import type { FC } from 'react';
+import { GameInfo } from './game-info';
+import { LiveInfo } from './live-info';
+import { ReplayControls } from './replay-controls';
 import type { TReplay, TReplayActions } from './use-replay';
 
 const SHARE = 'Copier le lien';
+const SHARE_RESET_MS = 2000;
 
 type Props = {
   replay: TReplay;
@@ -26,48 +17,14 @@ type Props = {
   versionOf: (team: string, build?: string) => string;
 };
 
-const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
-  const [shareLabel, setShareLabel] = useState(SHARE);
-  const { steps, moveMs, index, game, live, message } = replay;
+function describePosition(replay: TReplay): {
+  moveCount: string;
+  moveText: React.ReactNode;
+  boardLabel: string;
+} {
+  const { steps, moveMs, index } = replay;
   const step = steps[index];
   const total = steps.length - 1;
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as Element;
-      const queue = document.querySelector<HTMLDialogElement>('#queue');
-      if (
-        target.closest(
-          'input, select, textarea, [contenteditable], [role="slider"], .ranking-scroll',
-        ) ||
-        queue?.open
-      ) {
-        return;
-      }
-      if (e.key === 'ArrowLeft') {
-        actions.browse(actions.current().index - 1);
-      }
-      if (e.key === 'ArrowRight') {
-        actions.browse(actions.current().index + 1);
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [actions]);
-
-  const share = async () => {
-    if (!actions.pin()) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(location.href);
-      setShareLabel('Lien copié');
-    } catch {
-      setShareLabel("Copiez l'adresse de la page");
-    }
-    setTimeout(() => setShareLabel(SHARE), 2000);
-  };
-
   let moveCount = '';
   let moveText = null;
   let boardLabel = 'Plateau 12 × 12';
@@ -75,7 +32,12 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
     const { from, to, destroyed } = step.move;
     // Les coups des clients sont les derniers pas, après l'ouverture.
     const ms = moveMs[index - (steps.length - moveMs.length)];
-    const detail = step.opening ? ', ouverture' : ms !== undefined ? `, ${ms} ms` : '';
+    let detail = '';
+    if (step.opening) {
+      detail = ', ouverture';
+    } else if (ms !== undefined) {
+      detail = `, ${ms} ms`;
+    }
     moveCount = `Coup ${index} sur ${total}${detail}`;
     moveText = (
       <>
@@ -89,26 +51,80 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
     boardLabel = 'Plateau 12 × 12, position initiale';
   }
 
+  return { moveCount, moveText, boardLabel };
+}
+
+const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
+  const [shareLabel, setShareLabel] = useState(SHARE);
+  const { steps, index, game, live, message } = replay;
+  const step = steps[index];
+  const total = steps.length - 1;
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      const { target } = event;
+      const queue = document.querySelector<HTMLDialogElement>('#queue');
+      if (
+        (target instanceof Element &&
+          target.closest(
+            'input, select, textarea, [contenteditable], [role="slider"], .ranking-scroll',
+          )) ||
+        queue?.open
+      ) {
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        actions.browse(actions.current().index - 1);
+      }
+      if (event.key === 'ArrowRight') {
+        actions.browse(actions.current().index + 1);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [actions]);
+  const handleShare = useCallback(async (): Promise<void> => {
+    if (!actions.pin()) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(location.href);
+      setShareLabel('Lien copié');
+    } catch {
+      setShareLabel("Copiez l'adresse de la page");
+    }
+    setTimeout(() => setShareLabel(SHARE), SHARE_RESET_MS);
+  }, [actions]);
+  const { moveCount, moveText, boardLabel } = describePosition(replay);
+  let info: React.ReactNode = 'Choisissez une partie pour la rejouer.';
+  if (message !== null) {
+    info = message;
+  } else if (live) {
+    info = <LiveInfo game={live} />;
+  } else if (game) {
+    info = <GameInfo game={game} versionOf={versionOf} />;
+  }
+  const handleShareClick = useCallback((): void => {
+    void handleShare();
+  }, [handleShare]);
   return (
     <section className="replay" aria-labelledby="replay-title">
       <div className="replay-head">
         <h2 id="replay-title">Replay</h2>
         <p id="replay-info" className="replay-info">
-          {message ??
-            (live ? (
-              <LiveInfo game={live} />
-            ) : game ? (
-              <GameInfo game={game} versionOf={versionOf} />
-            ) : (
-              'Choisissez une partie pour la rejouer.'
-            ))}
+          {info}
         </p>
         {game && (
           <a className="share analyse-link" href={pageUrl('analyse.html', { game: game.id })}>
             Analyser
           </a>
         )}
-        <button id="share" className="share" type="button" aria-live="polite" onClick={share}>
+        <button
+          id="share"
+          className="share"
+          type="button"
+          aria-live="polite"
+          onClick={handleShareClick}
+        >
           {shareLabel}
         </button>
       </div>
@@ -116,6 +132,7 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
         {step ? (
           <Board id="board" step={step} index={index} label={boardLabel} />
         ) : (
+          /* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- The empty board uses the same styled container and accessible name as the rendered board. */
           <div id="board" className="board" role="img" aria-label={boardLabel} />
         )}
       </div>
@@ -128,109 +145,12 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
             {moveText}
           </span>
         </p>
-        <div className="replay-controls">
-          <button
-            id="first"
-            className="icon"
-            type="button"
-            aria-label="Début de la partie"
-            onClick={() => actions.browse(0)}
-          >
-            <FirstIcon />
-          </button>
-          <button
-            id="prev"
-            className="icon"
-            type="button"
-            aria-label="Coup précédent"
-            onClick={() => actions.browse(index - 1)}
-          >
-            <PrevIcon />
-          </button>
-          <button
-            id="play"
-            className={cn('icon play', replay.playing && 'playing')}
-            type="button"
-            aria-label={replay.playing ? 'Pause' : 'Lecture'}
-            onClick={actions.togglePlayback}
-          >
-            <PlayIcon className="i-play" />
-            <PauseIcon className="i-pause" />
-          </button>
-          <button
-            id="next"
-            className="icon"
-            type="button"
-            aria-label="Coup suivant"
-            onClick={() => actions.browse(index + 1)}
-          >
-            <NextIcon />
-          </button>
-          <button
-            id="last"
-            className="icon"
-            type="button"
-            aria-label="Fin de la partie"
-            onClick={() => actions.browse(total)}
-          >
-            <LastIcon />
-          </button>
-        </div>
-        <input
-          id="step"
-          type="range"
-          min="0"
-          max={String(Math.max(0, total))}
-          value={String(index)}
-          style={{ '--progress': `${total > 0 ? (index / total) * 100 : 0}%` } as CSSProperties}
-          aria-label="Coup affiché"
-          onChange={(e) => actions.browse(Number(e.target.value))}
-        />
+        <ReplayControls replay={replay} actions={actions} total={total} />
       </div>
     </section>
   );
 };
 
-const GameInfo: FC<{ game: TGame; versionOf: Props['versionOf'] }> = ({ game: g, versionOf }) => {
-  const loser = g.winner === 'red' ? 'black' : 'red';
-  const ending = ENDINGS[g.reason]?.(g[loser].team) ?? g.reason;
-  const player = (color: TColor) => (
-    <>
-      <strong>
-        {[g[color].team, versionOf(g[color].team, g[color].build)].filter(Boolean).join(' ')}
-      </strong>
-      {g[color].remote && <RemoteBadge />}
-    </>
-  );
-  return (
-    <>
-      {player('red')}
-      {' (rouge) contre '}
-      {player('black')}
-      {` (noir) : ${g[g.winner].team} gagne, ${ending}.`}
-      {g.node && <NodeBadge />}
-    </>
-  );
-};
+export { GameInfo } from './game-info';
 
-const LiveInfo: FC<{ game: TLiveGame }> = ({ game: g }) => {
-  const { winner, reason, cancelled, interrupted } = g.ended ?? {};
-  const loser = winner === 'red' ? g.black : g.red;
-  const state = g.ended
-    ? cancelled
-      ? 'partie annulée'
-      : interrupted
-        ? 'direct interrompu'
-        : `${g[winner!]} gagne, ${ENDINGS[reason!]?.(loser) ?? reason}`
-    : 'en direct';
-  return (
-    <>
-      <strong>{g.red}</strong>
-      {' (rouge) contre '}
-      <strong>{g.black}</strong>
-      {` (noir) : ${state}.`}
-    </>
-  );
-};
-
-export { GameInfo, ReplaySection };
+export { ReplaySection };

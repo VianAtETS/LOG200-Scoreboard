@@ -1,9 +1,9 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 
-import type { TRankingRow } from '../../lib/archives.ts';
-import { DEFAULT_STATS, rankingView } from './ranking.data.ts';
-import type { TRankingSort, TSortColumn } from './ranking.data.ts';
+import { DEFAULT_STATS, rankingView } from '@/components/ranking/ranking.data';
+import type { TRankingSort, TSortColumn } from '@/components/ranking/ranking.data';
+import type { TRankingRow } from '@/lib/archives';
 
 const ratings: TRankingRow[] = [
   {
@@ -51,26 +51,33 @@ const ratings: TRankingRow[] = [
   },
 ];
 
-const view = (column: TSortColumn, direction: TRankingSort['direction']) =>
-  rankingView(ratings, { column, direction }, DEFAULT_STATS);
-const builds = (rows: readonly TRankingRow[]) => rows.map((r) => r.build);
+function view(
+  column: TSortColumn,
+  direction: TRankingSort['direction'],
+): ReturnType<typeof rankingView> {
+  return rankingView(ratings, { column, direction }, DEFAULT_STATS);
+}
 
-test('equal wins are ordered by fewer losses in descending order, reversed in ascending order', () => {
+function builds(rows: readonly TRankingRow[]): (string | undefined)[] {
+  return rows.map((row) => row.build);
+}
+
+void test('equal wins are ordered by fewer losses in descending order, reversed in ascending order', () => {
   assert.deepEqual(builds(view('record', 'descending').rows), ['b1', 'a1', 'a0', 'c1']);
   assert.deepEqual(builds(view('record', 'ascending').rows), ['c1', 'a0', 'a1', 'b1']);
 });
 
-test('a team without current-build games has no win rate and stays last in either direction', () => {
+void test('a team without current-build games has no win rate and stays last in either direction', () => {
   assert.deepEqual(builds(view('pct', 'descending').rows), ['a0', 'b1', 'a1', 'c1']);
   assert.deepEqual(builds(view('pct', 'ascending').rows), ['a1', 'a0', 'b1', 'c1']);
 });
 
-test('missing move times stay last and equal values retain the official input order', () => {
+void test('missing move times stay last and equal values retain the official input order', () => {
   assert.deepEqual(builds(view('pace', 'descending').rows), ['a1', 'b1', 'a0', 'c1']);
   assert.deepEqual(builds(view('pace', 'ascending').rows), ['b1', 'a1', 'a0', 'c1']);
 });
 
-test('official ranks ignore archives and do not change with display order', () => {
+void test('official ranks ignore archives and do not change with display order', () => {
   const ascending = view('rank', 'ascending');
   const descending = view('rank', 'descending');
   assert.deepEqual(

@@ -23,34 +23,48 @@ export type TReplay = {
   message: string | null;
 };
 
-export type TReplayActions = ReturnType<typeof useReplay>['actions'];
+export type TReplayActions = {
+  showGame: (row: Pick<TGameRow, 'id' | 'at'>, pinned?: boolean) => Promise<void>;
+  showLive: (game: TLiveGame) => void;
+  browse: (index: number) => void;
+  togglePlayback: () => void;
+  pin: () => boolean;
+  unpin: () => void;
+  setMessage: (message: string) => void;
+  current: () => TReplay;
+};
+
+const initialReplay = (): TReplay => ({
+  id: null,
+  game: null,
+  live: null,
+  steps: [],
+  moveMs: [],
+  index: 0,
+  pinned: searchParams().has('game'),
+  playing: false,
+  message: null,
+});
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 // Replay de la page Classement. L'état vit aussi dans une ref : les minuteries et les réponses en retard
 // lisent toujours le dernier.
-const useReplay = () => {
-  const [replay, setReplay] = useState<TReplay>(() => ({
-    id: null,
-    game: null,
-    live: null,
-    steps: [],
-    moveMs: [],
-    index: 0,
-    pinned: searchParams().has('game'),
-    playing: false,
-    message: null,
-  }));
+const useReplay = (): { replay: TReplay; actions: TReplayActions } => {
+  const [replay, setReplay] = useState<TReplay>(initialReplay);
   const ref = useRef(replay);
   const timer = useRef<ReturnType<typeof setInterval>>(undefined);
   // Dernier replay demandé : une réponse plus ancienne arrivée en retard est ignorée.
   const seq = useRef(0);
 
   const actions = useMemo(() => {
-    const commit = (patch: Partial<TReplay>) => {
+    const commit = (patch: Partial<TReplay>): void => {
       ref.current = { ...ref.current, ...patch };
       setReplay(ref.current);
     };
 
-    const stopPlayback = () => {
+    const stopPlayback = (): void => {
       clearInterval(timer.current);
       timer.current = undefined;
       if (ref.current.playing) {
@@ -58,76 +72,80 @@ const useReplay = () => {
       }
     };
 
-    const goTo = (i: number) => {
+    const goTo = (index: number): void => {
       const { id, steps } = ref.current;
-      if (!id) {
+      if (id === null || id === '') {
         return;
       }
-      commit({ index: Math.max(0, Math.min(steps.length - 1, i)) });
+      commit({ index: Math.max(0, Math.min(steps.length - 1, index)) });
     };
 
     return {
       // Un échec (API injoignable, partie pas encore en base) est réessayé au rafraîchissement suivant.
-      async showGame(row: Pick<TGameRow, 'id' | 'at'>, pinned = ref.current.pinned) {
-        const current = ++seq.current;
-        let g: TGame;
+      async showGame(row: Pick<TGameRow, 'id' | 'at'>, pinned?: boolean) {
+        const isPinned = pinned ?? ref.current.pinned;
+        seq.current += 1;
+        const { current } = seq;
+        let game: TGame;
         try {
-          g = await getGame(row);
+          game = await getGame(row);
         } catch (error) {
-          if (current === seq.current)
-            commit({ message: `Partie pas encore disponible (${(error as Error).message}).` });
+          if (current === seq.current) {
+            commit({ message: `Partie pas encore disponible (${errorMessage(error)}).` });
+          }
           return;
         }
         if (current !== seq.current) {
           return;
         }
         stopPlayback();
-        const steps = positions(g);
-        const moveMs = g.move_ms?.length === g.moves.length ? g.move_ms : [];
-        setParam('game', pinned ? g.id : null);
+        const steps = positions(game);
+        const moveMs = game.move_ms?.length === game.moves.length ? game.move_ms : [];
+        setParam('game', isPinned ? game.id : null);
         commit({
-          id: g.id,
-          game: g,
+          id: game.id,
+          game,
           live: null,
           steps,
           moveMs,
           index: steps.length - 1,
-          pinned,
+          pinned: isPinned,
           message: null,
         });
       },
 
-      showLive(g: TLiveGame) {
-        if (ref.current.live === g) {
+      showLive(game: TLiveGame) {
+        if (ref.current.live === game) {
           return;
         }
         const { id, index, steps: before } = ref.current;
-        const following = !id || index === before.length - 1;
-        const steps = positions(g);
+        const following = id === null || id === '' || index === before.length - 1;
+        const steps = positions(game);
         commit({
-          id: g.id,
+          id: game.id,
           game: null,
-          live: g,
+          live: game,
           steps,
-          moveMs: g.move_ms,
+          moveMs: game.move_ms,
           index: following ? steps.length - 1 : index,
           message: null,
         });
       },
 
       // Parcourir une partie la fige : le replay ne saute plus vers la dernière jouée.
-      browse(i: number) {
+      browse(index: number) {
         commit({ pinned: true });
         setParam('game', ref.current.id);
-        goTo(i);
+        goTo(index);
       },
 
       togglePlayback() {
-        if (!ref.current.id) {
+        if (ref.current.id === null || ref.current.id === '') {
           return;
         }
-        if (timer.current) {
-          return void stopPlayback();
+        if (timer.current !== undefined) {
+          stopPlayback();
+          return;
         }
         if (ref.current.index === ref.current.steps.length - 1) {
           goTo(0);
@@ -135,7 +153,8 @@ const useReplay = () => {
         commit({ pinned: true, playing: true });
         timer.current = setInterval(() => {
           if (ref.current.index >= ref.current.steps.length - 1) {
-            return void stopPlayback();
+            stopPlayback();
+            return;
           }
           goTo(ref.current.index + 1);
         }, PLAY_MS);
@@ -143,7 +162,7 @@ const useReplay = () => {
 
       // Fige la partie affichée et la met dans l'adresse ; faux sans partie.
       pin() {
-        if (!ref.current.id) {
+        if (ref.current.id === null || ref.current.id === '') {
           return false;
         }
         commit({ pinned: true });
@@ -152,7 +171,7 @@ const useReplay = () => {
       },
 
       unpin() {
-        seq.current++;
+        seq.current += 1;
         commit({ pinned: false });
       },
 

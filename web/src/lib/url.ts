@@ -1,10 +1,10 @@
 // Les choix de la page vivent dans l'adresse : elle se partage telle quelle.
 
-export const searchParams = () => new URLSearchParams(location.search);
+export const searchParams = (): URLSearchParams => new URLSearchParams(location.search);
 
-export function setParam(key: string, value: string | null | undefined, keepEmpty = false) {
+export function setParam(key: string, value: string | null | undefined, keepEmpty = false): void {
   const url = new URL(location.href);
-  if (value || (keepEmpty && value === '')) {
+  if ((value !== null && value !== undefined && value !== '') || (keepEmpty && value === '')) {
     url.searchParams.set(key, value);
   } else {
     url.searchParams.delete(key);
@@ -16,7 +16,7 @@ export function setParam(key: string, value: string | null | undefined, keepEmpt
 
 // Adresse d'une autre page, avec les choix communs aux pages et les paramètres de `extra`.
 // Une valeur vide reste dans l'adresse (aucune équipe, toutes les sessions).
-export function pageUrl(href: string, extra: Record<string, string> = {}) {
+export function pageUrl(href: string, extra: Record<string, string> = {}): string {
   const url = new URL(href, location.href);
   const here = searchParams();
   for (const key of [

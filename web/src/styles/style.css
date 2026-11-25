@@ -1313,6 +1313,7 @@ th[aria-sort] {
 }
 
 .submit-status {
+    display: block;
     margin-top: var(--space-3);
     font-size: var(--font-size-sm);
     color: var(--color-text-muted);
@@ -2188,7 +2189,7 @@ input[type='range']:active::-moz-range-thumb {
     dominant-baseline: middle;
 }
 
-.bump-plot:focus-visible {
+#bump-svg:focus-visible {
     outline-offset: var(--space-1);
 }
 
@@ -3629,6 +3630,10 @@ details[open] > summary ~ * {
 .archive-status {
     margin: var(--space-2) 0;
     color: var(--color-text-muted);
+}
+
+.archive-status {
+    display: block;
 }
 
 .badge.archived {

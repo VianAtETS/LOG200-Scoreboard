@@ -11,5 +11,5 @@ export const WINDOW_OPTIONS = [
   { value: GLOBAL, label: 'Tout' },
 ];
 
-export const windowOf = (value: string | null) =>
+export const windowOf = (value: string | null): string =>
   value !== null && value in WINDOWS ? value : GLOBAL;

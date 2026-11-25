@@ -6,17 +6,12 @@ import { cn } from '@/lib/utils';
 import type { TRunningGame } from '@/types/games.types';
 import type { TRankingRow } from '@/lib/archives';
 import type { TModel, TPaceStat } from '@/types/summary.types';
-import { useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { FC, PointerEvent, ReactNode, SyntheticEvent } from 'react';
-import {
-  ELO_STATS,
-  PACE_STATS,
-  RECORD_STATS,
-  SORT_COLUMNS,
-  rankingView,
-  statOf,
-} from './ranking.data';
-import type { TEloStat, TRankingSort, TRecordStat, TSortColumn } from './ranking.data';
+import { ELO_STATS, PACE_STATS, RECORD_STATS, SORT_COLUMNS, rankingView } from './ranking.data';
+import type { TEloStat, TRankingSort, TRecordStat } from './ranking.data';
+// oxlint-disable-next-line import/max-dependencies -- The ranking section composes controls, rows and scroll tracking.
+import { RankingHeaders, RankingTools } from './ranking-controls';
 import { RankingRow } from './ranking-row';
 import type { TDuel } from './ranking-row';
 
@@ -31,7 +26,7 @@ type Props = {
   running: TRunningGame[];
   model: TModel | null | undefined;
   versionOf: (team: string, build?: string) => string;
-  timeMs?: number;
+  timeMs?: number | undefined;
   eloStat: TEloStat;
   recordStat: TRecordStat;
   paceStat: TPaceStat;
@@ -43,31 +38,108 @@ type Props = {
   onOpenQueue: () => void;
 };
 
-type SortHeaderProps = {
-  column: TSortColumn;
-  label: string;
-  title?: string;
-  sort: TRankingSort;
-  onSort: (column: TSortColumn) => void;
-  className?: string;
+const opponentOf = (ev: SyntheticEvent): string | null =>
+  ev.target instanceof Element
+    ? (ev.target.closest<HTMLElement>('[data-opponent]')?.dataset['opponent'] ?? null)
+    : null;
+function duelsByTeam(running: TRunningGame[], model: Props['model']): Map<string, TDuel> {
+  const duels = new Map<string, TDuel>();
+  for (const game of running) {
+    for (const color of ['red', 'black'] as const) {
+      const team = game[color];
+      if (duels.has(team)) {
+        continue;
+      }
+      const peer = game[color === 'red' ? 'black' : 'red'];
+      duels.set(team, {
+        id: game.id,
+        opponent: peer,
+        color,
+        chance: winProbability(model, team, peer, color),
+        tournament: game.tournament,
+      });
+    }
+  }
+  return duels;
+}
+
+function rankingNotes(ratings: TRankingRow[], timeMs: number | undefined): ReactNode {
+  return (
+    <details className="how">
+      <summary>Comment l&apos;Elo est calculé</summary>
+      <p>
+        Chaque équipe part à 1500. Un nouveau jar joue ses 20 premières parties à K = 40 (marque{' '}
+        <Badge>provisoire</Badge>), puis à K = 20.{' '}
+        <span id="anchor-note" hidden={!ratings.some((rating) => rating.anchor)}>
+          Une <Badge variant="anchor">ancre</Badge> garde un rating fixe de 1500.
+        </span>{' '}
+        <span
+          id="bot-note"
+          hidden={!ratings.some((rating) => rating.build === undefined || rating.build === '')}
+        >
+          Une ligne grisée marquée <Badge>bot</Badge> est un adversaire de référence, pas une
+          équipe.
+        </span>{' '}
+        <span id="remote-note" hidden={!ratings.some((rating) => rating.remote)}>
+          Une équipe marquée <Badge variant="remote">distant</Badge> joue depuis sa propre machine :
+          le serveur ne voit pas son code, ne limite ni ses coeurs ni sa mémoire, et compte la
+          latence réseau dans son temps.
+        </span>{' '}
+        Temps par coup du ladder : <span id="time-ms">{timeMs ?? '?'}</span> ms, contre 5000 ms au
+        tournoi.
+      </p>
+    </details>
+  );
+}
+
+type TOpponentHighlight = {
+  opponent: string | null;
+  showOpponent: (event: SyntheticEvent) => void;
+  clearOpponent: () => void;
+  handlePointerOver: (event: PointerEvent) => void;
+  handlePointerOut: (event: PointerEvent) => void;
 };
 
-const SortHeader: FC<SortHeaderProps> = ({ column, label, title, sort, onSort, className }) => (
-  <th
-    scope="col"
-    className={className}
-    aria-sort={sort.column === column ? sort.direction : undefined}
-  >
-    <button className="th-sort" type="button" title={title} onClick={() => onSort(column)}>
-      {column === 'rank' && <span className="sr-only">Rang officiel </span>}
-      {label}
-      <span className="sort-direction" aria-hidden="true" />
-    </button>
-  </th>
-);
+function useOpponentHighlight(): TOpponentHighlight {
+  const [opponent, setOpponent] = useState<string | null>(null);
+  const showOpponent = useCallback(
+    (event: SyntheticEvent): void => setOpponent(opponentOf(event)),
+    [],
+  );
+  const clearOpponent = useCallback((): void => setOpponent(null), []);
+  const handlePointerOver = useCallback(
+    (event: PointerEvent): void => {
+      if (event.pointerType === 'mouse') {
+        showOpponent(event);
+      }
+    },
+    [showOpponent],
+  );
+  const handlePointerOut = useCallback(
+    (event: PointerEvent): void => {
+      if (event.pointerType === 'mouse') {
+        clearOpponent();
+      }
+    },
+    [clearOpponent],
+  );
+  return { opponent, showOpponent, clearOpponent, handlePointerOver, handlePointerOut };
+}
 
-const opponentOf = (e: SyntheticEvent) =>
-  (e.target as Element).closest?.<HTMLElement>('[data-opponent]')?.dataset.opponent ?? null;
+function sortLabel(
+  { column }: TRankingSort,
+  eloStat: TEloStat,
+  recordStat: TRecordStat,
+  paceStat: TPaceStat,
+): string {
+  const labels = {
+    ...SORT_COLUMNS,
+    elo: ELO_STATS[eloStat][0],
+    record: RECORD_STATS[recordStat][0],
+    pace: PACE_STATS[paceStat][0],
+  };
+  return labels[column];
+}
 
 const RankingSection: FC<Props> = ({
   ratings,
@@ -89,54 +161,17 @@ const RankingSection: FC<Props> = ({
   collapsed,
   onToggle,
 }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const scroll = useScrollEdges(scrollRef);
-  const [opponent, setOpponent] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLElement>(null);
+  const { edges, onScroll: handleScroll } = useScrollEdges(scrollRef);
 
-  const duels = new Map<string, TDuel>();
-  for (const g of running) {
-    if (!duels.has(g.red)) {
-      duels.set(g.red, {
-        id: g.id,
-        opponent: g.black,
-        color: 'red',
-        chance: winProbability(model, g.red, g.black, 'red'),
-        tournament: g.tournament,
-      });
-    }
-    if (!duels.has(g.black)) {
-      duels.set(g.black, {
-        id: g.id,
-        opponent: g.red,
-        color: 'black',
-        chance: winProbability(model, g.black, g.red, 'black'),
-        tournament: g.tournament,
-      });
-    }
-  }
+  const { opponent, showOpponent, clearOpponent, handlePointerOver, handlePointerOut } =
+    useOpponentHighlight();
+  const duels = useMemo(() => duelsByTeam(running, model), [running, model]);
   const { rows: sorted, ranks } = rankingView(ratings, sort, {
     elo: eloStat,
     record: recordStat,
     pace: paceStat,
   });
-
-  const showOpponent = (e: SyntheticEvent) => setOpponent(opponentOf(e));
-  const clearOpponent = () => setOpponent(null);
-  // Au tactile, c'est le focus de la pastille qui surligne.
-  const mouseOnly = (handler: (e: PointerEvent) => void) => (e: PointerEvent) =>
-    e.pointerType === 'mouse' && handler(e);
-
-  const [eloLabel, eloTitle] = ELO_STATS[eloStat];
-  const [recordLabel, recordTitle] = RECORD_STATS[recordStat];
-  const [paceLabel, paceTitle] = PACE_STATS[paceStat];
-  const labels = { ...SORT_COLUMNS, elo: eloLabel, record: recordLabel, pace: paceLabel };
-  const onSort = (column: TSortColumn) =>
-    onSortChange({
-      column,
-      direction:
-        sort.column === column && sort.direction === 'ascending' ? 'descending' : 'ascending',
-    });
-  const sortProps = { sort, onSort };
 
   return (
     <section id="ranking-section" className="section ranking" aria-labelledby="ranking-title">
@@ -160,184 +195,68 @@ const RankingSection: FC<Props> = ({
         </button>
       </div>
       {children}
-      <div className="ranking-tools" role="group" aria-label="Mesures affichées">
-        <label htmlFor="elo-stat">
-          <span>Score</span>
-          <select
-            id="elo-stat"
-            value={eloStat}
-            title={eloTitle}
-            onChange={(e) => onEloChange(statOf(ELO_STATS, e.target.value, eloStat))}
-          >
-            {Object.entries(ELO_STATS).map(([value, [label, title]]) => (
-              <option key={value} value={value} title={title}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label htmlFor="record-stat">
-          <span>Bilan</span>
-          <select
-            id="record-stat"
-            value={recordStat}
-            aria-label="Bilan et parties"
-            title={recordTitle}
-            onChange={(e) => onRecordChange(statOf(RECORD_STATS, e.target.value, recordStat))}
-          >
-            <option value="all" title={RECORD_STATS.all[1]}>
-              Total
-            </option>
-            <option value="build" title={RECORD_STATS.build[1]}>
-              Actuel
-            </option>
-          </select>
-        </label>
-        <label htmlFor="pace-stat">
-          <span>Temps</span>
-          <select
-            id="pace-stat"
-            value={paceStat}
-            aria-label="Temps par coup"
-            title={paceTitle}
-            onChange={(e) => onPaceChange(statOf(PACE_STATS, e.target.value, paceStat))}
-          >
-            {Object.entries(PACE_STATS).map(([value, [label, title]]) => (
-              <option key={value} value={value} title={title}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <p className="sr-only" role="status">
-        {`Tri : ${labels[sort.column]}, ordre ${sort.direction === 'ascending' ? 'croissant' : 'décroissant'}.`}
-      </p>
-      <div
+      <RankingTools
+        eloStat={eloStat}
+        recordStat={recordStat}
+        paceStat={paceStat}
+        onEloChange={onEloChange}
+        onRecordChange={onRecordChange}
+        onPaceChange={onPaceChange}
+      />
+      <output className="sr-only">
+        {`Tri : ${sortLabel(sort, eloStat, recordStat, paceStat)}, ordre ${sort.direction === 'ascending' ? 'croissant' : 'décroissant'}.`}
+      </output>
+      <section
         ref={scrollRef}
-        className={cn(
-          'scroll ranking-scroll',
-          scroll.edges.less && 'less',
-          scroll.edges.more && 'more',
-        )}
+        className={cn('scroll ranking-scroll', edges.less && 'less', edges.more && 'more')}
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- The scroll region must be reachable by keyboard.
         tabIndex={0}
-        role="region"
         aria-labelledby="ranking-title"
-        onScroll={scroll.onScroll}
+        onScroll={handleScroll}
       >
         <table id="ranking">
           <caption className="sr-only">
             Classement et statistiques des équipes. Le numéro reste le rang officiel.
           </caption>
-          <thead>
-            <tr>
-              <SortHeader
-                {...sortProps}
-                column="rank"
-                label="#"
-                title="Rang officiel selon l’Elo actuel"
-                className="num"
-              />
-              <SortHeader {...sortProps} column="team" label="Équipe" className="team" />
-              <SortHeader
-                {...sortProps}
-                column="elo"
-                label={eloLabel}
-                title={eloTitle}
-                className="num"
-              />
-              <SortHeader
-                {...sortProps}
-                column="record"
-                label={recordLabel}
-                title={`${recordTitle}. Tri par victoires, puis moins de défaites.`}
-                className="num record"
-              />
-              <SortHeader
-                {...sortProps}
-                column="games"
-                label="Parties"
-                title={
-                  recordStat === 'build'
-                    ? 'Nombre de parties, version actuelle'
-                    : 'Nombre de parties, toutes versions'
-                }
-                className="num"
-              />
-              <SortHeader
-                {...sortProps}
-                column="pct"
-                label="% V"
-                title="Pourcentage de victoires, version actuelle"
-                className="num pct"
-              />
-              <SortHeader
-                {...sortProps}
-                column="pace"
-                label={paceLabel}
-                title={`${paceTitle}, version actuelle`}
-                className="num pace"
-              />
-              <SortHeader
-                {...sortProps}
-                column="last"
-                label="Dernière"
-                title="Date de la dernière partie"
-                className="num last-col"
-              />
-            </tr>
-          </thead>
+          <RankingHeaders
+            eloStat={eloStat}
+            recordStat={recordStat}
+            paceStat={paceStat}
+            sort={sort}
+            onSortChange={onSortChange}
+          />
+          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Highlighting delegates to the row's real focusable controls. */}
           <tbody
-            onPointerOver={mouseOnly(showOpponent)}
+            onPointerOver={handlePointerOver}
             onFocus={showOpponent}
-            onPointerOut={mouseOnly(clearOpponent)}
+            onPointerOut={handlePointerOut}
             onBlur={clearOpponent}
           >
-            {sorted.map((r) => {
-              const active = !r.archived;
-              const duel = active ? duels.get(r.team) : undefined;
+            {sorted.map((rating) => {
+              const active = !rating.archived;
+              const duel = active ? duels.get(rating.team) : undefined;
               return (
                 <RankingRow
-                  key={active ? r.team : `${r.team}@${r.build}`}
-                  rank={active ? ranks.get(r.team) : undefined}
-                  rating={r}
-                  version={versionOf(r.team, r.build)}
+                  key={active ? rating.team : `${rating.team}@${rating.build}`}
+                  rank={active ? ranks.get(rating.team) : undefined}
+                  rating={rating}
+                  version={versionOf(rating.team, rating.build)}
                   duel={duel}
                   eloStat={eloStat}
                   recordStat={recordStat}
                   paceStat={paceStat}
-                  highlight={active && opponent === r.team}
+                  highlight={active && opponent === rating.team}
                 />
               );
             })}
           </tbody>
         </table>
         <p id="ranking-empty" className="empty" hidden={!loaded || ratings.length > 0}>
-          Aucune partie pour l'instant : le classement se remplit dès que deux équipes ont un jar
-          accepté.
+          Aucune partie pour l&apos;instant : le classement se remplit dès que deux équipes ont un
+          jar accepté.
         </p>
-      </div>
-      <details className="how">
-        <summary>Comment l'Elo est calculé</summary>
-        <p>
-          Chaque équipe part à 1500. Un nouveau jar joue ses 20 premières parties à K = 40 (marque{' '}
-          <Badge>provisoire</Badge>), puis à K = 20.{' '}
-          <span id="anchor-note" hidden={!ratings.some((r) => r.anchor)}>
-            Une <Badge variant="anchor">ancre</Badge> garde un rating fixe de 1500.
-          </span>{' '}
-          <span id="bot-note" hidden={!ratings.some((r) => !r.build)}>
-            Une ligne grisée marquée <Badge>bot</Badge> est un adversaire de référence, pas une
-            équipe.
-          </span>{' '}
-          <span id="remote-note" hidden={!ratings.some((r) => r.remote)}>
-            Une équipe marquée <Badge variant="remote">distant</Badge> joue depuis sa propre machine
-            : le serveur ne voit pas son code, ne limite ni ses coeurs ni sa mémoire, et compte la
-            latence réseau dans son temps.
-          </span>{' '}
-          Temps par coup du ladder : <span id="time-ms">{timeMs ?? '?'}</span> ms, contre 5000 ms au
-          tournoi.
-        </p>
-      </details>
+      </section>
+      {rankingNotes(ratings, timeMs)}
     </section>
   );
 };

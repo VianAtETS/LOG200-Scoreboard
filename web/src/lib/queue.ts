@@ -3,8 +3,8 @@
 // À partir de LIST_FROM équipes, l'arbre serait trop large : les cases se rangent en liste.
 // Le dessin est dans components/queue/ ; ici, la géométrie et les textes.
 
-import type { TColor } from '../types/games.types';
-import type { TQueueTeam } from '../types/summary.types';
+import type { TColor } from '@/types/games.types';
+import type { TQueueTeam } from '@/types/summary.types';
 
 export const LIST_FROM = 60;
 export const COLUMN = 72;
@@ -15,6 +15,7 @@ export const BELOW = 54;
 const LABEL = 9;
 const BEND = 7;
 export const STEP_MS = 90;
+const SECONDS_PER_MINUTE = 60;
 
 export type TQueueNode = TQueueTeam & { depth: number; parent: number | null; path: boolean };
 
@@ -24,19 +25,22 @@ export type TPoint = { x: number; y: number };
 export type TQueueMarks = { busy: Map<string, TColor>; called: Set<string> };
 
 // Nœuds dans l'ordre de la file : `parent` est un indice, `path` marque le chemin de la racine à `next`.
-export function layout(teams: TQueueTeam[], next: number) {
+export function layout(teams: TQueueTeam[], next: number): TQueueNode[] {
   const nodes: TQueueNode[] = teams.map((team) => ({
     ...team,
     depth: 0,
     parent: null,
     path: false,
   }));
-  const place = (lo: number, hi: number, depth: number, parent: number | null) => {
+  const place = (lo: number, hi: number, depth: number, parent: number | null): void => {
     if (lo >= hi) {
       return;
     }
-    const mid = (lo + hi - 1) >> 1;
-    Object.assign(nodes[mid], { depth, parent, path: lo <= next && next < hi });
+    const mid = Math.floor((lo + hi - 1) / 2);
+    const node = nodes[mid];
+    if (node !== undefined) {
+      Object.assign(node, { depth, parent, path: lo <= next && next < hi });
+    }
     place(lo, mid, depth + 1, mid);
     place(mid + 1, hi, depth + 1, mid);
   };
@@ -44,18 +48,23 @@ export function layout(teams: TQueueTeam[], next: number) {
   return nodes;
 }
 
-export const signed = (n: number) => `${n < 0 ? '−' : '+'}${Math.abs(n)}`;
-export const short = (id: string) => (id.length > LABEL ? `${id.slice(0, LABEL - 1)}…` : id);
+export const signed = (value: number): string => `${value < 0 ? '−' : '+'}${Math.abs(value)}`;
+export const short = (id: string): string =>
+  id.length > LABEL ? `${id.slice(0, LABEL - 1)}…` : id;
 
 // Coude arrondi de `a` vers `b`, depuis un point déjà placé à l'abscisse de `a`, jusqu'à l'ordonnée `to`.
-export function bend(a: TPoint, b: TPoint, to: number) {
-  const mid = (a.y + TILE.h / 2 + b.y - TILE.h / 2) / 2;
-  const s = Math.sign(b.x - a.x);
-  return `V${mid - BEND}Q${a.x} ${mid} ${a.x + s * BEND} ${mid}H${b.x - s * BEND}Q${b.x} ${mid} ${b.x} ${mid + BEND}V${to}`;
+export function bend(left: TPoint, right: TPoint, to: number): string {
+  const mid = (left.y + TILE.h / 2 + right.y - TILE.h / 2) / 2;
+  const direction = Math.sign(right.x - left.x);
+  return `V${mid - BEND}Q${left.x} ${mid} ${left.x + direction * BEND} ${mid}H${right.x - direction * BEND}Q${right.x} ${mid} ${right.x} ${mid + BEND}V${to}`;
 }
 
 // Ce que la case montre.
-export function kinds(team: TQueueTeam, { busy, called }: TQueueMarks, next: boolean) {
+export function kinds(
+  team: TQueueTeam,
+  { busy, called }: TQueueMarks,
+  next: boolean,
+): (string | false)[] {
   return [
     team.bot ? 'bot' : 'team',
     next && 'next',
@@ -64,19 +73,19 @@ export function kinds(team: TQueueTeam, { busy, called }: TQueueMarks, next: boo
   ];
 }
 
-export function describe(team: TQueueTeam, { busy, called }: TQueueMarks) {
+export function describe(team: TQueueTeam, { busy, called }: TQueueMarks): string {
   const pawn = busy.get(team.id);
   const where = pawn ? `, en partie avec les ${pawn === 'red' ? 'rouges' : 'noirs'}` : '';
   return `${team.id} : ${signed(team.ahead)}${where}${called.has(team.id) ? ', annoncée' : ''}`;
 }
 
 // Temps restant avant `at`, pour l'annonce : « dans 42 s », « dans 1 min 05 » ou « maintenant ».
-export function countdown(at: string, now: number) {
-  const s = Math.ceil((Date.parse(at) - now) / 1000);
-  if (!(s > 0)) {
+export function countdown(at: string, now: number): string {
+  const seconds = Math.ceil((Date.parse(at) - now) / 1000);
+  if (!(seconds > 0)) {
     return 'maintenant';
   }
-  return s < 60
-    ? `dans ${s} s`
-    : `dans ${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`;
+  return seconds < SECONDS_PER_MINUTE
+    ? `dans ${seconds} s`
+    : `dans ${Math.floor(seconds / SECONDS_PER_MINUTE)} min ${String(seconds % SECONDS_PER_MINUTE).padStart(2, '0')}`;
 }

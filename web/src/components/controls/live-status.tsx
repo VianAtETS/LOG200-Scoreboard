@@ -11,6 +11,8 @@ type Props = {
 };
 
 const LiveStatus: FC<Props> = ({ dot, text, pulses = 0 }) => (
+  // A paragraph preserves the existing status text layout.
+  // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
   <p className="status" role="status">
     {/* Une nouvelle clé remonte le point : l'animation repart. */}
     <span

@@ -12,7 +12,7 @@ type Props = {
   games: TGameRow[];
   rating: (side: TSide) => TRatingChange;
   currentId: string | null;
-  selectedTeam?: string;
+  selectedTeam?: string | undefined;
   sideOrder?: TSideOrder;
   onSelect: (game: TGameRow) => void;
 };
@@ -20,7 +20,8 @@ type Props = {
 const GamesList: FC<Props> = ({ games, rating, currentId, selectedTeam, sideOrder, onSelect }) => {
   const ref = useRef<HTMLOListElement>(null);
   const scroll = useScrollEdges(ref);
-  const items = games.slice(-RECENT_GAMES).reverse();
+  const handleScroll = scroll.onScroll;
+  const items = games.slice(-RECENT_GAMES).toReversed();
 
   return (
     <ol
@@ -28,15 +29,15 @@ const GamesList: FC<Props> = ({ games, rating, currentId, selectedTeam, sideOrde
       id="games"
       className={cn('scroll games-list', scroll.edges.less && 'less', scroll.edges.more && 'more')}
       tabIndex={-1}
-      onScroll={scroll.onScroll}
+      onScroll={handleScroll}
     >
       {items.length > 0 ? (
-        items.map((g) => (
+        items.map((game) => (
           <GameItem
-            key={g.id}
-            game={g}
+            key={game.id}
+            game={game}
             rating={rating}
-            current={g.id === currentId}
+            current={game.id === currentId}
             selectedTeam={selectedTeam}
             sideOrder={sideOrder}
             onSelect={onSelect}

@@ -1,6 +1,6 @@
 // Les versions restent celles de summary.builds : équipe + hash, jamais le seul nom d'équipe.
-import type { TColor, TGameRow } from '../types/games.types';
-import type { TSummary, TTeamRating } from '../types/summary.types';
+import type { TColor, TGameRow } from '@/types/games.types';
+import type { TSummary, TTeamRating } from '@/types/summary.types';
 import { isRemote, ratingOf } from './elo.ts';
 
 export type TArchiveOption = {
@@ -13,14 +13,22 @@ export type TArchiveOption = {
 
 export type TRankingRow = TTeamRating & { archived?: boolean };
 
-export const archiveKey = (team: string, build?: string) => `${encodeURIComponent(team)}@${build}`;
+export const archiveKey = (team: string, build?: string): string =>
+  `${encodeURIComponent(team)}@${build}`;
 
-export function currentBuilds(summary: TSummary) {
+export function currentBuilds(summary: TSummary): Map<string, string | undefined> {
   const latest = new Map<string, TTeamRating>();
   for (const scope of Object.values(summary.scopes)) {
-    for (const r of scope.ratings) {
-      if (r.build && (!latest.has(r.team) || r.last! > latest.get(r.team)!.last!))
-        latest.set(r.team, r);
+    for (const row of scope.ratings) {
+      const previous = latest.get(row.team);
+      if (
+        row.build !== undefined &&
+        row.build !== '' &&
+        (previous === undefined ||
+          (row.last !== undefined && previous.last !== undefined && row.last > previous.last))
+      ) {
+        latest.set(row.team, row);
+      }
     }
   }
   return new Map(
@@ -50,30 +58,46 @@ export function archiveOptions(summary: TSummary): TArchiveOption[] {
   );
 }
 
+function updateArchive(entry: TRankingRow, game: TGameRow, color: TColor, rating: number): void {
+  const row = entry;
+  row.rating = rating;
+  row.peak = Math.max(entry.peak ?? Number.NaN, rating);
+  row.games += 1;
+  row.build_games += 1;
+  if (game.winner === color) {
+    row.wins += 1;
+    row.build_wins += 1;
+  } else {
+    row.losses += 1;
+  }
+  row.remote ||= Boolean(game[color].remote);
+  row.last = game.ts;
+}
+
 // Dernier Elo réellement enregistré pour ce build, sans recalculer le classement actuel.
 export function archivedRows(
   rows: readonly TGameRow[],
   selected: TArchiveOption[],
   { session = '', verified = false }: { session?: string; verified?: boolean } = {},
 ): TRankingRow[] {
-  const wanted = new Map(selected.map((s) => [s.key, s]));
+  const wanted = new Map(selected.map((text) => [text.key, text]));
   const out = new Map<string, TRankingRow>();
-  for (const g of [...rows].sort((a, b) => a.ts.localeCompare(b.ts))) {
-    if (session ? g.session !== session : g.tournament) {
+  for (const game of rows.toSorted((left, right) => left.ts.localeCompare(right.ts))) {
+    if (session === '' ? Boolean(game.tournament) : game.session !== session) {
       continue;
     }
-    if (verified && isRemote(g)) {
+    if (verified && isRemote(game)) {
       continue;
     }
     for (const color of ['red', 'black'] as TColor[]) {
-      const side = g[color];
+      const side = game[color];
       const id = archiveKey(side.team, side.build);
       const option = wanted.get(id);
       if (!option) {
         continue;
       }
       const [rating, delta] = ratingOf(side, session ? 'session' : 'all', verified);
-      const r = out.get(id) ?? {
+      const entry = out.get(id) ?? {
         ...option,
         rating,
         peak: rating - delta,
@@ -85,19 +109,8 @@ export function archivedRows(
         archived: true,
         remote: false,
       };
-      r.rating = rating;
-      r.peak = Math.max(r.peak!, rating);
-      r.games++;
-      r.build_games++;
-      if (g.winner === color) {
-        r.wins++;
-        r.build_wins++;
-      } else {
-        r.losses++;
-      }
-      r.remote ||= Boolean(side.remote);
-      r.last = g.ts;
-      out.set(id, r);
+      updateArchive(entry, game, color, rating);
+      out.set(id, entry);
     }
   }
   return [...out.values()];
@@ -106,21 +119,27 @@ export function archivedRows(
 // Anciennes versions placées à leur Elo dans le classement (déjà trié par Elo), sans rang actif, avec
 // leurs temps par coup publiés sur la ligne de leur équipe.
 export function withArchivedRows(ratings: TTeamRating[], archived: TRankingRow[]): TRankingRow[] {
-  const teams = new Map(ratings.map((r) => [r.team, r]));
+  const teams = new Map(ratings.map((rating) => [rating.team, rating]));
   const extra = archived
-    .filter((old) => teams.get(old.team)?.build !== old.build)
-    .map((old) => {
-      const pace = teams.get(old.team)?.archived_paces?.[old.build!];
-      return pace ? { ...old, pace } : old;
+    .flatMap((old) => {
+      const team = teams.get(old.team);
+      if (team?.build === old.build) {
+        return [];
+      }
+      const pace = team?.archived_paces?.[String(old.build)];
+      return [pace ? { ...old, pace } : old];
     })
-    .sort((a, b) => b.rating - a.rating);
+    .toSorted((left, right) => right.rating - left.rating);
   const out: TRankingRow[] = [];
   let i = 0;
-  for (const r of ratings) {
-    while (i < extra.length && extra[i].rating > r.rating) {
-      out.push(extra[i++]);
+  for (const rating of ratings) {
+    let next = extra[i];
+    while (next !== undefined && next.rating > rating.rating) {
+      out.push(next);
+      i += 1;
+      next = extra[i];
     }
-    out.push(r);
+    out.push(rating);
   }
-  return out.concat(extra.slice(i));
+  return [...out, ...extra.slice(i)];
 }

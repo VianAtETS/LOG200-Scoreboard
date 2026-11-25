@@ -16,18 +16,27 @@ type Props = {
 // Avec deux équipes choisies : bilan de la version actuelle de chacune contre l'autre, et lien vers
 // leur duel avec le nombre de paires complètes de ces versions.
 const DuelRecord: FC<Props> = ({ teams, games, ratings, versionOf }) => {
-  const current = (team: string) => ratings.find((r) => r.team === team)?.build;
-  const sides = teams.length === 2 ? teams.map((team) => ({ team, build: current(team) })) : null;
+  const current = (team: string): string | undefined =>
+    ratings.find((rating) => rating.team === team)?.build;
+  const sides =
+    teams.length === 2
+      ? teams.map((team) => {
+          const build = current(team);
+          return build === undefined ? { team } : { team, build };
+        })
+      : null;
   const { data: pairs } = useGetDuelPairs(sides);
   if (!sides) {
     return <p id="duel" className="graph-link" hidden />;
   }
 
-  const line = (team: string, opponent: string) => {
+  const line = (team: string, opponent: string): string => {
     const build = current(team);
-    const { wins, games: n } = record(games, team, opponent, build);
+    const { wins, games: total } = record(games, team, opponent, build);
     const name = [team, versionOf(team, build)].filter(Boolean).join(' ');
-    const score = n ? `${wins}–${n - wins} (${Math.round((100 * wins) / n)} %)` : 'aucune partie';
+    const score = total
+      ? `${wins}–${total - wins} (${Math.round((100 * wins) / total)} %)`
+      : 'aucune partie';
     return `${name} contre ${opponent} : ${score}`;
   };
 
@@ -37,8 +46,8 @@ const DuelRecord: FC<Props> = ({ teams, games, ratings, versionOf }) => {
       className="graph-link"
       title="Version actuelle de chaque équipe, contre toutes les versions de l'autre"
     >
-      {`${line(teams[0], teams[1])} · ${line(teams[1], teams[0])} · `}
-      <a href={pageUrl('duel.html', { builds: sides.map((s) => s.build ?? '*').join(',') })}>
+      {`${line(teams[0] ?? '', teams[1] ?? '')} · ${line(teams[1] ?? '', teams[0] ?? '')} · `}
+      <a href={pageUrl('duel.html', { builds: sides.map((side) => side.build ?? '*').join(',') })}>
         {pairs ? `Duel : ${pairs.length} paire${pairs.length > 1 ? 's' : ''}` : 'Duel'}
       </a>
     </p>

@@ -4,43 +4,55 @@ import { tail, tailState } from '@/lib/tail';
 import type { TTailState } from '@/lib/tail';
 import type { TDuelSide, TGame, TGameRow, TTimelineRow } from '@/types/games.types';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { useRef } from 'react';
 import { queryKeys } from './query-keys';
 
 // Parties des équipes choisies, lues dans teams/<équipe>.jsonl puis suivies par morceaux. Les lectures
 // passent à la file : deux lectures en parallèle d'un même fichier doubleraient des lignes.
 // `use` : une clé par usage, pour que deux appels sur les mêmes équipes ne partagent pas leur cache.
-export const useGetTeamRows = (teams: string[], use = 'picked') => {
+export const useGetTeamRows = (
+  teams: string[],
+  use = 'picked',
+): UseQueryResult<Map<string, TGameRow[]>> => {
   const followed = useRef(new Map<string, TTailState<TGameRow>>());
-  const following = useRef<Promise<unknown>>(Promise.resolve());
+  const following = useRef<Promise<unknown> | null>(null);
   // Même Map tant que rien n'arrive : la page ne pulse qu'à l'arrivée de parties.
   const last = useRef<Map<string, TGameRow[]> | null>(null);
 
   return useQuery({
     queryKey: [queryKeys.teamRows, use, teams.join(',')],
     queryFn: async () => {
+      const selected = new Set(teams);
       for (const team of followed.current.keys()) {
-        if (!teams.includes(team)) followed.current.delete(team);
+        if (!selected.has(team)) {
+          followed.current.delete(team);
+        }
       }
       for (const team of teams) {
-        if (!followed.current.has(team)) followed.current.set(team, tailState());
+        if (!followed.current.has(team)) {
+          followed.current.set(team, tailState());
+        }
       }
       const states = [...followed.current];
-      const run = following.current
-        .catch(() => {})
-        .then(async () =>
-          Promise.all(states.map(async ([team, state]) => tail(teamUrl(team), state))),
-        )
-        .then((added) => {
-          const same =
-            last.current?.size === states.length &&
-            states.every(([team]) => last.current?.has(team));
-          if (same && !added.some(Boolean)) {
-            return last.current!;
-          }
-          last.current = new Map(states.map(([team, state]) => [team, state.rows]));
-          return last.current;
-        });
+      const previous = following.current;
+      const run = (async () => {
+        try {
+          await previous;
+        } catch {
+          // A failed read must not block the next refresh.
+        }
+        const added = await Promise.all(
+          states.map(async ([team, state]) => tail(teamUrl(team), state)),
+        );
+        const cached = last.current;
+        const same = cached?.size === states.length && states.every(([team]) => cached.has(team));
+        if (same && !added.some(Boolean)) {
+          return cached;
+        }
+        last.current = new Map(states.map(([team, state]) => [team, state.rows]));
+        return last.current;
+      })();
       following.current = run;
       return run;
     },
@@ -52,12 +64,13 @@ export const useGetTeamRows = (teams: string[], use = 'picked') => {
 };
 
 // timeline.jsonl, lu en entier puis suivi par morceaux. Même tableau tant que rien n'arrive.
-export const useGetTimeline = () => {
-  const state = useRef(tailState<TTimelineRow>());
+export const useGetTimeline = (): UseQueryResult<TTimelineRow[]> => {
+  const state = useRef<TTailState<TTimelineRow> | null>(null);
 
   return useQuery({
     queryKey: [queryKeys.timeline],
     queryFn: async () => {
+      state.current ??= tailState<TTimelineRow>();
       await tail(timelineUrl(), state.current);
       return state.current.rows;
     },
@@ -67,19 +80,31 @@ export const useGetTimeline = () => {
 };
 
 // Partie complète ; une partie terminée ne change plus.
-export const useGetGame = (row: Pick<TGameRow, 'id' | 'at'> | undefined) =>
+export const useGetGame = (row: Pick<TGameRow, 'id' | 'at'> | undefined): UseQueryResult<TGame> =>
   useQuery<TGame>({
     queryKey: [queryKeys.game, row?.id],
-    queryFn: async () => getGame(row!),
+    queryFn: async () => {
+      if (row === undefined) {
+        throw new Error('A game is required');
+      }
+      return getGame(row);
+    },
     enabled: Boolean(row),
     staleTime: Infinity,
   });
 
 // Paires complètes d'un duel, suivies au rythme de la page ; `null` : pas encore de duel.
-export const useGetDuelPairs = (sides: TDuelSide[] | null) =>
+export const useGetDuelPairs = (
+  sides: TDuelSide[] | null,
+): UseQueryResult<Awaited<ReturnType<typeof getDuelPairs>>> =>
   useQuery({
-    queryKey: [queryKeys.pairs, sides?.map((s) => `${s.team}@${s.build ?? ''}`).join(',')],
-    queryFn: async () => getDuelPairs(sides!),
+    queryKey: [queryKeys.pairs, sides?.map((side) => `${side.team}@${side.build ?? ''}`).join(',')],
+    queryFn: async () => {
+      if (sides === null) {
+        throw new Error('Duel sides are required');
+      }
+      return getDuelPairs(sides);
+    },
     enabled: Boolean(sides),
     refetchInterval: REFRESH_MS,
   });

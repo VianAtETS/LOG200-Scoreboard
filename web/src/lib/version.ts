@@ -1,8 +1,11 @@
+const VERSION_COMPONENTS = 3;
 export type TReleaseState = 'current' | 'behind' | 'ahead' | 'unknown';
 
-const parse = (version: string | null | undefined) => {
-  const parts = (version ?? '').replace(/^v/, '').split('.');
-  return parts.length === 3 && parts.every((p) => /^\d+$/.test(p)) ? parts.map(Number) : null;
+const parse = (version: string | null | undefined): number[] | null => {
+  const parts = (version ?? '').replace(/^v/u, '').split('.');
+  return parts.length === VERSION_COMPONENTS && parts.every((part) => /^\d+$/u.test(part))
+    ? parts.map(Number)
+    : null;
 };
 
 export function releaseState(
@@ -17,5 +20,5 @@ export function releaseState(
   if (differs === -1) {
     return 'current';
   }
-  return mine[differs] < latest[differs] ? 'behind' : 'ahead';
+  return (mine[differs] ?? 0) < (latest[differs] ?? 0) ? 'behind' : 'ahead';
 }

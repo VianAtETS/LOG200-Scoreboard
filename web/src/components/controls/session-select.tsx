@@ -1,5 +1,5 @@
-import { GLOBAL } from '@/lib/constants';
-import type { FC, ReactNode } from 'react';
+import { useCallback } from 'react';
+import type { ChangeEvent, FC, ReactNode } from 'react';
 
 type Props = {
   value: string;
@@ -17,23 +17,25 @@ const SessionSelect: FC<Props> = ({
   label = 'Session',
   id = 'session',
   disabled,
-}) => (
-  <label className="session">
-    <span>{label}</span>
-    <select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  </label>
-);
-
-// "Toutes", puis chaque session.
-export const sessionOptions = (sessions: string[] = []) => [
-  { value: GLOBAL, label: 'Toutes' },
-  ...sessions.map((s) => ({ value: s, label: s })),
-];
+}) => {
+  const handleSessionChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>): void => {
+      onChange(event.target.value);
+    },
+    [onChange],
+  );
+  return (
+    <label className="session">
+      <span>{label}</span>
+      <select id={id} value={value} disabled={disabled} onChange={handleSessionChange}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+};
 
 export { SessionSelect };

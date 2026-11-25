@@ -5,9 +5,12 @@ import { cn } from '@/lib/utils';
 import type { TRunningGame } from '@/types/games.types';
 import type { TModel } from '@/types/summary.types';
 import type { TMatch, TMatchSource, TTournament } from '@/types/tournament.types';
-import type { FC } from 'react';
+import type { FC, ReactNode } from 'react';
 import { MATCH_STATUS } from './tournament.utils';
 
+const FINAL_BEST_OF = 5;
+const hasText = (value: string | null | undefined): value is string =>
+  value !== null && value !== undefined && value !== '';
 type Props = {
   match: TMatch;
   view: TTournament;
@@ -19,90 +22,127 @@ type Props = {
   describe: (team: string) => string;
 };
 
-const MatchCard: FC<Props> = ({ match: m, view, seeds, byId, model, running, describe }) => {
-  const bye = m.status === 'done' && m.games.length === 0;
-  const from = m.from.flatMap((f) => (f.winner ? [f.winner] : [])).join(',');
-
-  if (bye && !m.teams[0] && !m.teams[1]) {
-    return <div className="match-wrap" data-id={m.id} data-from={from} />;
+function awaiting(
+  source: TMatchSource | undefined,
+  bye: boolean,
+  byId: Map<string, TMatch>,
+): string {
+  if (source === undefined) {
+    return bye ? 'exempt' : 'à venir';
   }
+  const reference = source.winner ?? source.loser;
+  const previous = reference === undefined ? undefined : byId.get(reference);
+  if (
+    bye ||
+    (previous?.status === 'done' &&
+      previous.games.length === 0 &&
+      (hasText(source.loser) || !hasText(previous.winner)))
+  ) {
+    return 'exempt';
+  }
+  if (hasText(source.winner)) {
+    return `vainqueur ${source.winner}`;
+  }
+  if (hasText(source.loser)) {
+    return `perdant ${source.loser}`;
+  }
+  return 'à venir';
+}
 
-  const awaiting = (source: TMatchSource) => {
-    const previous = byId.get((source.winner ?? source.loser)!);
-    if (
-      bye ||
-      (previous?.status === 'done' &&
-        previous.games.length === 0 &&
-        (source.loser || !previous.winner))
-    ) {
-      return 'exempt';
-    }
-    return source.winner
-      ? `vainqueur ${source.winner}`
-      : source.loser
-        ? `perdant ${source.loser}`
-        : 'à venir';
-  };
-  const scored = m.games.length > 0 || m.head_start.some(Boolean);
-  const open = m.teams[0] && m.teams[1] && m.status !== 'done' && !scored;
-
-  const slot = (i: 0 | 1) => {
-    const team = m.teams[i];
-    const state = team ? (bye ? '' : m.winner === team ? 'win' : m.winner ? 'lose' : '') : 'tbd';
-    const chance = open ? winProbability(model, team, m.teams[1 - i]) : null;
-    return (
-      <div className={cn('slot', state)}>
-        <span className="seed">{team ? String(seeds.get(team)) : ''}</span>
-        <span className="name" title={team ? describe(team) : ''}>
-          {team ?? awaiting(m.from[i])}
+function slot(
+  index: 0 | 1,
+  { match, seeds, byId, model, describe }: Props,
+  { bye, scored, open }: { bye: boolean; scored: boolean; open: boolean },
+): ReactNode {
+  const team = match.teams[index];
+  let state = '';
+  if (!hasText(team)) {
+    state = 'tbd';
+  } else if (!bye && match.winner === team) {
+    state = 'win';
+  } else if (!bye && hasText(match.winner)) {
+    state = 'lose';
+  }
+  const chance = open ? winProbability(model, team, match.teams[index === 0 ? 1 : 0]) : null;
+  return (
+    <div className={cn('slot', state)}>
+      <span className="seed">{hasText(team) ? String(seeds.get(team)) : ''}</span>
+      <span className="name" title={hasText(team) ? describe(team) : ''}>
+        {team ?? awaiting(match.from[index], bye, byId)}
+      </span>
+      {chance === null ? (
+        <span className="score">{hasText(team) && scored ? String(match.score[index]) : ''}</span>
+      ) : (
+        <span
+          className="score prob"
+          title={`${percent(chance)} % de chances de gagner une manche, selon le modèle (couleurs moyennées)`}
+        >
+          {percent(chance)}%
         </span>
-        {chance === null ? (
-          <span className="score">{team && scored ? String(m.score[i]) : ''}</span>
-        ) : (
-          <span
-            className="score prob"
-            title={`${percent(chance)} % de chances de gagner une manche, selon le modèle (couleurs moyennées)`}
-          >
-            {percent(chance)}%
-          </span>
-        )}
-      </div>
-    );
-  };
+      )}
+    </div>
+  );
+}
+
+// Independent status, live-link, final-note and game-list display conditions add to this metric.
+// oxlint-disable-next-line react-doctor/no-high-complexity-react-function
+const MatchCard: FC<Props> = (props) => {
+  const { match, view, running } = props;
+  const bye = match.status === 'done' && match.games.length === 0;
+  const from = match.from
+    .flatMap((source) =>
+      source.winner !== undefined && source.winner !== '' ? [source.winner] : [],
+    )
+    .join(',');
+
+  if (bye && !hasText(match.teams[0]) && !hasText(match.teams[1])) {
+    return <div className="match-wrap" data-id={match.id} data-from={from} />;
+  }
+  const scored = match.games.length > 0 || match.head_start.some(Boolean);
+  const open =
+    hasText(match.teams[0]) && hasText(match.teams[1]) && match.status !== 'done' && !scored;
 
   const label = [
-    m.id,
-    m.best_of === 5
+    match.id,
+    match.best_of === FINAL_BEST_OF
       ? 'meilleur de 5, le vainqueur du principal part à 1–0'
-      : `meilleur de ${m.best_of}`,
+      : `meilleur de ${match.best_of}`,
   ];
   const live =
-    m.status === 'running' &&
-    running.find((g) => g.id && g.tournament?.id === view.id && g.tournament.match === m.id);
+    match.status === 'running' &&
+    running.find(
+      (game) =>
+        game.id !== undefined &&
+        game.id !== '' &&
+        game.tournament?.id === view.id &&
+        game.tournament.match === match.id,
+    );
 
   return (
-    <div className="match-wrap" data-id={m.id} data-from={from}>
+    <div className="match-wrap" data-id={match.id} data-from={from}>
       <p className="match-id">
-        {m.id}
-        {MATCH_STATUS[m.status] && (
-          <span className={cn('match-state', m.status)}>{MATCH_STATUS[m.status]}</span>
+        {match.id}
+        {hasText(MATCH_STATUS[match.status]) && (
+          <span className={cn('match-state', match.status)}>{MATCH_STATUS[match.status]}</span>
         )}
-        {live && <LiveLink id={live.id!} title="Suivre la manche en direct" />}
-        {m.side === 'final' && <span className="match-note">meilleur de 5, avance de 1–0</span>}
+        {live !== false && live !== undefined && (
+          <LiveLink id={live.id ?? ''} title="Suivre la manche en direct" />
+        )}
+        {match.side === 'final' && <span className="match-note">meilleur de 5, avance de 1–0</span>}
       </p>
       <div
-        className={cn('match', m.status, bye && 'bye')}
-        aria-label={`${label.join(', ')} : ${m.teams.map((t) => t ?? 'à venir').join(' contre ')}`}
+        className={cn('match', match.status, bye && 'bye')}
+        aria-label={`${label.join(', ')} : ${match.teams.map((team) => team ?? 'à venir').join(' contre ')}`}
       >
-        {slot(0)}
-        {slot(1)}
+        {slot(0, props, { bye, scored, open })}
+        {slot(1, props, { bye, scored, open })}
       </div>
-      {m.games.length > 0 && (
+      {match.games.length > 0 && (
         <p className="match-games">
           Manches{' '}
-          {m.games.map((id, k) => (
+          {match.games.map((id, index) => (
             <a key={id} href={pageUrl('./', { game: id })} title="Rejouer cette manche">
-              {k + 1}
+              {index + 1}
             </a>
           ))}
         </p>

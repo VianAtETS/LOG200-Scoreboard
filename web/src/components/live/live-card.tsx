@@ -1,17 +1,15 @@
 import { Board } from '@/components/board/board';
-import { useInterval } from '@/hooks/use-interval';
-import { mover } from '@/lib/live';
 import { percent, winProbability } from '@/lib/predict';
 import { positions } from '@/lib/replay';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
-import type { TLiveGame } from '@/types/live.types';
+import type { TLiveEnded, TLiveGame } from '@/types/live.types';
 import type { TModel } from '@/types/summary.types';
 import type { TTournament } from '@/types/tournament.types';
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import type { FC } from 'react';
 
-const TICK_MS = 250;
+import { LiveClock } from './live-clock';
 
 type Props = {
   game: TLiveGame;
@@ -19,81 +17,58 @@ type Props = {
   bracket?: TTournament;
 };
 
-function context(g: TLiveGame, bracket?: TTournament) {
-  if (!g.tournament) {
+function context(liveGame: TLiveGame, bracket?: TTournament): string {
+  if (!liveGame.tournament) {
     return 'Ladder';
   }
-  const { match, game } = g.tournament;
-  const m = bracket?.matches.find((x) => x.id === match);
+  const { match, game } = liveGame.tournament;
+  const matched = bracket?.matches.find((item) => item.id === match);
   const score =
-    m?.teams[0] && m.teams[1] ? ` · ${m.teams[0]} ${m.score[0]}–${m.score[1]} ${m.teams[1]}` : '';
+    matched !== undefined && (matched.teams[0] ?? '') !== '' && (matched.teams[1] ?? '') !== ''
+      ? ` · ${matched.teams[0]} ${matched.score[0]}–${matched.score[1]} ${matched.teams[1]}`
+      : '';
   return `Tournoi · ${match} · manche ${game}${score}`;
 }
 
-function result({ ended, red, black }: TLiveGame) {
-  if (ended!.cancelled) {
+function result(ended: TLiveEnded, red: string, black: string): string {
+  if (ended.cancelled) {
     return 'Partie annulée';
   }
-  if (ended!.interrupted) {
+  if (ended.interrupted) {
     return 'Direct interrompu';
   }
-  return `${ended!.winner === 'red' ? red : black} gagne`;
+  return `${ended.winner === 'red' ? red : black} gagne`;
 }
 
 // Un clic ouvre la partie dans le replay de la page Classement, qui la suit en direct.
-const LiveCard: FC<Props> = memo(({ game: g, model, bracket }) => {
-  const steps = positions(g);
+const LiveCard: FC<Props> = memo(({ game, model, bracket }) => {
+  const steps = positions(game);
   const index = steps.length - 1;
-  const chance = winProbability(model, g.red, g.black, 'red');
+  const step = steps[index];
+  if (step === undefined) {
+    return null;
+  }
+  const chance = winProbability(model, game.red, game.black, 'red');
 
   return (
-    <a className={cn('live-game', g.ended && 'ended')} href={pageUrl('./', { game: g.id })}>
+    <a className={cn('live-game', game.ended && 'ended')} href={pageUrl('./', { game: game.id })}>
       <p className="live-teams">
-        <strong className="red">{g.red}</strong>
+        <strong className="red">{game.red}</strong>
         {' contre '}
-        <strong className="black">{g.black}</strong>
+        <strong className="black">{game.black}</strong>
         {chance !== null && (
           <span className="duel-prob" title="Chances du rouge selon le modèle, avant la partie">
             {` ${percent(chance)} %`}
           </span>
         )}
       </p>
-      <p className="live-meta">{context(g, bracket)}</p>
-      <Board
-        step={steps[index]}
-        index={index}
-        label={`${g.red} contre ${g.black}, coup ${index}`}
-      />
-      <LiveClock game={g} />
-      {g.ended && <p className="live-result">{result(g)}</p>}
+      <p className="live-meta">{context(game, bracket)}</p>
+      <Board step={step} index={index} label={`${game.red} contre ${game.black}, coup ${index}`} />
+      <LiveClock game={game} />
+      {game.ended && <p className="live-result">{result(game.ended, game.red, game.black)}</p>}
     </a>
   );
 });
 LiveCard.displayName = 'LiveCard';
-
-// Seule l'horloge bat au quart de seconde : le plateau ne se redessine qu'à chaque coup.
-const LiveClock: FC<{ game: TLiveGame }> = ({ game: g }) => {
-  const [now, setNow] = useState(() => performance.now());
-  useInterval(() => setNow(performance.now()), g.ended ? null : TICK_MS);
-
-  const n = g.moves.length;
-  let text = `${n} coups`;
-  if (!g.ended) {
-    const left = Math.max(0, g.time_ms - (now - g.turnAt)) / 1000;
-    const last = g.move_ms.at(-1);
-    const thinking = `${g[mover(g)]} réfléchit : ${left.toFixed(1)} s`;
-    text = [
-      `Coup ${n + 1}`,
-      thinking,
-      ...(last === undefined ? [] : [`dernier en ${last} ms`]),
-    ].join(' · ');
-  }
-
-  return (
-    <p className="live-clock" data-id={g.id}>
-      {text}
-    </p>
-  );
-};
 
 export { LiveCard };

@@ -2,7 +2,9 @@ import { useCallback, useLayoutEffect, useState } from 'react';
 import type { RefObject } from 'react';
 
 // Ombres .less / .more d'une zone qui défile : du contenu caché au-dessus ou en dessous.
-const useScrollEdges = (ref: RefObject<HTMLElement | null>) => {
+const useScrollEdges = (
+  ref: RefObject<HTMLElement | null>,
+): { edges: { less: boolean; more: boolean }; onScroll: () => void } => {
   const [edges, setEdges] = useState({ less: false, more: false });
 
   const measure = useCallback(() => {
@@ -20,12 +22,11 @@ const useScrollEdges = (ref: RefObject<HTMLElement | null>) => {
 
   useLayoutEffect(() => {
     const node = ref.current;
-    if (!node) {
-      return;
+    const observer = node ? new ResizeObserver(measure) : undefined;
+    if (node) {
+      observer?.observe(node);
     }
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
+    return () => observer?.disconnect();
   }, [ref, measure]);
 
   return { edges, onScroll: measure };

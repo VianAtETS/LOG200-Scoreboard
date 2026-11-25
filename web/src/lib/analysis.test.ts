@@ -39,41 +39,41 @@ const game = {
   ],
 };
 
-const a = analyse(positions(game), game);
+const analysis = analyse(positions(game), game);
 
-test('mobilité, territoire et région identiques à l’arène isola après chaque coup', () => {
+void test('mobilité, territoire et région identiques à l’arène isola après chaque coup', () => {
   assert.deepEqual(
-    a.red.mob,
+    analysis.red.mob,
     [
       15, 15, 14, 23, 22, 24, 23, 24, 23, 24, 23, 24, 22, 24, 22, 24, 22, 22, 20, 24, 22, 23, 21,
       20, 20, 21, 18, 12,
     ],
   );
   assert.deepEqual(
-    a.black.mob,
+    analysis.black.mob,
     [15, 14, 21, 20, 18, 17, 11, 10, 13, 12, 8, 6, 3, 3, 6, 4, 6, 4, 6, 4, 4, 2, 3, 2, 2, 1, 1, 0],
   );
   assert.deepEqual(
-    a.red.terr,
+    analysis.red.terr,
     [
       63, 58, 42, 63, 69, 80, 98, 78, 76, 95, 110, 115, 121, 120, 109, 116, 91, 106, 105, 118, 109,
       113, 116, 117, 116, 116, 115, 115,
     ],
   );
   assert.deepEqual(
-    a.black.terr,
+    analysis.black.terr,
     [
       63, 62, 67, 35, 28, 20, 15, 24, 27, 11, 10, 6, 3, 5, 6, 4, 10, 7, 10, 4, 5, 4, 3, 2, 2, 1, 1,
       0,
     ],
   );
-  assert.deepEqual(a.red.reg.slice(19), [123, 118, 118, 118, 117, 116, 116, 115, 115]);
-  assert.deepEqual(a.black.reg.slice(19), [123, 122, 121, 120, 2, 2, 1, 1, 0]);
+  assert.deepEqual(analysis.red.reg.slice(19), [123, 118, 118, 118, 117, 116, 116, 115, 115]);
+  assert.deepEqual(analysis.black.reg.slice(19), [123, 122, 121, 120, 2, 2, 1, 1, 0]);
 });
 
-test('coups critiques : les 8 plus grands écarts de territoire des équipes, hors ouverture', () => {
+void test('coups critiques : les 8 plus grands écarts de territoire des équipes, hors ouverture', () => {
   assert.deepEqual(
-    [...a.crit].sort(([x], [y]) => x - y),
+    [...analysis.crit].toSorted(([left], [right]) => left - right),
     [
       [3, 'fine'],
       [5, 'fine'],
@@ -87,12 +87,12 @@ test('coups critiques : les 8 plus grands écarts de territoire des équipes, ho
   );
 });
 
-test('point de bascule : après lui, le perdant ne reprend jamais l’avantage en territoire', () => {
-  assert.equal(a.tip, 3);
+void test('point de bascule : après lui, le perdant ne reprend jamais l’avantage en territoire', () => {
+  assert.equal(analysis.tip, 3);
   assert.equal(analyse(positions(game), { ...game, reason: 'timeout' }).tip, null);
 });
 
-test('describe donne min, moyenne, médiane, max, écart type et effectif', () => {
+void test('describe donne min, moyenne, médiane, max, écart type et effectif', () => {
   assert.deepEqual(describe([4, 1, 3, 2]), {
     min: 1,
     mean: 2.5,
