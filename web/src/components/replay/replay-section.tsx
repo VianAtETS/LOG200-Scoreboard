@@ -13,7 +13,8 @@ import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import type { TColor, TGame } from '@/types/games.types';
 import type { TLiveGame } from '@/types/live.types';
-import { useEffect, useState, type CSSProperties, type FC } from 'react';
+import { useEffect, useState } from 'react';
+import type { CSSProperties, FC } from 'react';
 import { ENDINGS } from './replay.data';
 import type { TReplay, TReplayActions } from './use-replay';
 
@@ -40,17 +41,24 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
           'input, select, textarea, [contenteditable], [role="slider"], .ranking-scroll',
         ) ||
         queue?.open
-      )
+      ) {
         return;
-      if (e.key === 'ArrowLeft') actions.browse(actions.current().index - 1);
-      if (e.key === 'ArrowRight') actions.browse(actions.current().index + 1);
+      }
+      if (e.key === 'ArrowLeft') {
+        actions.browse(actions.current().index - 1);
+      }
+      if (e.key === 'ArrowRight') {
+        actions.browse(actions.current().index + 1);
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [actions]);
 
   const share = async () => {
-    if (!actions.pin()) return;
+    if (!actions.pin()) {
+      return;
+    }
     try {
       await navigator.clipboard.writeText(location.href);
       setShareLabel('Lien copié');
@@ -176,7 +184,7 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
           value={String(index)}
           style={{ '--progress': `${total > 0 ? (index / total) * 100 : 0}%` } as CSSProperties}
           aria-label="Coup affiché"
-          onChange={(e) => actions.browse(+e.target.value)}
+          onChange={(e) => actions.browse(Number(e.target.value))}
         />
       </div>
     </section>
@@ -208,13 +216,13 @@ const GameInfo: FC<{ game: TGame; versionOf: Props['versionOf'] }> = ({ game: g,
 const LiveInfo: FC<{ game: TLiveGame }> = ({ game: g }) => {
   const { winner, reason, cancelled, interrupted } = g.ended ?? {};
   const loser = winner === 'red' ? g.black : g.red;
-  const state = !g.ended
-    ? 'en direct'
-    : cancelled
+  const state = g.ended
+    ? cancelled
       ? 'partie annulée'
       : interrupted
         ? 'direct interrompu'
-        : `${g[winner!]} gagne, ${ENDINGS[reason!]?.(loser) ?? reason}`;
+        : `${g[winner!]} gagne, ${ENDINGS[reason!]?.(loser) ?? reason}`
+    : 'en direct';
   return (
     <>
       <strong>{g.red}</strong>

@@ -1,8 +1,10 @@
 import { useScrollEdges } from '@/hooks/use-scroll-edges';
 import { cn } from '@/lib/utils';
 import type { TGameRow, TRatingChange, TSide } from '@/types/games.types';
-import { useRef, type FC } from 'react';
-import { GameItem, type TSideOrder } from './game-item';
+import { useRef } from 'react';
+import type { FC } from 'react';
+import { GameItem } from './game-item';
+import type { TSideOrder } from './game-item';
 
 const RECENT_GAMES = 50;
 
@@ -28,7 +30,7 @@ const GamesList: FC<Props> = ({ games, rating, currentId, selectedTeam, sideOrde
       tabIndex={-1}
       onScroll={scroll.onScroll}
     >
-      {items.length ? (
+      {items.length > 0 ? (
         items.map((g) => (
           <GameItem
             key={g.id}

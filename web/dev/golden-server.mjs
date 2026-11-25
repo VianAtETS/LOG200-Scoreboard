@@ -22,7 +22,7 @@ const MOVE_MS = 700;
 const SMOKE_MS = 8000;
 const PAUSE_MS = 4000;
 
-const here = dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 const golden = join(here, '../../crates/isolation-ladder/tests/fixtures/golden');
 const expected = join(golden, 'expected');
 const lines = readFileSync(join(golden, 'games.jsonl'), 'utf8').split('\n').filter(Boolean);
@@ -31,7 +31,7 @@ const summary = JSON.parse(readFileSync(join(expected, 'summary.json'), 'utf8'))
 const teams = summary.scopes[''].ratings.filter((r) => r.build).map((r) => r.team);
 // Le direct rejoue les parties de la session affichée par défaut : badges de duel au classement.
 const current = lines.filter((l) => JSON.parse(l).session === summary.sessions[0]);
-const replayed = current.length ? current : lines;
+const replayed = current.length > 0 ? current : lines;
 
 // --- Données ajoutées : tournoi, file d'attente --------------------------------------------------
 
@@ -51,7 +51,7 @@ const tournament = {
     rating: 1700 - 50 * i,
     multithread: false,
   })),
-  game_ms: [60000, 62000, 58000, 61000],
+  game_ms: [60_000, 62_000, 58_000, 61_000],
   slots: [2, 0],
   matches: [
     {
@@ -178,7 +178,9 @@ function frame(text) {
 
 const broadcast = (msg) => {
   const data = frame(JSON.stringify(msg));
-  for (const s of sockets) s.write(data);
+  for (const s of sockets) {
+    s.write(data);
+  }
 };
 
 function snapshotGame() {
@@ -230,7 +232,9 @@ function start() {
 }
 
 function upgrade(req, socket) {
-  if (new URL(req.url, 'http://x').pathname !== '/api/live') return socket.destroy();
+  if (new URL(req.url, 'http://x').pathname !== '/api/live') {
+    return socket.destroy();
+  }
   const accept = createHash('sha1')
     .update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
     .digest('base64');
@@ -264,14 +268,16 @@ function submit(req, res) {
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
     const body = Buffer.concat(chunks);
-    if (!token)
-      return text(
+    if (!token) {
+      return void text(
         res,
         "token d'équipe absent ou inconnu (en-tête Authorization: Bearer <token>)",
         401,
       );
-    if (body.subarray(0, 2).toString() !== 'PK')
-      return text(res, "le corps de la requête n'est pas un jar", 400);
+    }
+    if (body.subarray(0, 2).toString() !== 'PK') {
+      return void text(res, "le corps de la requête n'est pas un jar", 400);
+    }
     const id = Date.now();
     const hash = createHash('sha256').update(body).digest('hex').slice(0, 12);
     jobs.set(String(id), { at: Date.now(), token, hash });
@@ -284,10 +290,15 @@ function submit(req, res) {
 function verdict(req, res, id) {
   const job = jobs.get(id);
   const token = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1]?.trim();
-  if (!job || job.token !== token) return text(res, 'soumission inconnue', 404);
-  if (Date.now() - job.at < SMOKE_MS) return text(res, 'en cours : smoke test', 202);
-  if (job.token === 'refuse')
-    return text(res, 'refusé : temps dépassé pendant la partie de test contre aleatoire', 422);
+  if (!job || job.token !== token) {
+    return void text(res, 'soumission inconnue', 404);
+  }
+  if (Date.now() - job.at < SMOKE_MS) {
+    return void text(res, 'en cours : smoke test', 202);
+  }
+  if (job.token === 'refuse') {
+    return void text(res, 'refusé : temps dépassé pendant la partie de test contre aleatoire', 422);
+  }
   text(res, `accepté : version ${job.hash}, en jeu dès la prochaine partie`);
 }
 
@@ -342,33 +353,50 @@ function file(req, res, path) {
 
 const server = createServer((req, res) => {
   const p = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname));
-  if (p === '/api/version') return text(res, '0.0.0-golden');
-  if (p === '/api/health') return text(res, 'ok');
-  if (p === '/api/submit' && req.method === 'PUT') return submit(req, res);
-  if (p.startsWith('/api/submit/')) return verdict(req, res, p.slice('/api/submit/'.length));
-  if (p === '/api/openapi.json')
-    return json(res, {
+  if (p === '/api/version') {
+    return void text(res, '0.0.0-golden');
+  }
+  if (p === '/api/health') {
+    return void text(res, 'ok');
+  }
+  if (p === '/api/submit' && req.method === 'PUT') {
+    return void submit(req, res);
+  }
+  if (p.startsWith('/api/submit/')) {
+    return void verdict(req, res, p.slice('/api/submit/'.length));
+  }
+  if (p === '/api/openapi.json') {
+    return void json(res, {
       openapi: '3.1.0',
       info: { title: 'Ladder (golden)', version: '0' },
       paths: {},
     });
+  }
   if (p.startsWith('/api/games/')) {
     const g = games.get(p.slice('/api/games/'.length));
-    return g ? json(res, g) : json(res, 'absent', 404);
+    return g ? void json(res, g) : void json(res, 'absent', 404);
   }
-  if (p === '/data/live.json')
-    return json(res, {
+  if (p === '/data/live.json') {
+    return void json(res, {
       v: 1,
       games:
         live && !live.ended
           ? [{ id: live.id, red: live.source.red.team, black: live.source.black.team }]
           : [],
     });
-  if (p === '/data/queue.json') return json(res, queue());
-  if (p === '/data/tournaments/index.json') return json(res, index);
-  if (p === '/data/tournaments/golden.json') return json(res, tournament);
-  if (p.startsWith('/data/') && !p.includes('..'))
+  }
+  if (p === '/data/queue.json') {
+    return void json(res, queue());
+  }
+  if (p === '/data/tournaments/index.json') {
+    return void json(res, index);
+  }
+  if (p === '/data/tournaments/golden.json') {
+    return void json(res, tournament);
+  }
+  if (p.startsWith('/data/') && !p.includes('..')) {
     return file(req, res, join(expected, p.slice('/data/'.length)));
+  }
   res.writeHead(404);
   res.end();
 });
@@ -384,5 +412,7 @@ server.listen(PORT, '127.0.0.1', () => {
   });
   astro.on('exit', (code) => process.exit(code ?? 0));
   // Arrêter le serveur arrête aussi astro dev.
-  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => astro.kill(signal));
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => astro.kill(signal));
+  }
 });

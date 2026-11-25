@@ -9,7 +9,8 @@ import { GameInfo } from '@/components/replay/replay-section';
 import { useGetGame } from '@/dao/hooks/use-games';
 import { useGetSummary } from '@/dao/hooks/use-ladder';
 import { useSearchParam } from '@/hooks/use-search-param';
-import { analyse, describe, type TSeries } from '@/lib/analysis';
+import { analyse, describe } from '@/lib/analysis';
+import type { TSeries } from '@/lib/analysis';
 import { signed, versionOf } from '@/lib/format';
 import { RED, positions, squareName } from '@/lib/replay';
 import { cn } from '@/lib/utils';
@@ -51,7 +52,9 @@ const AnalysePage = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.target as Element).closest('input, select, textarea')) return;
+      if ((e.target as Element).closest('input, select, textarea')) {
+        return;
+      }
       const action = {
         ArrowLeft: () => go(k - 1),
         ArrowRight: () => go(k + 1),
@@ -60,7 +63,9 @@ const AnalysePage = () => {
         Home: () => go(0),
         End: () => go(last),
       }[e.key];
-      if (!action) return;
+      if (!action) {
+        return;
+      }
       e.preventDefault();
       action();
     };
@@ -322,7 +327,7 @@ const AnalysePage = () => {
                   </thead>
                   <tbody>
                     {[
-                      ...(timed.length
+                      ...(timed.length > 0
                         ? [
                             {
                               label: 'Temps par coup (ms)',
@@ -335,7 +340,7 @@ const AnalysePage = () => {
                         label: m.label,
                         of: (c: TColor) => analysis[c][m.key],
                       })),
-                      ...(depths.length
+                      ...(depths.length > 0
                         ? [
                             {
                               label: 'Profondeur du bot',
@@ -344,7 +349,7 @@ const AnalysePage = () => {
                             },
                           ]
                         : []),
-                      ...(rates.length
+                      ...(rates.length > 0
                         ? [
                             {
                               label: 'Nœuds par seconde',

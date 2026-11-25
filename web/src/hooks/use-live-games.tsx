@@ -11,7 +11,9 @@ const useLiveGames = (enabled = true) => {
   });
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      return;
+    }
     return connectLive(liveUrl(SERVER, location.href), (games, state) => setLive({ games, state }));
   }, [enabled]);
 

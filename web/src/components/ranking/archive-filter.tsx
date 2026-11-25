@@ -1,6 +1,7 @@
 import { Badge } from '@/components/badge/badge';
 import type { TArchiveOption } from '@/lib/archives';
-import { useState, type FC } from 'react';
+import { useState } from 'react';
+import type { FC } from 'react';
 
 type Props = {
   options: TArchiveOption[];
@@ -48,7 +49,7 @@ const ArchiveFilter: FC<Props> = ({ options, wanted, onChange, error }) => {
             <Badge variant="archived">Archivé</Badge>
           </label>
         ))}
-        {!shown.length && <p>Aucune version archivée ne correspond.</p>}
+        {shown.length === 0 && <p>Aucune version archivée ne correspond.</p>}
       </fieldset>
       <p className="archive-help">
         Archives : anciennes versions, sans nouveaux matchs. Elo figé au dernier match de la version

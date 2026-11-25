@@ -1,4 +1,5 @@
-import { BLACK, DESTROYED, RED, SIZE, type TStep } from '@/lib/replay';
+import { BLACK, DESTROYED, RED, SIZE } from '@/lib/replay';
+import type { TStep } from '@/lib/replay';
 import { cn } from '@/lib/utils';
 import type { FC } from 'react';
 

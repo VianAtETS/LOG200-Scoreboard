@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { apply, ENDED_KEEP_MS, forget, liveUrl, mover, pickLive } from './live.ts';
+import { ENDED_KEEP_MS, apply, forget, liveUrl, mover, pickLive } from './live.ts';
 
 const game = (id, extra = {}) => ({
   id,

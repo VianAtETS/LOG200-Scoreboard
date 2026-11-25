@@ -58,8 +58,9 @@ test("une équipe multithread joue dans l'autre genre de slot, en parallèle", (
 
 test('le temps restant oublie les matchs finis et les manches gagnées', () => {
   const view = four([2, 1]);
-  for (const k of [0, 1])
+  for (const k of [0, 1]) {
     Object.assign(view.matches[k], { status: 'done', score: [2, 0], games: ['a', 'b'] });
+  }
   Object.assign(view.matches[2], { status: 'running', score: [1, 0], games: ['c'] });
   const [w3] = gamesPlayed(1, 2);
   const rest = tournamentDuration(view);

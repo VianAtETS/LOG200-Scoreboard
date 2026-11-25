@@ -1,16 +1,11 @@
 import { CloseIcon, MenuIcon } from '@/components/icons/icons';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FC,
-  type PropsWithChildren,
-  type ReactNode,
-} from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { FC, PropsWithChildren, ReactNode } from 'react';
 import { Logo } from './logo';
-import { pages, type TPageKey } from './masthead.data';
+import { pages } from './masthead.data';
+import type { TPageKey } from './masthead.data';
 import { VersionBadge } from './version-badge';
 
 type Props = PropsWithChildren & {
@@ -49,7 +44,9 @@ const Masthead: FC<Props> = ({ current, showVersion = true, status, children }) 
 
   useEffect(() => {
     if (!open) {
-      if (wasOpen.current) toggleRef.current?.focus();
+      if (wasOpen.current) {
+        toggleRef.current?.focus();
+      }
       wasOpen.current = false;
       return;
     }

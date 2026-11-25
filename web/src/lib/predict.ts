@@ -13,13 +13,21 @@ export function winProbability(
   opponent: string | null,
   color?: TColor,
 ) {
-  if (!model?.teams || team === null || opponent === null) return null;
+  if (!model?.teams || team === null || opponent === null) {
+    return null;
+  }
   const a = model.teams[team];
   const b = model.teams[opponent];
-  if (!a || !b || a.n < model.min_games || b.n < model.min_games) return null;
+  if (!a || !b || a.n < model.min_games || b.n < model.min_games) {
+    return null;
+  }
   const gap = a.s - b.s;
-  if (color === 'red') return sigmoid(gap + model.red_advantage);
-  if (color === 'black') return sigmoid(gap - model.red_advantage);
+  if (color === 'red') {
+    return sigmoid(gap + model.red_advantage);
+  }
+  if (color === 'black') {
+    return sigmoid(gap - model.red_advantage);
+  }
   return (sigmoid(gap + model.red_advantage) + sigmoid(gap - model.red_advantage)) / 2;
 }
 

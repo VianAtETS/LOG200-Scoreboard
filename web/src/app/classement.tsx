@@ -31,7 +31,7 @@ import { teamUrl } from '@/dao/scoreboard.repository';
 import { useLiveGames } from '@/hooks/use-live-games';
 import { usePulse } from '@/hooks/use-pulse';
 import { useSearchParam } from '@/hooks/use-search-param';
-import { archivedRows, archiveOptions, withArchivedRows } from '@/lib/archives';
+import { archiveOptions, archivedRows, withArchivedRows } from '@/lib/archives';
 import { GLOBAL } from '@/lib/constants';
 import { BETWEEN, gamesOf, isRemote, ratingOf } from '@/lib/elo';
 import { timeFormat, versionOf } from '@/lib/format';
@@ -135,8 +135,12 @@ const ClassementPage = () => {
   }, [archiveFiles, pickedArchives, scope, session, verified]);
 
   const list = useMemo(() => {
-    if (!scope) return [];
-    if (!teams.length) return scope.recent;
+    if (!scope) {
+      return [];
+    }
+    if (teams.length === 0) {
+      return scope.recent;
+    }
     return gamesOf(rows ?? new Map(), teams, { mode: match, session }).filter((g) =>
       inGameScope(g, session, verified),
     );
@@ -158,7 +162,9 @@ const ClassementPage = () => {
   // ?team= des anciens liens devient ?teams=.
   const legacy = useRef(initial.has('team'));
   useEffect(() => {
-    if (!summary || !legacy.current) return;
+    if (!summary || !legacy.current) {
+      return;
+    }
     legacy.current = false;
     setParam('team', null);
     setParam('teams', teamsKey);
@@ -170,15 +176,20 @@ const ClassementPage = () => {
   const teamPlaying = running.some(
     (g) => g.id && (teams.includes(g.red) || teams.includes(g.black)),
   );
-  if (!liveWanted && summary && runningFetched && (linkedRunning || teamPlaying))
+  if (!liveWanted && summary && runningFetched && (linkedRunning || teamPlaying)) {
     setLiveWanted(true);
+  }
 
   // ?game= d'une partie terminée : retrouvée dans le fichier de l'équipe rouge.
   const linked = useRef(false);
   useEffect(() => {
-    if (linked.current || !summary || !runningFetched || !linkedGame) return;
+    if (linked.current || !summary || !runningFetched || !linkedGame) {
+      return;
+    }
     linked.current = true;
-    if (running.some((g) => g.id === linkedGame)) return;
+    if (running.some((g) => g.id === linkedGame)) {
+      return;
+    }
     const pair = linkedGame.slice(linkedGame.indexOf('-') + 1);
     const all = summary.scopes[GLOBAL].ratings.map((r) => r.team);
     const red = all.find((t) => pair.startsWith(`${t}-`) && all.includes(pair.slice(t.length + 1)));
@@ -186,36 +197,50 @@ const ClassementPage = () => {
     (red ? tail(teamUrl(red), state) : Promise.resolve(false))
       .then(() => {
         const row = state.rows.find((g) => g.id === linkedGame);
-        if (row) actions.showGame(row, true);
-        else actions.unpin();
+        if (row) {
+          actions.showGame(row, true);
+        } else {
+          actions.unpin();
+        }
       })
       .catch(() => actions.unpin());
   }, [summary, running, runningFetched, linkedGame, actions]);
 
   // Partie du direct à montrer : celle figée, sinon la plus récente des équipes choisies.
   const followLive = useCallback(() => {
-    if (!liveWanted) return false;
+    if (!liveWanted) {
+      return false;
+    }
     const r = actions.current();
     const g = r.pinned
       ? live.games.get(r.id ?? linkedGame ?? '')
       : pickLive(live.games, teams, match === BETWEEN, r.live?.id);
-    if (g) actions.showLive(g);
+    if (g) {
+      actions.showLive(g);
+    }
     return Boolean(g);
   }, [liveWanted, live.games, teams, match, linkedGame, actions]);
 
   useEffect(() => {
-    if (!liveWanted) return;
-    if (!followLive() && linkedGame && !actions.current().id && live.state === 'unavailable')
+    if (!liveWanted) {
+      return;
+    }
+    if (!followLive() && linkedGame && !actions.current().id && live.state === 'unavailable') {
       actions.setMessage('Direct indisponible sur ce serveur.');
+    }
   }, [live, liveWanted, followLive, linkedGame, actions]);
 
   // Sans partie figée, le replay suit la dernière jouée.
   useEffect(() => {
-    if (!summary) return;
+    if (!summary) {
+      return;
+    }
     const r = actions.current();
     const latest = list.at(-1);
     const newer = latest && !(r.live && r.id && latest.id <= r.id);
-    if (!followLive() && newer && !r.pinned && r.id !== latest.id) actions.showGame(latest);
+    if (!followLive() && newer && !r.pinned && r.id !== latest.id) {
+      actions.showGame(latest);
+    }
   }, [summary, dataUpdatedAt, list, replay.pinned, followLive, actions]);
 
   const chooseTeams = (next: string[]) => {
@@ -352,7 +377,7 @@ const ClassementPage = () => {
             </div>
           )}
           <a id="graph-link" className="graph-link" href={pageUrl('graphe.html')}>
-            {teams.length
+            {teams.length > 0
               ? 'Voir les rangs et l’Elo des équipes choisies'
               : 'Voir les graphes du classement'}
           </a>
@@ -363,7 +388,7 @@ const ClassementPage = () => {
             currentId={replay.id}
             selectedTeam={teams.length === 1 ? teams[0] : undefined}
             sideOrder={sideOrder}
-            onSelect={(g) => actions.showGame(g, true)}
+            onSelect={async (g) => actions.showGame(g, true)}
           />
         </section>
       </main>

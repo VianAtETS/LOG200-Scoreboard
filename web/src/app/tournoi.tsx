@@ -8,9 +8,9 @@ import { Bracket } from '@/components/tournament/bracket';
 import { Places } from '@/components/tournament/places';
 import {
   CALIBRATION,
+  PREVIEW,
   dateFormat,
   predicted,
-  PREVIEW,
   shortDate,
   span,
 } from '@/components/tournament/tournament.utils';
@@ -59,7 +59,9 @@ const TournoiPage = () => {
       ) ?? '')
     : '';
 
-  if (ready && id !== (shown ?? '')) setShown(id || null);
+  if (ready && id !== (shown ?? '')) {
+    setShown(id || null);
+  }
 
   const { data: viewText, error } = useGetTournamentText(id && id !== PREVIEW ? id : null);
   const text = id === PREVIEW ? previewText : id ? viewText : null;
@@ -82,13 +84,19 @@ const TournoiPage = () => {
 
   const timing = (v: TTournament) => {
     if (v.winner) {
-      if (!v.ended) return '';
+      if (!v.ended) {
+        return '';
+      }
       const raw = tournamentDuration(v, true);
       return ` · a duré ${span(Date.parse(v.ended) - Date.parse(v.ts))}${raw === null ? '' : ` (prévu au tirage ≈ ${span(raw)})`}`;
     }
     const planned = predicted(v, factor);
-    if (planned === null) return '';
-    if (v.id === PREVIEW) return ` · durée prévue ≈ ${span(planned)}`;
+    if (planned === null) {
+      return '';
+    }
+    if (v.id === PREVIEW) {
+      return ` · durée prévue ≈ ${span(planned)}`;
+    }
     return ` · fin prévue vers ${timeFormat.format(new Date(dataUpdatedAt + predicted(v, factor, false)!))}`;
   };
 

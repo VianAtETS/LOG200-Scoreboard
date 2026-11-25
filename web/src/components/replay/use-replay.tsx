@@ -1,5 +1,6 @@
 import { getGame } from '@/dao/scoreboard.repository';
-import { positions, type TStep } from '@/lib/replay';
+import { positions } from '@/lib/replay';
+import type { TStep } from '@/lib/replay';
 import { searchParams, setParam } from '@/lib/url';
 import type { TGame, TGameRow } from '@/types/games.types';
 import type { TLiveGame } from '@/types/live.types';
@@ -52,12 +53,16 @@ const useReplay = () => {
     const stopPlayback = () => {
       clearInterval(timer.current);
       timer.current = undefined;
-      if (ref.current.playing) commit({ playing: false });
+      if (ref.current.playing) {
+        commit({ playing: false });
+      }
     };
 
     const goTo = (i: number) => {
       const { id, steps } = ref.current;
-      if (!id) return;
+      if (!id) {
+        return;
+      }
       commit({ index: Math.max(0, Math.min(steps.length - 1, i)) });
     };
 
@@ -68,12 +73,14 @@ const useReplay = () => {
         let g: TGame;
         try {
           g = await getGame(row);
-        } catch (e) {
+        } catch (error) {
           if (current === seq.current)
-            commit({ message: `Partie pas encore disponible (${(e as Error).message}).` });
+            commit({ message: `Partie pas encore disponible (${(error as Error).message}).` });
           return;
         }
-        if (current !== seq.current) return;
+        if (current !== seq.current) {
+          return;
+        }
         stopPlayback();
         const steps = positions(g);
         const moveMs = g.move_ms?.length === g.moves.length ? g.move_ms : [];
@@ -91,7 +98,9 @@ const useReplay = () => {
       },
 
       showLive(g: TLiveGame) {
-        if (ref.current.live === g) return;
+        if (ref.current.live === g) {
+          return;
+        }
         const { id, index, steps: before } = ref.current;
         const following = !id || index === before.length - 1;
         const steps = positions(g);
@@ -114,19 +123,29 @@ const useReplay = () => {
       },
 
       togglePlayback() {
-        if (!ref.current.id) return;
-        if (timer.current) return stopPlayback();
-        if (ref.current.index === ref.current.steps.length - 1) goTo(0);
+        if (!ref.current.id) {
+          return;
+        }
+        if (timer.current) {
+          return void stopPlayback();
+        }
+        if (ref.current.index === ref.current.steps.length - 1) {
+          goTo(0);
+        }
         commit({ pinned: true, playing: true });
         timer.current = setInterval(() => {
-          if (ref.current.index >= ref.current.steps.length - 1) return stopPlayback();
+          if (ref.current.index >= ref.current.steps.length - 1) {
+            return void stopPlayback();
+          }
           goTo(ref.current.index + 1);
         }, PLAY_MS);
       },
 
       // Fige la partie affichée et la met dans l'adresse ; faux sans partie.
       pin() {
-        if (!ref.current.id) return false;
+        if (!ref.current.id) {
+          return false;
+        }
         commit({ pinned: true });
         setParam('game', ref.current.id);
         return true;

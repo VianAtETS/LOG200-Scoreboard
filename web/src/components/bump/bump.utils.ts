@@ -1,4 +1,5 @@
-import { smooth, type TRankPoint } from '../../lib/bump.ts';
+import { smooth } from '../../lib/bump.ts';
+import type { TRankPoint } from '../../lib/bump.ts';
 import { dayFormat, timeFormat } from '../../lib/format.ts';
 import type { TRatingRow } from '@/types/games.types';
 
@@ -17,11 +18,15 @@ const colors = new Map<string, number>();
 
 // Première couleur libre ; les équipes retirées libèrent la leur.
 export function colorOf(team: string, selected: string[]) {
-  for (const t of colors.keys()) if (!selected.includes(t)) colors.delete(t);
+  for (const t of colors.keys()) {
+    if (!selected.includes(t)) colors.delete(t);
+  }
   if (!colors.has(team)) {
     const used = new Set(colors.values());
     let slot = 0;
-    while (used.has(slot) && slot < COLORS) slot++;
+    while (used.has(slot) && slot < COLORS) {
+      slot++;
+    }
     colors.set(team, slot < COLORS ? slot : colors.size % COLORS);
   }
   return `var(--color-series-${colors.get(team)! + 1})`;
@@ -32,14 +37,16 @@ function vertices(points: TRankPoint[], count: number, buckets: number, metric: 
   const path: TVertex[] = [];
   if (metric === 'rating' || count <= buckets) {
     points.forEach((p, i) => {
-      if (i) path.push([Math.max(p.x - 1, points[i - 1].x), points[i - 1][metric]]);
+      if (i) {
+        path.push([Math.max(p.x - 1, points[i - 1].x), points[i - 1][metric]]);
+      }
       path.push([p.x, p[metric]]);
     });
   } else {
     const line = smooth(points, count, buckets);
     path.push([points[0].x, line[0].rank], ...line.map((p): TVertex => [p.x, p.rank]));
   }
-  path.push([count - 1, path[path.length - 1][1]]);
+  path.push([count - 1, path.at(-1)[1]]);
   return path;
 }
 
@@ -51,7 +58,9 @@ export function chartGeometry(
   { width, height }: { width: number; height: number },
 ) {
   const drawn = selected.filter((t) => series.get(t)?.length);
-  if (!count || !drawn.length) return null;
+  if (!count || drawn.length === 0) {
+    return null;
+  }
 
   const margin = { ...MARGIN, left: metric === 'rating' ? 52 : MARGIN.left };
   let min = Infinity;
@@ -82,7 +91,9 @@ export function chartGeometry(
   };
   const buckets = count * EXACT_PX <= inner.w ? count : Math.floor(inner.w / BUCKET_PX);
   const paths = new Map<string, TVertex[]>();
-  for (const team of drawn) paths.set(team, vertices(series.get(team)!, count, buckets, metric));
+  for (const team of drawn) {
+    paths.set(team, vertices(series.get(team)!, count, buckets, metric));
+  }
   return {
     x,
     y,
@@ -103,16 +114,21 @@ export function valueAt(path: TVertex[], col: number) {
   let hi = path.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (path[mid][0] >= col) hi = mid;
-    else lo = mid + 1;
+    if (path[mid][0] >= col) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
   }
-  if (lo === 0 || lo === path.length) return path[0][1];
+  if (lo === 0 || lo === path.length) {
+    return path[0][1];
+  }
   const [[c0, r0], [c1, r1]] = [path[lo - 1], path[lo]];
   return c1 === c0 ? r1 : r0 + ((r1 - r0) * (col - c0)) / (c1 - c0);
 }
 
 export function dateTicks(columns: TRatingRow[], width: number) {
-  const span = Date.parse(columns[columns.length - 1].ts) - Date.parse(columns[0].ts);
+  const span = Date.parse(columns.at(-1).ts) - Date.parse(columns[0].ts);
   const format = span < 864e5 ? timeFormat : dayFormat;
   const count = Math.min(5, columns.length, Math.max(2, Math.floor(width / 100)));
   const ticks: { col: number; text: string; anchor: 'start' | 'middle' | 'end' }[] = [];
@@ -120,7 +136,9 @@ export function dateTicks(columns: TRatingRow[], width: number) {
   for (let k = 0; k < count; k++) {
     const col = count > 1 ? Math.round((k * (columns.length - 1)) / (count - 1)) : 0;
     const text = format.format(new Date(columns[col].ts));
-    if (text === previous) continue;
+    if (text === previous) {
+      continue;
+    }
     previous = text;
     ticks.push({ col, text, anchor: k === 0 ? 'start' : k === count - 1 ? 'end' : 'middle' });
   }

@@ -11,12 +11,12 @@ import {
   STEP_MS,
   TILE,
   TOP,
-  type TPoint,
-  type TQueueMarks,
 } from '@/lib/queue';
+import type { TPoint, TQueueMarks } from '@/lib/queue';
 import { cn } from '@/lib/utils';
 import type { TQueueTeam } from '@/types/summary.types';
-import { useLayoutEffect, useRef, type CSSProperties, type FC } from 'react';
+import { useLayoutEffect, useRef } from 'react';
+import type { CSSProperties, FC } from 'react';
 
 type Props = {
   teams: TQueueTeam[];
@@ -48,19 +48,24 @@ const QueueTree: FC<Props> = ({ teams, marks, next, drawKey }) => {
   const reveal = (depth + 1) * STEP_MS + 120;
 
   const chain: number[] = [];
-  for (let i: number | null = next; i !== null; i = nodes[i].parent) chain.unshift(i);
+  for (let i: number | null = next; i !== null; i = nodes[i].parent) {
+    chain.unshift(i);
+  }
   let trail = '';
   if (chain.length > 1) {
     trail = `M${center(chain[0]).x} ${center(chain[0]).y}`;
-    for (let k = 1; k < chain.length; k++)
+    for (let k = 1; k < chain.length; k++) {
       trail += bend(center(chain[k - 1]), center(chain[k]), center(chain[k]).y);
+    }
   }
   const axis = height - 16;
 
   // Le dessin est remonté à chaque changement (clé) : la file avance sous les yeux.
   useLayoutEffect(() => {
     const root = svg.current;
-    if (!root) return;
+    if (!root) {
+      return;
+    }
     const before = previous.current;
     previous.current = at;
     if (!before) {
@@ -69,7 +74,7 @@ const QueueTree: FC<Props> = ({ teams, marks, next, drawKey }) => {
     }
     const moved: SVGGElement[] = [];
     for (const group of root.querySelectorAll<SVGGElement>('.node')) {
-      const team = group.getAttribute('data-team')!;
+      const team = group.dataset.team!;
       const from = before.get(team);
       if (!from) {
         group.classList.add('fresh');
@@ -103,7 +108,9 @@ const QueueTree: FC<Props> = ({ teams, marks, next, drawKey }) => {
     >
       <g className="edges">
         {nodes.map((node, i) => {
-          if (node.parent === null) return null;
+          if (node.parent === null) {
+            return null;
+          }
           const a = center(node.parent);
           const b = center(i);
           return (

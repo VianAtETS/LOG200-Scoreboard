@@ -20,19 +20,23 @@ type Props = {
 };
 
 const MatchCard: FC<Props> = ({ match: m, view, seeds, byId, model, running, describe }) => {
-  const bye = m.status === 'done' && !m.games.length;
+  const bye = m.status === 'done' && m.games.length === 0;
   const from = m.from.flatMap((f) => (f.winner ? [f.winner] : [])).join(',');
 
-  if (bye && !m.teams[0] && !m.teams[1])
+  if (bye && !m.teams[0] && !m.teams[1]) {
     return <div className="match-wrap" data-id={m.id} data-from={from} />;
+  }
 
   const awaiting = (source: TMatchSource) => {
     const previous = byId.get((source.winner ?? source.loser)!);
     if (
       bye ||
-      (previous?.status === 'done' && !previous.games.length && (source.loser || !previous.winner))
-    )
+      (previous?.status === 'done' &&
+        previous.games.length === 0 &&
+        (source.loser || !previous.winner))
+    ) {
       return 'exempt';
+    }
     return source.winner
       ? `vainqueur ${source.winner}`
       : source.loser
@@ -44,7 +48,7 @@ const MatchCard: FC<Props> = ({ match: m, view, seeds, byId, model, running, des
 
   const slot = (i: 0 | 1) => {
     const team = m.teams[i];
-    const state = !team ? 'tbd' : bye ? '' : m.winner === team ? 'win' : m.winner ? 'lose' : '';
+    const state = team ? (bye ? '' : m.winner === team ? 'win' : m.winner ? 'lose' : '') : 'tbd';
     const chance = open ? winProbability(model, team, m.teams[1 - i]) : null;
     return (
       <div className={cn('slot', state)}>
@@ -52,15 +56,15 @@ const MatchCard: FC<Props> = ({ match: m, view, seeds, byId, model, running, des
         <span className="name" title={team ? describe(team) : ''}>
           {team ?? awaiting(m.from[i])}
         </span>
-        {chance !== null ? (
+        {chance === null ? (
+          <span className="score">{team && scored ? String(m.score[i]) : ''}</span>
+        ) : (
           <span
             className="score prob"
             title={`${percent(chance)} % de chances de gagner une manche, selon le modèle (couleurs moyennées)`}
           >
             {percent(chance)}%
           </span>
-        ) : (
-          <span className="score">{team && scored ? String(m.score[i]) : ''}</span>
         )}
       </div>
     );

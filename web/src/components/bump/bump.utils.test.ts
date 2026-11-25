@@ -8,7 +8,9 @@ test('valueAt uses at most 100 vertex reads to interpolate in a sorted 65k-verte
   let reads = 0;
   const observed = new Proxy(path, {
     get(target, property, receiver) {
-      if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) reads++;
+      if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
+        reads++;
+      }
       return Reflect.get(target, property, receiver);
     },
   });

@@ -1,12 +1,5 @@
-import {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type FC,
-  type KeyboardEvent,
-  type PointerEvent,
-} from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import type { FC, KeyboardEvent, PointerEvent } from 'react';
 
 type Props = {
   above: string;
@@ -31,8 +24,11 @@ const load = (key: string) => {
 
 const save = (key: string, height: number | null) => {
   try {
-    if (height === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, String(Math.round(height)));
+    if (height === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, String(Math.round(height)));
+    }
   } catch {
     console.warn(`[local-storage] Impossible de sauvegarder la hauteur du split : ${key}`);
   }
@@ -46,24 +42,30 @@ const SplitHandle: FC<Props> = ({ above, below, label, storageKey }) => {
   const [dragging, setDragging] = useState(false);
 
   const nodes = useCallback(() => {
-    const top = document.getElementById(above);
-    const bottom = document.getElementById(below);
+    const top = document.querySelector(`#${above}`);
+    const bottom = document.querySelector(`#${below}`);
     const layout = ref.current?.parentElement;
     return top && bottom && layout ? { top, bottom, layout } : null;
   }, [above, below]);
 
   const measure = useCallback(() => {
     const n = nodes();
-    if (!n) return;
+    if (!n) {
+      return;
+    }
     const total = n.top.offsetHeight + n.bottom.offsetHeight;
-    if (total > 0) setShare(Math.round((100 * n.top.offsetHeight) / total));
+    if (total > 0) {
+      setShare(Math.round((100 * n.top.offsetHeight) / total));
+    }
   }, [nodes]);
 
   // Bornée à ce que la grille rend vraiment ; pas au chargement, le tableau est encore vide.
   const apply = useCallback(
     (height: number | null, clamp = true) => {
       const n = nodes();
-      if (!n) return null;
+      if (!n) {
+        return null;
+      }
       if (height === null) {
         n.layout.style.removeProperty('--split-height');
         delete n.layout.dataset.split;
@@ -89,7 +91,9 @@ const SplitHandle: FC<Props> = ({ above, below, label, storageKey }) => {
   useLayoutEffect(() => {
     apply(load(storageKey), false);
     const n = nodes();
-    if (!n) return;
+    if (!n) {
+      return;
+    }
     const observer = new ResizeObserver(measure);
     observer.observe(n.top);
     observer.observe(n.bottom);
@@ -100,7 +104,9 @@ const SplitHandle: FC<Props> = ({ above, below, label, storageKey }) => {
   const commit = (height: number | null) => save(storageKey, apply(height));
 
   const handlePointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0) {
+      return;
+    }
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { y: e.clientY, height: current() };
@@ -108,11 +114,15 @@ const SplitHandle: FC<Props> = ({ above, below, label, storageKey }) => {
   };
 
   const handlePointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (drag.current) apply(drag.current.height + e.clientY - drag.current.y);
+    if (drag.current) {
+      apply(drag.current.height + e.clientY - drag.current.y);
+    }
   };
 
   const handlePointerEnd = () => {
-    if (!drag.current) return;
+    if (!drag.current) {
+      return;
+    }
     drag.current = null;
     setDragging(false);
     commit(current());
@@ -128,7 +138,9 @@ const SplitHandle: FC<Props> = ({ above, below, label, storageKey }) => {
       End: 100_000,
       Enter: null,
     };
-    if (!(e.key in moves)) return;
+    if (!(e.key in moves)) {
+      return;
+    }
     e.preventDefault();
     commit(moves[e.key]);
   };

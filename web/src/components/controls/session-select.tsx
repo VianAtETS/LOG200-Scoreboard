@@ -17,20 +17,18 @@ const SessionSelect: FC<Props> = ({
   label = 'Session',
   id = 'session',
   disabled,
-}) => {
-  return (
-    <label className="session">
-      <span>{label}</span>
-      <select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-};
+}) => (
+  <label className="session">
+    <span>{label}</span>
+    <select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  </label>
+);
 
 // "Toutes", puis chaque session.
 export const sessionOptions = (sessions: string[] = []) => [

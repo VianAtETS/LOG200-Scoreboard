@@ -16,13 +16,11 @@ type Props = PropsWithChildren & {
   title?: string;
 };
 
-const Badge: FC<Props> = ({ variant = 'default', title, children }) => {
-  return (
-    <span className={cn('badge', badgeVariantsStyles[variant])} title={title}>
-      {children}
-    </span>
-  );
-};
+const Badge: FC<Props> = ({ variant = 'default', title, children }) => (
+  <span className={cn('badge', badgeVariantsStyles[variant])} title={title}>
+    {children}
+  </span>
+);
 
 const REMOTE_TITLE =
   "Joue depuis la machine de l'équipe : code non vérifié, sans limite de coeurs ni de mémoire, latence réseau comptée";

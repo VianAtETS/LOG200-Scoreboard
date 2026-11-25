@@ -14,7 +14,7 @@ import { useGetSummary } from '@/dao/hooks/use-ladder';
 import { usePulse } from '@/hooks/use-pulse';
 import { useSearchParam } from '@/hooks/use-search-param';
 import { rankSeries, topTeams } from '@/lib/bump';
-import { GLOBAL, WINDOW_OPTIONS, WINDOWS, windowOf } from '@/lib/constants';
+import { GLOBAL, WINDOWS, WINDOW_OPTIONS, windowOf } from '@/lib/constants';
 import { timeFormat, versionOf } from '@/lib/format';
 import { withProviders } from '@/providers/with-providers';
 import { useCallback, useMemo } from 'react';
@@ -55,7 +55,9 @@ const GraphePage = () => {
   );
 
   const selected = useMemo(() => {
-    if (teamsParam === null) return topTeams(ratings);
+    if (teamsParam === null) {
+      return topTeams(ratings);
+    }
     const known = new Set(ratings.map((r) => r.team));
     return teamsParam.split(',').filter((t) => t && known.has(t));
   }, [teamsParam, ratings]);

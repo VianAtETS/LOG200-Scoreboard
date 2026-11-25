@@ -1,6 +1,7 @@
 import { useGetHealth } from '@/dao/hooks/use-ladder';
 import { submitJar } from '@/dao/scoreboard.repository';
-import { useState, type FC, type SubmitEvent } from 'react';
+import { useState } from 'react';
+import type { FC, SubmitEvent } from 'react';
 
 type TSubmitState = 'pending' | 'ok' | 'error';
 
@@ -17,7 +18,9 @@ const SubmitSection: FC = () => {
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
-    if (!file || state === 'pending') return;
+    if (!file || state === 'pending') {
+      return;
+    }
     setState('pending');
     setMessage(
       "Parties de test en cours : une à deux minutes, plus si d'autres soumissions attendent…",
@@ -26,10 +29,10 @@ const SubmitSection: FC = () => {
       const verdict = await submitJar(token.trim(), file);
       setState(verdict.ok ? 'ok' : 'error');
       setMessage(verdict.message);
-    } catch (err) {
+    } catch (error) {
       setState('error');
       setMessage(
-        `Envoi impossible : ${(err as Error).message}. Vérifiez la connexion, puis réessayez.`,
+        `Envoi impossible : ${(error as Error).message}. Vérifiez la connexion, puis réessayez.`,
       );
     }
   };

@@ -70,37 +70,55 @@ export function rankingView(
   const ranks = new Map(ratings.filter((r) => !r.archived).map((r, i) => [r.team, i + 1]));
   const value = (r: TRankingRow) => {
     switch (sort.column) {
-      case 'rank':
+      case 'rank': {
         return r.archived ? undefined : ranks.get(r.team);
-      case 'elo':
+      }
+      case 'elo': {
         return r[measures.elo];
-      case 'record':
+      }
+      case 'record': {
         return recordOf(r, measures.record).wins;
-      case 'games':
+      }
+      case 'games': {
         return recordOf(r, measures.record).games;
-      case 'pct':
+      }
+      case 'pct': {
         return winRate(r);
-      case 'pace':
+      }
+      case 'pace': {
         return r.pace?.[measures.pace];
-      case 'last':
+      }
+      case 'last': {
         return r.last ? Date.parse(r.last) : undefined;
-      case 'team':
+      }
+      case 'team': {
         return undefined;
+      }
     }
   };
   const direction = sort.direction === 'ascending' ? 1 : -1;
   // Stable sorting starts from the official order, never the previous displayed order.
   const rows = [...ratings].sort((a, b) => {
-    if (sort.column === 'team') return direction * teamNames.compare(a.team, b.team);
+    if (sort.column === 'team') {
+      return direction * teamNames.compare(a.team, b.team);
+    }
     const av = value(a);
     const bv = value(b);
     const missingA = av === undefined || !Number.isFinite(av);
     const missingB = bv === undefined || !Number.isFinite(bv);
-    if (missingA && missingB) return 0;
-    if (missingA) return 1;
-    if (missingB) return -1;
-    const difference = av! - bv!;
-    if (difference || sort.column !== 'record') return direction * difference;
+    if (missingA && missingB) {
+      return 0;
+    }
+    if (missingA) {
+      return 1;
+    }
+    if (missingB) {
+      return -1;
+    }
+    const difference = av - bv;
+    if (difference || sort.column !== 'record') {
+      return direction * difference;
+    }
     // With equal wins, fewer losses comes first in descending order.
     return direction * (recordOf(b, measures.record).losses - recordOf(a, measures.record).losses);
   });

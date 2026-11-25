@@ -16,10 +16,16 @@ export function shortWhen(ts: string) {
 }
 
 export function ago(ts: string) {
-  const minutes = Math.floor((Date.now() - Date.parse(ts)) / 60000);
-  if (minutes < 1) return "à l'instant";
-  if (minutes < 60) return `il y a ${minutes} min`;
-  if (minutes < 24 * 60) return `il y a ${Math.floor(minutes / 60)} h`;
+  const minutes = Math.floor((Date.now() - Date.parse(ts)) / 60_000);
+  if (minutes < 1) {
+    return "à l'instant";
+  }
+  if (minutes < 60) {
+    return `il y a ${minutes} min`;
+  }
+  if (minutes < 24 * 60) {
+    return `il y a ${Math.floor(minutes / 60)} h`;
+  }
   return dayFormat.format(new Date(ts));
 }
 

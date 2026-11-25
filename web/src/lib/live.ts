@@ -6,8 +6,8 @@ import type { TLiveGame, TLiveGames, TLiveMessage, TLiveState } from '../types/l
 
 export const LIVE_VERSION = 1;
 const RETRY_MIN_MS = 1000;
-const RETRY_MAX_MS = 60000;
-export const ENDED_KEEP_MS = 30000;
+const RETRY_MAX_MS = 60_000;
+export const ENDED_KEEP_MS = 30_000;
 
 export function liveUrl(server: string, base: string) {
   const url = new URL(`${server}/api/live`, base);
@@ -20,7 +20,9 @@ export function apply(
   msg: TLiveMessage,
   now: number,
 ): TLiveGames | 'outdated' | 'resync' {
-  if (msg.v !== LIVE_VERSION) return 'outdated';
+  if (msg.v !== LIVE_VERSION) {
+    return 'outdated';
+  }
   games = forget(games, now);
   const next = new Map(games);
   const live = (g: TLiveGame): TLiveGame => ({ ...g, turnAt: now - (g.turn_ms ?? 0) });
@@ -28,18 +30,25 @@ export function apply(
     case 'snapshot': {
       const fresh = new Map(msg.games.map((g) => [g.id, live(g)]));
       for (const [id, g] of games) {
-        if (fresh.has(id)) continue;
+        if (fresh.has(id)) {
+          continue;
+        }
         fresh.set(id, g.ended ? g : { ...g, ended: { interrupted: true }, endedAt: now });
       }
       return fresh;
     }
-    case 'started':
+    case 'started': {
       next.set(msg.game.id, live(msg.game));
       return next;
+    }
     case 'move': {
       const g = games.get(msg.id);
-      if (!g || g.ended) return games;
-      if (msg.n !== g.moves.length) return 'resync';
+      if (!g || g.ended) {
+        return games;
+      }
+      if (msg.n !== g.moves.length) {
+        return 'resync';
+      }
       next.set(msg.id, {
         ...g,
         moves: [...g.moves, msg.move],
@@ -50,7 +59,9 @@ export function apply(
     }
     case 'ended': {
       const g = games.get(msg.id);
-      if (!g) return games;
+      if (!g) {
+        return games;
+      }
       const { winner, reason, cancelled } = msg;
       next.set(msg.id, {
         ...g,
@@ -59,8 +70,9 @@ export function apply(
       });
       return next;
     }
-    default:
+    default: {
       return games;
+    }
   }
 }
 
@@ -117,7 +129,9 @@ export function connectLive(url: string, onChange: (games: TLiveGames, state: TL
       }
     };
     socket.onclose = () => {
-      if (outdated || closed) return;
+      if (outdated || closed) {
+        return;
+      }
       onChange(games, joined ? 'reconnecting' : 'unavailable');
       timer = setTimeout(open, retry * (0.5 + Math.random()));
       retry = Math.min(retry * 2, RETRY_MAX_MS);

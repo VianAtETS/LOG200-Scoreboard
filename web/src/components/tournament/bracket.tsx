@@ -1,9 +1,10 @@
 import type { TRunningGame } from '@/types/games.types';
 import type { TModel } from '@/types/summary.types';
 import type { TBracketSide, TMatch, TTournament } from '@/types/tournament.types';
-import { useLayoutEffect, useRef, useState, type FC, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import type { FC, ReactNode } from 'react';
 import { MatchCard } from './match-card';
-import { roundTitle, SIDES } from './tournament.utils';
+import { SIDES, roundTitle } from './tournament.utils';
 
 type Props = {
   view: TTournament;
@@ -23,10 +24,12 @@ const Bracket: FC<Props> = ({ view, model, running, describe }) => {
         const matches = view.matches.filter((m) => m.side === side);
         const last = Math.max(...matches.map((m) => m.round));
         const rounds: [string, TMatch[]][] = [];
-        for (let r = 1; r <= last; r++)
+        for (let r = 1; r <= last; r++) {
           rounds.push([roundTitle(side, r, last), matches.filter((m) => m.round === r)]);
-        if (side === 'winners')
+        }
+        if (side === 'winners') {
           rounds.push([roundTitle('final'), view.matches.filter((m) => m.side === 'final')]);
+        }
         return (
           <BracketSection key={side} side={side} title={title} rounds={rounds}>
             {(list) =>
@@ -67,15 +70,21 @@ const BracketSection: FC<SectionProps> = ({ title, rounds, children }) => {
   useLayoutEffect(() => {
     const draw = () => {
       const node = ref.current;
-      if (!node) return;
+      if (!node) {
+        return;
+      }
       const box = node.getBoundingClientRect();
       const paths: string[] = [];
       for (const target of node.querySelectorAll<HTMLElement>('.match-wrap[data-from]')) {
         const to = target.querySelector('.match')?.getBoundingClientRect();
-        if (!to?.width) continue;
+        if (!to?.width) {
+          continue;
+        }
         for (const id of target.dataset.from!.split(',').filter(Boolean)) {
           const from = node.querySelector(`[data-id="${id}"] .match`)?.getBoundingClientRect();
-          if (!from?.width) continue;
+          if (!from?.width) {
+            continue;
+          }
           const [ax, ay] = [from.right - box.left, from.top + from.height / 2 - box.top];
           const [bx, by] = [to.left - box.left, to.top + to.height / 2 - box.top];
           const mx = (ax + bx) / 2;
@@ -86,7 +95,7 @@ const BracketSection: FC<SectionProps> = ({ title, rounds, children }) => {
       setLinks((prev) =>
         prev.width === next.width &&
         prev.height === next.height &&
-        prev.paths.join() === next.paths.join()
+        prev.paths.join(',') === next.paths.join(',')
           ? prev
           : next,
       );

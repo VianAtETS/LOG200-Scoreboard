@@ -33,7 +33,11 @@ export function predicted(view: TTournament, factor: number, fromStart = true) {
 }
 
 export function roundTitle(side: TBracketSide, round?: number, last?: number) {
-  if (side === 'final') return 'Grande finale';
-  if (round === last) return side === 'winners' ? 'Finale du principal' : 'Finale du repêchage';
+  if (side === 'final') {
+    return 'Grande finale';
+  }
+  if (round === last) {
+    return side === 'winners' ? 'Finale du principal' : 'Finale du repêchage';
+  }
   return side === 'winners' ? `Tour ${round}` : `Repêchage ${round}`;
 }

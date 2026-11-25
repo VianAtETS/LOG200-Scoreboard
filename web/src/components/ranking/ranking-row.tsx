@@ -6,7 +6,8 @@ import type { TColor, TTournamentRef } from '@/types/games.types';
 import type { TPaceStat, TTeamRating } from '@/types/summary.types';
 import type { FC } from 'react';
 import { DuelBadge } from './duel-badge';
-import { PACE_WARN, recordOf, winRate, type TEloStat, type TRecordStat } from './ranking.data';
+import { PACE_WARN, recordOf, winRate } from './ranking.data';
+import type { TEloStat, TRecordStat } from './ranking.data';
 
 export type TDuel = {
   id?: string;
@@ -125,7 +126,9 @@ const RankingRow: FC<Props> = ({
 
 const PaceCell = ({ rating: { pace }, stat }: { rating: TTeamRating; stat: TPaceStat }) => {
   // Sans `mean` : summary.json d'un ladder plus ancien.
-  if (pace?.[stat] === undefined) return <td className="num pace" />;
+  if (pace?.[stat] === undefined) {
+    return <td className="num pace" />;
+  }
   const mean = pace.mean === undefined ? '' : `Moyenne ${pace.mean} ms, `;
   const title = `${mean}médiane ${pace.p50} ms, p95 ${pace.p95} ms, p99 ${pace.p99} ms, max ${pace.max} ms, ${pace.count} coups`;
   return (

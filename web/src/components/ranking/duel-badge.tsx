@@ -4,7 +4,8 @@ import { percent } from '@/lib/predict';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import type { TColor, TTournamentRef } from '@/types/games.types';
-import { useRef, type FC, type MouseEvent } from 'react';
+import { useRef } from 'react';
+import type { FC, MouseEvent } from 'react';
 
 type Props = {
   team: string;
@@ -25,7 +26,9 @@ const DuelBadge: FC<Props> = ({ team, opponent, color, chance, id, tournament })
 
   // detail 0 : Entrée au clavier, qui suit le lien.
   const handleClick = (e: MouseEvent<HTMLElement>) => {
-    if (e.detail === 0 || pointer.current === 'mouse') return;
+    if (e.detail === 0 || pointer.current === 'mouse') {
+      return;
+    }
     e.preventDefault();
     pin(e.currentTarget);
   };

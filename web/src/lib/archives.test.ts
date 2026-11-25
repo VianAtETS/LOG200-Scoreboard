@@ -55,8 +55,8 @@ test('a restored build becomes current again without renumbering old versions', 
 });
 
 test('archived statistics stop at that hash and do not mutate the active ranking', () => {
-  const s = summary(),
-    before = JSON.stringify(s);
+  const s = summary();
+  const before = JSON.stringify(s);
   const selected = archiveOptions(s).filter((o) => o.team === 'eq118');
   const result = archivedRows(
     [

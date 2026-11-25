@@ -7,11 +7,16 @@ export function parseJsonl<T extends { v: number } = TGameRow>(text: string) {
   const games: T[] = [];
   let skipped = 0;
   for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
+    if (!line.trim()) {
+      continue;
+    }
     try {
       const g = JSON.parse(line);
-      if (g.v === 1) games.push(g);
-      else skipped++;
+      if (g.v === 1) {
+        games.push(g);
+      } else {
+        skipped++;
+      }
     } catch {
       skipped++;
     }
@@ -42,8 +47,12 @@ export function gamesOf(
   const games = new Map<string, TGameRow>();
   for (const team of chosen) {
     for (const g of rowsByTeam.get(team) ?? []) {
-      if (session && g.session !== session) continue;
-      if (between && !(chosen.has(g.red.team) && chosen.has(g.black.team))) continue;
+      if (session && g.session !== session) {
+        continue;
+      }
+      if (between && !(chosen.has(g.red.team) && chosen.has(g.black.team))) {
+        continue;
+      }
       games.set(g.id, g);
     }
   }
@@ -57,10 +66,16 @@ export function record(games: TGameRow[], team: string, opponent: string, build?
   let played = 0;
   for (const g of games) {
     const color = g.red.team === team ? 'red' : g.black.team === team ? 'black' : null;
-    if (!color || g[color === 'red' ? 'black' : 'red'].team !== opponent) continue;
-    if (build && g[color].build !== build) continue;
+    if (!color || g[color === 'red' ? 'black' : 'red'].team !== opponent) {
+      continue;
+    }
+    if (build && g[color].build !== build) {
+      continue;
+    }
     played++;
-    if (g.winner === color) wins++;
+    if (g.winner === color) {
+      wins++;
+    }
   }
   return { wins, games: played };
 }

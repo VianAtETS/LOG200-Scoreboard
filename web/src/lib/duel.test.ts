@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { eloGap, pairCounts, signTest, sprt, SPRT_EXPECTED, wilson } from './duel.ts';
+import { SPRT_EXPECTED, eloGap, pairCounts, signTest, sprt, wilson } from './duel.ts';
 
 // Valeurs attendues calculées par signTest, sprt, wilson et elo d'arena/web/app.js (arène isola).
 const close = (actual: number, expected: number) =>
@@ -19,8 +19,9 @@ test('test du signe identique à isola, même au-delà de 1075 paires', () => {
     [300, 280, 0.4301768979847971],
     [700, 650, 0.18231034946697916],
     [1100, 0, 0],
-  ])
+  ]) {
     close(signTest(a, b), p);
+  }
 });
 
 test('SPRT identique à isola', () => {
@@ -42,8 +43,9 @@ test('SPRT identique à isola', () => {
     [100, 100, 3],
     [18, 4, 0],
     [15, 45, 2],
-  ] as const)
+  ] as const) {
     assert.equal(sprt(a, b), verdict[v], `${a}-${b}`);
+  }
   assert.equal(SPRT_EXPECTED, 78);
 });
 
@@ -59,14 +61,15 @@ test('Wilson et Elo identiques à isola', () => {
     close(l, low);
     close(h, high);
   }
-  assert.deepEqual(wilson(0, 0), [NaN, NaN]);
+  assert.deepEqual(wilson(0, 0), [Number.NaN, Number.NaN]);
   for (const [s, e] of [
     [0.5, 0],
     [0.75, 190.848501887865],
     [0.25, -190.84850188786498],
     [0.9, 381.69700377572985],
-  ])
+  ]) {
     close(eloGap(s), e);
+  }
   assert.ok(Number.isNaN(eloGap(0)) && Number.isNaN(eloGap(1)));
 });
 

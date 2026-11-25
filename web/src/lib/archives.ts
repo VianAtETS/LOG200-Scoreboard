@@ -17,11 +17,12 @@ export const archiveKey = (team: string, build?: string) => `${encodeURIComponen
 
 export function currentBuilds(summary: TSummary) {
   const latest = new Map<string, TTeamRating>();
-  for (const scope of Object.values(summary.scopes))
+  for (const scope of Object.values(summary.scopes)) {
     for (const r of scope.ratings) {
       if (r.build && (!latest.has(r.team) || r.last! > latest.get(r.team)!.last!))
         latest.set(r.team, r);
     }
+  }
   return new Map(
     Object.entries(summary.builds).map(([team, builds]) => [
       team,
@@ -58,13 +59,19 @@ export function archivedRows(
   const wanted = new Map(selected.map((s) => [s.key, s]));
   const out = new Map<string, TRankingRow>();
   for (const g of [...rows].sort((a, b) => a.ts.localeCompare(b.ts))) {
-    if (session ? g.session !== session : g.tournament) continue;
-    if (verified && isRemote(g)) continue;
+    if (session ? g.session !== session : g.tournament) {
+      continue;
+    }
+    if (verified && isRemote(g)) {
+      continue;
+    }
     for (const color of ['red', 'black'] as TColor[]) {
       const side = g[color];
       const id = archiveKey(side.team, side.build);
       const option = wanted.get(id);
-      if (!option) continue;
+      if (!option) {
+        continue;
+      }
       const [rating, delta] = ratingOf(side, session ? 'session' : 'all', verified);
       const r = out.get(id) ?? {
         ...option,
@@ -85,7 +92,9 @@ export function archivedRows(
       if (g.winner === color) {
         r.wins++;
         r.build_wins++;
-      } else r.losses++;
+      } else {
+        r.losses++;
+      }
       r.remote ||= Boolean(side.remote);
       r.last = g.ts;
       out.set(id, r);
@@ -108,7 +117,9 @@ export function withArchivedRows(ratings: TTeamRating[], archived: TRankingRow[]
   const out: TRankingRow[] = [];
   let i = 0;
   for (const r of ratings) {
-    while (i < extra.length && extra[i].rating > r.rating) out.push(extra[i++]);
+    while (i < extra.length && extra[i].rating > r.rating) {
+      out.push(extra[i++]);
+    }
     out.push(r);
   }
   return out.concat(extra.slice(i));

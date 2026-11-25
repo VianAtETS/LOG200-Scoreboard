@@ -19,7 +19,9 @@ const DuelRecord: FC<Props> = ({ teams, games, ratings, versionOf }) => {
   const current = (team: string) => ratings.find((r) => r.team === team)?.build;
   const sides = teams.length === 2 ? teams.map((team) => ({ team, build: current(team) })) : null;
   const { data: pairs } = useGetDuelPairs(sides);
-  if (!sides) return <p id="duel" className="graph-link" hidden />;
+  if (!sides) {
+    return <p id="duel" className="graph-link" hidden />;
+  }
 
   const line = (team: string, opponent: string) => {
     const build = current(team);

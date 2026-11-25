@@ -29,11 +29,13 @@ export function squareName(index: number) {
 
 export function parseMove(text: string): TMove {
   const m = MOVE.exec(text);
-  if (!m) throw new Error(`coup illisible : ${text}`);
+  if (!m) {
+    throw new Error(`coup illisible : ${text}`);
+  }
   return {
-    from: squareIndex(m[1], +m[2]),
-    to: squareIndex(m[3], +m[4]),
-    destroyed: squareIndex(m[5], +m[6]),
+    from: squareIndex(m[1], Number(m[2])),
+    to: squareIndex(m[3], Number(m[4])),
+    destroyed: squareIndex(m[5], Number(m[6])),
   };
 }
 
@@ -51,7 +53,7 @@ export function positions(game: { opening?: string[]; moves: string[] }) {
   const out: TStep[] = [{ cells, move: null, text: null, opening: false }];
   all.forEach((text, i) => {
     const move = parseMove(text);
-    cells = cells.slice();
+    cells = [...cells];
     cells[move.to] = cells[move.from];
     cells[move.from] = EMPTY;
     cells[move.destroyed] = DESTROYED;

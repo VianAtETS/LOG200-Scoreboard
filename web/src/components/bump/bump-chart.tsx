@@ -1,5 +1,6 @@
 import { CloseIcon } from '@/components/icons/icons';
-import { pointAt, type TRankPoint } from '@/lib/bump';
+import { pointAt } from '@/lib/bump';
+import type { TRankPoint } from '@/lib/bump';
 import { dayFormat, fullFormat, ordinal } from '@/lib/format';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
@@ -12,10 +13,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type FC,
-  type KeyboardEvent,
 } from 'react';
-import { chartGeometry, dateTicks, valueAt, type TChartMetric } from './bump.utils';
+import type { FC, KeyboardEvent } from 'react';
+import { chartGeometry, dateTicks, valueAt } from './bump.utils';
+import type { TChartMetric } from './bump.utils';
 
 type Props = {
   columns: TRatingRow[];
@@ -65,7 +66,9 @@ const BumpChart: FC<Props> = ({
   );
 
   const lines = useMemo(() => {
-    if (!geom) return [];
+    if (!geom) {
+      return [];
+    }
     const cached = new Set(
       [...geom.paths]
         .filter(([, path]) => path.length > geom.inner.w)
@@ -84,7 +87,9 @@ const BumpChart: FC<Props> = ({
   }, [geom]);
 
   const cancelPointer = useCallback(() => {
-    if (pointerFrame.current !== null) cancelAnimationFrame(pointerFrame.current);
+    if (pointerFrame.current !== null) {
+      cancelAnimationFrame(pointerFrame.current);
+    }
     pointerFrame.current = null;
     pendingPoint.current = null;
   }, []);
@@ -112,12 +117,16 @@ const BumpChart: FC<Props> = ({
   const inspectAt = (col: number, team: string | null) => {
     col = clampColumn(col);
     const rows = standingsAt(col);
-    if (!rows.some((r) => r.team === team)) team = rows[0]?.team ?? null;
+    if (!rows.some((r) => r.team === team)) {
+      team = rows[0]?.team ?? null;
+    }
     return { col, team, rows };
   };
 
   const showAt = (col: number, team = hover.team) => {
-    if (!geom) return hide();
+    if (!geom) {
+      return void hide();
+    }
     cancelPointer();
     const next = inspectAt(col, team);
     setHover((h) =>
@@ -133,9 +142,13 @@ const BumpChart: FC<Props> = ({
   const toolTipOpenned = hover.col !== null;
 
   useEffect(() => {
-    if (!toolTipOpenned) return;
+    if (!toolTipOpenned) {
+      return;
+    }
     const handlePointerDown = (e: PointerEvent) => {
-      if (figure.current?.contains(e.target as Node)) return;
+      if (figure.current?.contains(e.target as Node)) {
+        return;
+      }
       cancelPointer();
       setHover((h) => ({ ...h, col: null }));
     };
@@ -152,9 +165,13 @@ const BumpChart: FC<Props> = ({
     let team: string | null = null;
     let best = Infinity;
     for (const [t, path] of geom!.paths) {
-      if (path[0][0] > at) continue;
+      if (path[0][0] > at) {
+        continue;
+      }
       const distance = Math.abs(geom!.y(valueAt(path, at)) - py);
-      if (distance < best) [team, best] = [t, distance];
+      if (distance < best) {
+        [team, best] = [t, distance];
+      }
     }
     return { col: at, team };
   };
@@ -163,7 +180,9 @@ const BumpChart: FC<Props> = ({
   const gameUrl = (id: string) => pageUrl('./', { game: id });
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (!geom) return;
+    if (!geom) {
+      return;
+    }
     const current = col ?? columns.length - 1;
     const page = Math.max(1, Math.round(columns.length / 10));
     const moves: Record<string, number> = {
@@ -174,16 +193,20 @@ const BumpChart: FC<Props> = ({
       Home: 0,
       End: columns.length - 1,
     };
-    if (e.key in moves) showAt(moves[e.key]);
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    if (e.key in moves) {
+      showAt(moves[e.key]);
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       const rows = standingsAt(current);
       const i = rows.findIndex((r) => r.team === hover.team) + (e.key === 'ArrowUp' ? -1 : 1);
       showAt(current, rows[Math.max(0, Math.min(rows.length - 1, i))]?.team ?? null);
     } else if (e.key === 'Enter' || e.key === ' ') {
       cancelPointer();
       location.assign(gameUrl(columns[current].id));
-    } else if (e.key === 'Escape') hide();
-    else return;
+    } else if (e.key === 'Escape') {
+      hide();
+    } else {
+      return;
+    }
     e.preventDefault();
   };
 
@@ -207,7 +230,9 @@ const BumpChart: FC<Props> = ({
 
   useLayoutEffect(() => {
     const node = tip.current;
-    if (!node || !geom || col === null) return;
+    if (!node || !geom || col === null) {
+      return;
+    }
     const width = node.offsetWidth;
     node.style.left = `${left + 14 + width <= geom.width ? left + 14 : Math.max(0, left - 14 - width)}px`;
   });
@@ -215,11 +240,7 @@ const BumpChart: FC<Props> = ({
   let summary: string;
   if (loading) {
     summary = 'Chargement du graphe…';
-  } else if (!geom) {
-    summary = !selected.length
-      ? 'Aucune équipe choisie.'
-      : 'Aucune partie de ces équipes dans cette fenêtre.';
-  } else {
+  } else if (geom) {
     const from = dayFormat.format(new Date(columns[0].ts));
     const to = dayFormat.format(new Date(columns[columns.length - 1].ts));
     const parts = [
@@ -236,6 +257,10 @@ const BumpChart: FC<Props> = ({
       );
     }
     summary = `${parts.join(' ; ')}.`;
+  } else {
+    summary = !selected.length
+      ? 'Aucune équipe choisie.'
+      : 'Aucune partie de ces équipes dans cette fenêtre.';
   }
 
   const focus = rows.find((r) => r.team === team);
@@ -249,10 +274,14 @@ const BumpChart: FC<Props> = ({
       ref={figure}
       className="bump-figure"
       onPointerLeave={(e) => {
-        if (!e.currentTarget.contains(document.activeElement)) hide();
+        if (!e.currentTarget.contains(document.activeElement)) {
+          hide();
+        }
       }}
       onBlur={(e) => {
-        if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) hide();
+        if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) {
+          hide();
+        }
       }}
     >
       <div
@@ -270,14 +299,20 @@ const BumpChart: FC<Props> = ({
         aria-describedby="bump-summary"
         aria-label="Parties : flèches gauche et droite pour parcourir, haut et bas pour changer d'équipe, Entrée pour rejouer"
         onPointerMove={(e) => {
-          if (!geom || !e.isPrimary) return;
+          if (!geom || !e.isPrimary) {
+            return;
+          }
           pendingPoint.current = { clientX: e.clientX, clientY: e.clientY };
-          if (pointerFrame.current !== null) return;
+          if (pointerFrame.current !== null) {
+            return;
+          }
           pointerFrame.current = requestAnimationFrame(() => {
             pointerFrame.current = null;
             const point = pendingPoint.current;
             pendingPoint.current = null;
-            if (!point) return;
+            if (!point) {
+              return;
+            }
             const at = pointed(point);
             showAt(at.col, at.team);
           });
@@ -288,8 +323,9 @@ const BumpChart: FC<Props> = ({
             !e.isPrimary ||
             e.button !== 0 ||
             (e.target as Element).closest('.tip-dismiss')
-          )
+          ) {
             return;
+          }
           cancelPointer();
           e.currentTarget.focus({ preventScroll: true });
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -404,7 +440,7 @@ const BumpChart: FC<Props> = ({
                   return (
                     <g
                       key={t}
-                      transform={`translate(${geom.margin.left + geom.inner.w + 8},${geom.y(path[path.length - 1][1])})`}
+                      transform={`translate(${geom.margin.left + geom.inner.w + 8},${geom.y(path.at(-1)[1])})`}
                       className={cn(on(t) && 'on')}
                       data-team={t}
                     >

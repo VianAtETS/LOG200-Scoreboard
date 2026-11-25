@@ -3,11 +3,13 @@
 import { CloseIcon } from '@/components/icons/icons';
 import { useGetQueue } from '@/dao/hooks/use-ladder';
 import { useInterval } from '@/hooks/use-interval';
-import { countdown, describe, kinds, LIST_FROM, signed, type TQueueMarks } from '@/lib/queue';
+import { countdown, describe, kinds, LIST_FROM, signed } from '@/lib/queue';
+import type { TQueueMarks } from '@/lib/queue';
 import { cn } from '@/lib/utils';
 import type { TColor, TRunningGame } from '@/types/games.types';
 import type { TAnnounced, TQueueTeam } from '@/types/summary.types';
-import { Fragment, useEffect, useRef, useState, type FC, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import type { FC, ReactNode } from 'react';
 import { QueueTree } from './queue-tree';
 
 type Props = {
@@ -21,7 +23,9 @@ const QueueDialog: FC<Props> = ({ open, onClose, running }) => {
   const { data: file, isFetched } = useGetQueue(open);
 
   useEffect(() => {
-    if (open && !dialog.current?.open) dialog.current?.showModal();
+    if (open && !dialog.current?.open) {
+      dialog.current?.showModal();
+    }
   }, [open]);
 
   return (
@@ -53,7 +57,7 @@ type ViewProps = {
 
 const QueueView: FC<ViewProps> = ({ teams, running, announced }) => {
   const [now, setNow] = useState(() => Date.now());
-  useInterval(() => setNow(Date.now()), announced.length ? 1000 : null);
+  useInterval(() => setNow(Date.now()), announced.length > 0 ? 1000 : null);
 
   if (!teams?.length) {
     const text = teams
@@ -182,11 +186,11 @@ const Headline: FC<{ announced: TAnnounced[]; after: string[]; games: number; no
       {sorted.length > 0 && '. '}
       {after.length > 0 && (
         <>
-          {sorted.length ? 'Ensuite : ' : 'Prochaines à jouer : '}
+          {sorted.length > 0 ? 'Ensuite : ' : 'Prochaines à jouer : '}
           <Names names={after} />.
         </>
       )}
-      {!after.length && !sorted.length && 'Toutes les équipes sont en partie.'}
+      {after.length === 0 && sorted.length === 0 && 'Toutes les équipes sont en partie.'}
       {games > 0 && ` ${games} partie${games > 1 ? 's' : ''} en cours.`}
     </>
   );

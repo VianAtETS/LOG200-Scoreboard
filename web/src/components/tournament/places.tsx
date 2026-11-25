@@ -14,7 +14,7 @@ const Places: FC<Props> = ({ view }) => {
   ranked.sort((a, b) => a.place - b.place || a.team.localeCompare(b.team));
 
   return (
-    <ol id="places" className="places" aria-label="Classement final" hidden={!ranked.length}>
+    <ol id="places" className="places" aria-label="Classement final" hidden={ranked.length === 0}>
       {ranked.map(({ team, place }) => (
         <li key={team} className={cn(place === 1 && 'first')}>
           <span className="place">{place === 1 ? '1er' : `${place}e`}</span>

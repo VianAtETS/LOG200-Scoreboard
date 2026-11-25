@@ -2,7 +2,8 @@
 // et app.js) : mobilité, territoire et région de chaque couleur après chaque coup, coups critiques et point de bascule.
 
 import type { TColor } from '../types/games.types';
-import { BLACK, EMPTY, RED, SIZE, type TStep } from './replay.ts';
+import { BLACK, EMPTY, RED, SIZE } from './replay.ts';
+import type { TStep } from './replay.ts';
 
 export type TSeries = { mob: number[]; terr: number[]; reg: number[] };
 
@@ -43,7 +44,9 @@ function distances(cells: number[], pawn: number) {
         s <= 3;
         s++, x += dx, y += dy
       ) {
-        if (x < 0 || x >= SIZE || y < 0 || y >= SIZE || cells[y * SIZE + x] !== EMPTY) break;
+        if (x < 0 || x >= SIZE || y < 0 || y >= SIZE || cells[y * SIZE + x] !== EMPTY) {
+          break;
+        }
         const i = y * SIZE + x;
         if (dist[i] < 0) {
           dist[i] = dist[cur] + 1;
@@ -61,13 +64,25 @@ function measure(cells: number[]) {
   const b = distances(cells, BLACK);
   const m = { red: { mob: 0, terr: 0, reg: 0 }, black: { mob: 0, terr: 0, reg: 0 } };
   for (let i = 0; i < SIZE * SIZE; i++) {
-    if (r[i] === 1) m.red.mob++;
-    if (b[i] === 1) m.black.mob++;
-    if (r[i] > 0) m.red.reg++;
-    if (b[i] > 0) m.black.reg++;
+    if (r[i] === 1) {
+      m.red.mob++;
+    }
+    if (b[i] === 1) {
+      m.black.mob++;
+    }
+    if (r[i] > 0) {
+      m.red.reg++;
+    }
+    if (b[i] > 0) {
+      m.black.reg++;
+    }
     // Une case atteinte au même tour par les deux n'est à personne.
-    if (r[i] > 0 && (b[i] <= 0 || r[i] < b[i])) m.red.terr++;
-    if (b[i] > 0 && (r[i] <= 0 || b[i] < r[i])) m.black.terr++;
+    if (r[i] > 0 && (b[i] <= 0 || r[i] < b[i])) {
+      m.red.terr++;
+    }
+    if (b[i] > 0 && (r[i] <= 0 || b[i] < r[i])) {
+      m.black.terr++;
+    }
   }
   return m;
 }
@@ -86,12 +101,16 @@ export function analyse(steps: TStep[], game: { winner?: TColor; reason?: string
   const lead = (k: number) => a.red.terr[k] - a.black.terr[k];
   // L'ouverture est tirée au hasard : ses coups ne sont à aucune équipe.
   const swings = steps.flatMap((step, k) => {
-    if (!step.move || step.opening) return [];
+    if (!step.move || step.opening) {
+      return [];
+    }
     const gain = (lead(k) - lead(k - 1)) * (step.cells[step.move.to] === RED ? 1 : -1);
     return Math.abs(gain) >= SWING ? [{ k, gain }] : [];
   });
   swings.sort((x, y) => Math.abs(y.gain) - Math.abs(x.gain));
-  for (const s of swings.slice(0, CRITICAL)) a.crit.set(s.k, s.gain < 0 ? 'bad' : 'fine');
+  for (const s of swings.slice(0, CRITICAL)) {
+    a.crit.set(s.k, s.gain < 0 ? 'bad' : 'fine');
+  }
 
   // Seulement quand le perdant est bloqué : un temps dépassé ne dit rien du territoire.
   if (game.winner && game.reason === 'no_moves') {
@@ -118,7 +137,9 @@ export type TDescription = {
 };
 
 export function describe(values: number[]): TDescription | null {
-  if (!values.length) return null;
+  if (values.length === 0) {
+    return null;
+  }
   const n = values.length;
   const sorted = [...values].sort((x, y) => x - y);
   const mean = values.reduce((s, v) => s + v, 0) / n;

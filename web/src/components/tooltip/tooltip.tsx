@@ -1,16 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type FC,
-  type FocusEvent,
-  type PointerEvent,
-  type PropsWithChildren,
-  type RefObject,
-} from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import type { FC, FocusEvent, PointerEvent, PropsWithChildren, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
 const GAP = 8;
@@ -27,7 +16,9 @@ type Props = PropsWithChildren & {
 const Tooltip: FC<Props> = ({ id, anchor, pinned, tipRef, children }) => {
   useLayoutEffect(() => {
     const tip = tipRef.current;
-    if (!anchor || !tip) return;
+    if (!anchor || !tip) {
+      return;
+    }
     const a = anchor.getBoundingClientRect();
     const t = tip.getBoundingClientRect();
     const below = a.top - GAP - t.height < MARGIN;
@@ -40,7 +31,9 @@ const Tooltip: FC<Props> = ({ id, anchor, pinned, tipRef, children }) => {
     tip.dataset.side = below ? 'below' : 'above';
   }, [anchor, pinned, tipRef, children]);
 
-  if (!anchor) return null;
+  if (!anchor) {
+    return null;
+  }
   return createPortal(
     <div
       ref={tipRef}
@@ -65,15 +58,21 @@ const useTooltip = <T extends HTMLElement>() => {
   const unpinned = useCallback(() => setState((s) => (s?.pinned ? s : null)), []);
 
   useEffect(() => {
-    if (!state) return;
+    if (!state) {
+      return;
+    }
     const handleKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && hide();
     const handlePointerDown = (e: globalThis.PointerEvent) => {
       const target = e.target as Node;
-      if (!state.anchor.contains(target) && !tipRef.current?.contains(target)) hide();
+      if (!state.anchor.contains(target) && !tipRef.current?.contains(target)) {
+        hide();
+      }
     };
     addEventListener('scroll', hide, { capture: true, passive: true });
     addEventListener('keydown', handleKeyDown);
-    if (state.pinned) addEventListener('pointerdown', handlePointerDown);
+    if (state.pinned) {
+      addEventListener('pointerdown', handlePointerDown);
+    }
     return () => {
       removeEventListener('scroll', hide, { capture: true });
       removeEventListener('keydown', handleKeyDown);

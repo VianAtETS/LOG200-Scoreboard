@@ -4,8 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from './query-keys';
 
 // Version du ladder, comparée à la dernière release GitHub.
-export const useGetVersion = () => {
-  return useQuery({
+export const useGetVersion = () =>
+  useQuery({
     queryKey: [queryKeys.version],
     queryFn: async () => {
       const version = await getVersion();
@@ -15,4 +15,3 @@ export const useGetVersion = () => {
     },
     staleTime: Infinity,
   });
-};

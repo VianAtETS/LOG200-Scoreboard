@@ -1,15 +1,8 @@
 import { ChevronDownIcon, CloseIcon } from '@/components/icons/icons';
 import { cn } from '@/lib/utils';
 import type { TTeamRating } from '@/types/summary.types';
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type FC,
-  type KeyboardEvent,
-  type PointerEventHandler,
-} from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { FC, KeyboardEvent, PointerEventHandler } from 'react';
 
 type Props = {
   // Classement de la session, meilleure d'abord.
@@ -25,7 +18,9 @@ type Props = {
 
 // On iOS, cancelling touch pointerdown or closing on a null blur can prevent option activation.
 const keepMouseFocus: PointerEventHandler<HTMLElement> = (e) => {
-  if (e.pointerType === 'mouse') e.preventDefault();
+  if (e.pointerType === 'mouse') {
+    e.preventDefault();
+  }
 };
 
 const TeamPicker: FC<Props> = ({
@@ -65,13 +60,16 @@ const TeamPicker: FC<Props> = ({
   }, []);
 
   useLayoutEffect(() => {
-    if (open && current >= 0)
+    if (open && current >= 0) {
       list.current?.querySelector(`#pick-${current}`)?.scrollIntoView({ block: 'nearest' });
+    }
   }, [open, current]);
 
   const openList = (next: boolean) => {
     setOpen(next);
-    if (!next) setActive(-1);
+    if (!next) {
+      setActive(-1);
+    }
   };
 
   const add = (team: string) => {
@@ -89,16 +87,25 @@ const TeamPicker: FC<Props> = ({
     const last = options.length - 1;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       setActive(
-        !open ? -1 : e.key === 'ArrowDown' ? Math.min(current + 1, last) : Math.max(current - 1, 0),
+        open
+          ? e.key === 'ArrowDown'
+            ? Math.min(current + 1, last)
+            : Math.max(current - 1, 0)
+          : -1,
       );
       setOpen(true);
-    } else if (e.key === 'Enter' && open && current >= 0) add(options[current].team);
-    else if (e.key === 'Escape' && open) openList(false);
-    else if (e.key === 'Escape') setQuery('');
-    else if (e.key === 'Backspace' && !query && selected.length) {
-      remove(selected[selected.length - 1]);
+    } else if (e.key === 'Enter' && open && current >= 0) {
+      add(options[current].team);
+    } else if (e.key === 'Escape' && open) {
+      openList(false);
+    } else if (e.key === 'Escape') {
+      setQuery('');
+    } else if (e.key === 'Backspace' && !query && selected.length > 0) {
+      remove(selected.at(-1));
       return;
-    } else return;
+    } else {
+      return;
+    }
     e.preventDefault();
   };
 
@@ -110,10 +117,14 @@ const TeamPicker: FC<Props> = ({
       id="picker"
       className={cn('picker', className)}
       onBlur={(e) => {
-        if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) openList(false);
+        if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) {
+          openList(false);
+        }
       }}
       onClick={(e) => {
-        if (!(e.target as Element).closest('button, li')) field.current?.focus();
+        if (!(e.target as Element).closest('button, li')) {
+          field.current?.focus();
+        }
       }}
     >
       <ul id="chips" className="chips" aria-label={chipsLabel}>
@@ -170,7 +181,7 @@ const TeamPicker: FC<Props> = ({
         className="picker-icon"
         type="button"
         aria-label="Retirer toutes les équipes"
-        hidden={!selected.length}
+        hidden={selected.length === 0}
         onPointerDown={keepMouseFocus}
         onClick={() => {
           onChange([]);
@@ -188,8 +199,9 @@ const TeamPicker: FC<Props> = ({
         aria-controls="picker-list"
         onPointerDown={keepMouseFocus}
         onClick={() => {
-          if (open) openList(false);
-          else {
+          if (open) {
+            openList(false);
+          } else {
             field.current?.focus();
             openList(true);
           }
@@ -205,25 +217,27 @@ const TeamPicker: FC<Props> = ({
         aria-label="Équipes"
         hidden={!open}
       >
-        {!open ? null : options.length ? (
-          options.map((r, i) => (
-            <li
-              key={r.team}
-              id={`pick-${i}`}
-              role="option"
-              className="picker-option"
-              aria-selected={i === current}
-              onPointerDown={keepMouseFocus}
-              onClick={() => add(r.team)}
-            >
-              <span className="option-rank">{r.rank ? String(r.rank) : 'bot'}</span>
-              <span className="option-team">{r.team}</span>
-              <span className="option-elo">{Math.round(r.rating)} Elo</span>
-            </li>
-          ))
-        ) : (
-          <li className="picker-empty">{empty}</li>
-        )}
+        {open ? (
+          options.length ? (
+            options.map((r, i) => (
+              <li
+                key={r.team}
+                id={`pick-${i}`}
+                role="option"
+                className="picker-option"
+                aria-selected={i === current}
+                onPointerDown={keepMouseFocus}
+                onClick={() => add(r.team)}
+              >
+                <span className="option-rank">{r.rank ? String(r.rank) : 'bot'}</span>
+                <span className="option-team">{r.team}</span>
+                <span className="option-elo">{Math.round(r.rating)} Elo</span>
+              </li>
+            ))
+          ) : (
+            <li className="picker-empty">{empty}</li>
+          )
+        ) : null}
       </ul>
     </div>
   );

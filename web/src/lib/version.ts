@@ -10,8 +10,12 @@ export function releaseState(
   latestTag: string | null | undefined,
 ): TReleaseState {
   const [mine, latest] = [parse(ladder), parse(latestTag)];
-  if (!mine || !latest) return 'unknown';
+  if (!mine || !latest) {
+    return 'unknown';
+  }
   const differs = mine.findIndex((part, i) => part !== latest[i]);
-  if (differs < 0) return 'current';
+  if (differs === -1) {
+    return 'current';
+  }
   return mine[differs] < latest[differs] ? 'behind' : 'ahead';
 }

@@ -3,8 +3,6 @@
 import { Masthead } from '@/components/masthead/masthead';
 import { withProviders } from '@/providers/with-providers';
 
-const ApiHeader = () => {
-  return <Masthead current="api" showVersion={false} />;
-};
+const ApiHeader = () => <Masthead current="api" showVersion={false} />;
 
 export default withProviders(ApiHeader);

@@ -19,13 +19,17 @@ export async function tail<T extends { v: number }>(
     }
     return false;
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
   const bytes = new Uint8Array(await res.arrayBuffer());
   // Une dernière ligne en cours d'écriture est relue au tour suivant.
   const end = bytes.lastIndexOf(10) + 1;
   // 200 : fichier entier (première lecture, ou serveur qui ignore Range).
   const whole = res.status === 200;
-  if (whole ? end === state.offset : end === 0) return false;
+  if (whole ? end === state.offset : end === 0) {
+    return false;
+  }
   const added = parseJsonl<T>(new TextDecoder().decode(bytes.subarray(0, end))).games;
   state.rows = whole ? added : state.rows.concat(added);
   state.offset = (whole ? 0 : state.offset!) + end;

@@ -6,7 +6,7 @@ import { Masthead } from '@/components/masthead/masthead';
 import { useGetDuelPairs } from '@/dao/hooks/use-games';
 import { useGetSummary } from '@/dao/hooks/use-ladder';
 import { useSearchParam } from '@/hooks/use-search-param';
-import { eloGap, pairCounts, signTest, sprt, SPRT_EXPECTED, wilson } from '@/lib/duel';
+import { SPRT_EXPECTED, eloGap, pairCounts, signTest, sprt, wilson } from '@/lib/duel';
 import { signed, versionOf } from '@/lib/format';
 import { pageUrl } from '@/lib/url';
 import { withProviders } from '@/providers/with-providers';
@@ -78,7 +78,7 @@ const DuelPage = () => {
                   <select
                     value={chosen[i]}
                     onChange={(e) => choose(i, e.target.value)}
-                    disabled={!own.length}
+                    disabled={own.length === 0}
                   >
                     {own.map((build, n) => (
                       <option key={build} value={build}>
@@ -156,7 +156,7 @@ const Verdict = ({ names, counts, pairs, allVersions, onAllVersions }: VerdictPr
   const p = signTest(counts.a, counts.b);
   const games = 2 * pairs;
   const wins = 2 * counts.a + counts.split;
-  const score = games ? wins / games : NaN;
+  const score = games ? wins / games : Number.NaN;
   const [low, high] = wilson(wins, games);
   const elo = eloGap(score);
 

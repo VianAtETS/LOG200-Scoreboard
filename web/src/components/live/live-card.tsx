@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils';
 import type { TLiveGame } from '@/types/live.types';
 import type { TModel } from '@/types/summary.types';
 import type { TTournament } from '@/types/tournament.types';
-import { memo, useState, type FC } from 'react';
+import { memo, useState } from 'react';
+import type { FC } from 'react';
 
 const TICK_MS = 250;
 
@@ -19,7 +20,9 @@ type Props = {
 };
 
 function context(g: TLiveGame, bracket?: TTournament) {
-  if (!g.tournament) return 'Ladder';
+  if (!g.tournament) {
+    return 'Ladder';
+  }
   const { match, game } = g.tournament;
   const m = bracket?.matches.find((x) => x.id === match);
   const score =
@@ -28,8 +31,12 @@ function context(g: TLiveGame, bracket?: TTournament) {
 }
 
 function result({ ended, red, black }: TLiveGame) {
-  if (ended!.cancelled) return 'Partie annulée';
-  if (ended!.interrupted) return 'Direct interrompu';
+  if (ended!.cancelled) {
+    return 'Partie annulée';
+  }
+  if (ended!.interrupted) {
+    return 'Direct interrompu';
+  }
   return `${ended!.winner === 'red' ? red : black} gagne`;
 }
 

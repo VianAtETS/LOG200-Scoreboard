@@ -32,7 +32,9 @@ export function layout(teams: TQueueTeam[], next: number) {
     path: false,
   }));
   const place = (lo: number, hi: number, depth: number, parent: number | null) => {
-    if (lo >= hi) return;
+    if (lo >= hi) {
+      return;
+    }
     const mid = (lo + hi - 1) >> 1;
     Object.assign(nodes[mid], { depth, parent, path: lo <= next && next < hi });
     place(lo, mid, depth + 1, mid);
@@ -71,7 +73,9 @@ export function describe(team: TQueueTeam, { busy, called }: TQueueMarks) {
 // Temps restant avant `at`, pour l'annonce : « dans 42 s », « dans 1 min 05 » ou « maintenant ».
 export function countdown(at: string, now: number) {
   const s = Math.ceil((Date.parse(at) - now) / 1000);
-  if (!(s > 0)) return 'maintenant';
+  if (!(s > 0)) {
+    return 'maintenant';
+  }
   return s < 60
     ? `dans ${s} s`
     : `dans ${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`;

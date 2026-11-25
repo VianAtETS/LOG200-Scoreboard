@@ -9,7 +9,9 @@ const useInterval = (callback: () => void, ms: number | null) => {
   });
 
   useEffect(() => {
-    if (ms === null) return;
+    if (ms === null) {
+      return;
+    }
     const timer = setInterval(() => saved.current(), ms);
     return () => clearInterval(timer);
   }, [ms]);

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { TRankingRow } from '../../lib/archives.ts';
-import { DEFAULT_STATS, rankingView, type TRankingSort, type TSortColumn } from './ranking.data.ts';
+import { DEFAULT_STATS, rankingView } from './ranking.data.ts';
+import type { TRankingSort, TSortColumn } from './ranking.data.ts';
 
 const ratings: TRankingRow[] = [
   {

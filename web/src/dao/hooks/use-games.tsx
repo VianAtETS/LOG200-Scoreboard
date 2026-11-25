@@ -1,6 +1,7 @@
 import { REFRESH_MS } from '@/dao/constants/api.const';
 import { getDuelPairs, getGame, teamUrl, timelineUrl } from '@/dao/scoreboard.repository';
-import { tail, tailState, type TTailState } from '@/lib/tail';
+import { tail, tailState } from '@/lib/tail';
+import type { TTailState } from '@/lib/tail';
 import type { TDuelSide, TGame, TGameRow, TTimelineRow } from '@/types/games.types';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useRef } from 'react';
@@ -17,20 +18,26 @@ export const useGetTeamRows = (teams: string[], use = 'picked') => {
 
   return useQuery({
     queryKey: [queryKeys.teamRows, use, teams.join(',')],
-    queryFn: () => {
-      for (const team of followed.current.keys())
+    queryFn: async () => {
+      for (const team of followed.current.keys()) {
         if (!teams.includes(team)) followed.current.delete(team);
-      for (const team of teams)
+      }
+      for (const team of teams) {
         if (!followed.current.has(team)) followed.current.set(team, tailState());
+      }
       const states = [...followed.current];
       const run = following.current
         .catch(() => {})
-        .then(() => Promise.all(states.map(([team, state]) => tail(teamUrl(team), state))))
+        .then(async () =>
+          Promise.all(states.map(async ([team, state]) => tail(teamUrl(team), state))),
+        )
         .then((added) => {
           const same =
             last.current?.size === states.length &&
             states.every(([team]) => last.current?.has(team));
-          if (same && !added.some(Boolean)) return last.current!;
+          if (same && !added.some(Boolean)) {
+            return last.current!;
+          }
           last.current = new Map(states.map(([team, state]) => [team, state.rows]));
           return last.current;
         });
@@ -63,7 +70,7 @@ export const useGetTimeline = () => {
 export const useGetGame = (row: Pick<TGameRow, 'id' | 'at'> | undefined) =>
   useQuery<TGame>({
     queryKey: [queryKeys.game, row?.id],
-    queryFn: () => getGame(row!),
+    queryFn: async () => getGame(row!),
     enabled: Boolean(row),
     staleTime: Infinity,
   });
@@ -72,7 +79,7 @@ export const useGetGame = (row: Pick<TGameRow, 'id' | 'at'> | undefined) =>
 export const useGetDuelPairs = (sides: TDuelSide[] | null) =>
   useQuery({
     queryKey: [queryKeys.pairs, sides?.map((s) => `${s.team}@${s.build ?? ''}`).join(',')],
-    queryFn: () => getDuelPairs(sides!),
+    queryFn: async () => getDuelPairs(sides!),
     enabled: Boolean(sides),
     refetchInterval: REFRESH_MS,
   });

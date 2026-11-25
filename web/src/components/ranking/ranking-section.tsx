@@ -6,14 +6,8 @@ import { cn } from '@/lib/utils';
 import type { TRunningGame } from '@/types/games.types';
 import type { TRankingRow } from '@/lib/archives';
 import type { TModel, TPaceStat } from '@/types/summary.types';
-import {
-  useRef,
-  useState,
-  type FC,
-  type PointerEvent,
-  type ReactNode,
-  type SyntheticEvent,
-} from 'react';
+import { useRef, useState } from 'react';
+import type { FC, PointerEvent, ReactNode, SyntheticEvent } from 'react';
 import {
   ELO_STATS,
   PACE_STATS,
@@ -21,12 +15,10 @@ import {
   SORT_COLUMNS,
   rankingView,
   statOf,
-  type TEloStat,
-  type TRankingSort,
-  type TRecordStat,
-  type TSortColumn,
 } from './ranking.data';
-import { RankingRow, type TDuel } from './ranking-row';
+import type { TEloStat, TRankingSort, TRecordStat, TSortColumn } from './ranking.data';
+import { RankingRow } from './ranking-row';
+import type { TDuel } from './ranking-row';
 
 type Props = {
   // Lignes actives, et versions archivées choisies placées à leur Elo.
@@ -103,7 +95,7 @@ const RankingSection: FC<Props> = ({
 
   const duels = new Map<string, TDuel>();
   for (const g of running) {
-    if (!duels.has(g.red))
+    if (!duels.has(g.red)) {
       duels.set(g.red, {
         id: g.id,
         opponent: g.black,
@@ -111,7 +103,8 @@ const RankingSection: FC<Props> = ({
         chance: winProbability(model, g.red, g.black, 'red'),
         tournament: g.tournament,
       });
-    if (!duels.has(g.black))
+    }
+    if (!duels.has(g.black)) {
       duels.set(g.black, {
         id: g.id,
         opponent: g.red,
@@ -119,6 +112,7 @@ const RankingSection: FC<Props> = ({
         chance: winProbability(model, g.black, g.red, 'black'),
         tournament: g.tournament,
       });
+    }
   }
   const { rows: sorted, ranks } = rankingView(ratings, sort, {
     elo: eloStat,
