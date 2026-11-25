@@ -83,3 +83,12 @@ export type TDuelPair = {
   winners: [string, string];
   opening: string[];
 };
+
+// Cartes de chaleur d'un build (GET /api/stats/heatmap) : par case (`F4`), arrivées du pion et cases
+// détruites. Une case jamais touchée n'y figure pas ; `build` vaut null pour les bots du ladder.
+export type THeatmap = {
+  build: string | null;
+  games: number;
+  moves: Record<string, number>;
+  blocks: Record<string, number>;
+};

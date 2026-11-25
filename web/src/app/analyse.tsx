@@ -1,7 +1,9 @@
 // Page analyse : une partie rejouée coup par coup avec la mobilité, le territoire et la région de chaque
-// couleur, ses coups critiques et son point de bascule (lib/analysis.ts). Sans ?game=, la dernière partie.
+// couleur, ses coups critiques et son point de bascule (lib/analysis.ts), puis les cartes de chaleur des
+// versions des deux équipes. Sans ?game=, la dernière partie.
 
 import { AnalysisChart } from '@/components/analysis/analysis-chart';
+import { BuildHeatmaps } from '@/components/analysis/heatmap';
 import { Board } from '@/components/board/board';
 import { FirstIcon, LastIcon, NextIcon, PrevIcon } from '@/components/icons/icons';
 import { Masthead } from '@/components/masthead/masthead';
@@ -268,6 +270,25 @@ const AnalysePage = () => {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </section>
+
+            <section className="section analyse-heat" aria-labelledby="heat-title">
+              <h2 id="heat-title">Cartes des versions</h2>
+              <p className="analyse-note">
+                Toutes les parties de la version de chaque équipe, hors tournois : plus la case est vive, plus son pion y est arrivé ou
+                plus elle l'a détruite. Survoler une case donne son compte.
+              </p>
+              <div className="heat-sides">
+                {COLORS.map((c) => (
+                  <BuildHeatmaps
+                    key={c}
+                    team={game[c].team}
+                    build={game[c].build}
+                    color={STROKE[c]}
+                    name={`${game[c].team} ${version(game[c].team, game[c].build)}`.trim()}
+                  />
+                ))}
               </div>
             </section>
 

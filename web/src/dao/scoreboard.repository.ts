@@ -1,7 +1,7 @@
 // Lectures du ladder : fichiers publiés dans /data, et API.
 
 import { API, DATA, LATEST_RELEASE, SERVER } from '@/dao/constants/api.const';
-import type { TDuelPair, TDuelSide, TGame, TGameRow, TRunningGame } from '@/types/games.types';
+import type { TDuelPair, TDuelSide, TGame, TGameRow, THeatmap, TRunningGame } from '@/types/games.types';
 import type { TGameProfile, TProfiling, TTemplateShare } from '@/types/profile.types';
 import type { TModel, TQueueFile, TSummary } from '@/types/summary.types';
 import type { TTournament, TTournamentIndex } from '@/types/tournament.types';
@@ -54,6 +54,9 @@ export function getDuelPairs([a, b]: TDuelSide[]) {
   if (b.build) query.set('build_b', b.build);
   return json<TDuelPair[]>(`${API}/stats/pairs?${query}`);
 }
+
+// Cartes de chaleur de chaque build de l'équipe, hors tournois.
+export const getHeatmaps = (team: string) => json<THeatmap[]>(`${API}/stats/heatmap?${new URLSearchParams({ team })}`);
 
 export async function getGame(row: Pick<TGameRow, 'id' | 'at'>): Promise<TGame> {
   const g = row.at ? await getGameFromJsonl(row.at) : await json<TGame>(`${API}/games/${encodeURIComponent(row.id)}`, {});

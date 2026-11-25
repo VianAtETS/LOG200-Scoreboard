@@ -3638,6 +3638,7 @@ details[open]>summary~* {
             'board charts'
             'moves charts'
             'stats stats'
+            'heat heat'
             'profile profile';
     }
 
@@ -3661,9 +3662,47 @@ details[open]>summary~* {
         grid-area: stats;
     }
 
+    .analyse-heat {
+        grid-area: heat;
+    }
+
     .analyse-profile {
         grid-area: profile;
     }
+}
+
+/* Cartes de chaleur : deux plateaux par équipe, côte à côte tant que la place le permet. */
+.heat-sides,
+.heat-maps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+}
+
+.heat-side {
+    flex: 1 1 22rem;
+}
+
+.heat-side h3 {
+    margin: var(--space-3) 0 var(--space-2);
+    font-size: var(--font-size-base);
+}
+
+.heatmap {
+    flex: 1 1 10rem;
+    max-width: 280px;
+    margin: 0;
+}
+
+/* Pas la taille plein écran de .board, qui suit le conteneur du replay. */
+.heatmap .board {
+    width: 100%;
+}
+
+.heatmap figcaption {
+    margin-top: var(--space-1);
+    text-align: center;
+    color: var(--color-text-muted);
 }
 
 .analyse-layout th {

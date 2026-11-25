@@ -1,5 +1,5 @@
 import { REFRESH_MS } from '@/dao/constants/api.const';
-import { getDuelPairs, getGame, teamUrl, timelineUrl } from '@/dao/scoreboard.repository';
+import { getDuelPairs, getGame, getHeatmaps, teamUrl, timelineUrl } from '@/dao/scoreboard.repository';
 import { tail, tailState, type TTailState } from '@/lib/tail';
 import type { TDuelSide, TGame, TGameRow, TTimelineRow } from '@/types/games.types';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
@@ -71,4 +71,13 @@ export const useGetDuelPairs = (sides: TDuelSide[] | null) =>
     queryFn: () => getDuelPairs(sides!),
     enabled: Boolean(sides),
     refetchInterval: REFRESH_MS,
+  });
+
+// Cartes de chaleur des builds d'une équipe. Des milliers de parties : lues une fois par visite, la
+// suivante ne change presque rien.
+export const useGetHeatmaps = (team: string) =>
+  useQuery({
+    queryKey: [queryKeys.heatmaps, team],
+    queryFn: () => getHeatmaps(team),
+    staleTime: Infinity,
   });

@@ -6,7 +6,7 @@
 //
 // Sert /data (avec Range, comme Caddy), /api/games/<id>, /api/version, /api/health, /api/openapi.json
 // (vide), une fausse soumission de jar (PUT /api/submit), un faux profileur (profil, /api/profiling,
-// /api/profiles, template-share) et un faux direct /api/live qui rejoue les parties golden en boucle,
+// /api/profiles, template-share), /api/stats/heatmap calculé sur les parties golden et un faux direct /api/live qui rejoue les parties golden en boucle,
 // coup par coup. S'y ajoutent un petit
 // tournoi, une file d'attente et live.json, absents des fixtures.
 
@@ -194,6 +194,29 @@ function setProfiling(req, res) {
 
 // --- HTTP ----------------------------------------------------------------------------------------
 
+// Comme stats_heatmap.sql : par build de `team`, hors tournois, arrivées et cases détruites de ses coups.
+function heatmaps(team) {
+  const builds = new Map();
+  for (const g of lines.map((l) => JSON.parse(l))) {
+    if (g.tournament) continue;
+    for (const color of ['red', 'black']) {
+      if (g[color].team !== team) continue;
+      const build = g[color].build ?? null;
+      if (!builds.has(build)) builds.set(build, { build, games: 0, moves: {}, blocks: {} });
+      const h = builds.get(build);
+      h.games++;
+      // L'ouverture a un nombre pair de demi-coups : le rouge joue les coups pairs.
+      g.moves.forEach((m, i) => {
+        if ((i % 2 === 0) !== (color === 'red')) return;
+        const [, to, block] = m.split('-');
+        h.moves[to] = (h.moves[to] ?? 0) + 1;
+        h.blocks[block] = (h.blocks[block] ?? 0) + 1;
+      });
+    }
+  }
+  return [...builds.values()];
+}
+
 const types = { '.json': 'application/json', '.jsonl': 'application/x-ndjson' };
 
 function json(res, body, status = 200) {
@@ -251,6 +274,7 @@ const server = createServer((req, res) => {
     if (!profiling.public) return text(res, 'aucune part publiée', 404);
     return json(res, { team: q.get('team'), build: q.get('build'), games: 12, samples: 29760, methods: { 'Client.main': 0.2, 'GameConnection.readMessage': 0.5 }, others: 99.3 });
   }
+  if (p === '/api/stats/heatmap') return json(res, heatmaps(new URL(req.url, 'http://x').searchParams.get('team')));
   if (p.startsWith('/api/games/')) {
     const g = games.get(p.slice('/api/games/'.length));
     return g ? json(res, g) : json(res, 'absent', 404);
