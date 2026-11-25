@@ -2,7 +2,7 @@
 #   - server : serveur de jeu officiel (BoardGame.exe) sous Wine, GUI via noVNC (port 6080). Le binaire
 #              n'est pas versionne : chacun copie celui du cours dans official-server/. Sans lui, le
 #              conteneur demarre quand meme et seul le serveur officiel manque.
-#   - dev    : Rust, Java, Node, Docker et gVisor ; VS Code s'y attache
+#   - dev    : Rust, Java, Node, Bun, Docker et gVisor ; VS Code s'y attache
 # dev partage la pile reseau de server : le serveur repond sur localhost:8888.
 name: log200-scoreboard
 

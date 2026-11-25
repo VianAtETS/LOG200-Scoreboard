@@ -1,3 +1,5 @@
+FROM oven/bun:1.4.5-slim AS bun
+
 # JDK 25 : compile aussi des jars de test pour Java 24 (javac --release 24)
 FROM mcr.microsoft.com/devcontainers/java:25-bookworm
 
@@ -18,3 +20,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && mkdir -p /etc/docker \
     && printf '{"runtimes":{"runsc-host-uds":{"path":"/usr/bin/runsc","runtimeArgs":["--host-uds=all"]}}}\n' \
         > /etc/docker/daemon.json
+
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx \
+    && test "$(bun --version)" = "1.4.5"

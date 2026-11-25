@@ -1,0 +1,9 @@
+{
+    "recommendations": [
+        "rust-lang.rust-analyzer",
+        "astro-build.astro-vscode",
+        "dbaeumer.vscode-eslint",
+        "oxc.oxc-vscode",
+        "TypeScriptTeam.native-preview"
+    ]
+}

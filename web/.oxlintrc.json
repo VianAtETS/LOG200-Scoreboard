@@ -1,0 +1,559 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "oxc",
+    "react",
+    "import",
+    "jsx-a11y",
+    "jsdoc",
+    "react-perf",
+    "promise",
+    "node",
+    "unicorn"
+  ],
+  "jsPlugins": [
+    {
+      "name": "react-doctor",
+      "specifier": "oxlint-plugin-react-doctor"
+    }
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error",
+    "perf": "error",
+    "style": "error",
+    "restriction": "error",
+    "nursery": "error"
+  },
+  "env": {
+    "browser": true,
+    "es2026": true,
+    "node": true
+  },
+  "ignorePatterns": ["dist/**", ".astro/**", "node_modules/**", "**/*.astro"],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "react/only-export-components": ["error", { "customHOCs": ["withProviders", "makePathIcon"] }],
+    "import/no-named-export": "off",
+    "import/prefer-default-export": "off",
+    "import/group-exports": "off",
+    "import/exports-last": "off",
+    "oxc/no-async-await": "off",
+    "oxc/no-optional-chaining": "off",
+    "oxc/no-rest-spread-properties": "off",
+    "eslint/no-ternary": "off",
+    "node/no-top-level-await": "off",
+    "eslint/no-undefined": "off",
+    "eslint/init-declarations": "off",
+    "unicorn/no-null": "off",
+    "react/jsx-no-literals": "off",
+    "eslint/sort-keys": "off",
+    "eslint/no-continue": "off",
+    "eslint/capitalized-comments": "off",
+    "typescript/prefer-readonly-parameter-types": "off",
+    "react/jsx-filename-extension": [
+      "error",
+      {
+        "extensions": [".tsx", ".jsx"]
+      }
+    ],
+    "react/function-component-definition": [
+      "error",
+      {
+        "namedComponents": ["function-declaration", "arrow-function"],
+        "unnamedComponents": "arrow-function"
+      }
+    ],
+    "react/jsx-curly-brace-presence": [
+      "error",
+      {
+        "props": "never",
+        "children": "never",
+        "propElementValues": "always"
+      }
+    ],
+    "react/jsx-max-depth": [
+      "error",
+      {
+        "max": 6
+      }
+    ],
+    "eslint/func-style": [
+      "error",
+      "declaration",
+      {
+        "allowArrowFunctions": true
+      }
+    ],
+    "eslint/no-duplicate-imports": [
+      "error",
+      {
+        "allowSeparateTypeImports": true
+      }
+    ],
+    "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
+    "eslint/one-var": ["error", "never"],
+    "eslint/no-void": [
+      "error",
+      {
+        "allowAsStatement": true
+      }
+    ],
+    "eslint/no-plusplus": [
+      "error",
+      {
+        "allowForLoopAfterthoughts": true
+      }
+    ],
+    "eslint/no-param-reassign": [
+      "error",
+      {
+        "props": true
+      }
+    ],
+    "eslint/sort-imports": [
+      "error",
+      {
+        "ignoreDeclarationSort": true,
+        "allowSeparatedGroups": true
+      }
+    ],
+    "eslint/id-length": [
+      "error",
+      {
+        "min": 2,
+        "properties": "never",
+        "checkGeneric": false,
+        "exceptions": ["_", "i", "j", "k", "x", "y", "w", "h", "d"]
+      }
+    ],
+    "eslint/no-magic-numbers": [
+      "error",
+      {
+        "ignore": [-1, 0, 1, 2, 100, 1000],
+        "ignoreArrayIndexes": true,
+        "ignoreDefaultValues": true,
+        "ignoreNumericLiteralTypes": true,
+        "ignoreTypeIndexes": true,
+        "enforceConst": true
+      }
+    ],
+    "eslint/max-lines": [
+      "error",
+      {
+        "max": 350,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "eslint/max-lines-per-function": [
+      "error",
+      {
+        "max": 120,
+        "skipBlankLines": true,
+        "skipComments": true,
+        "IIFEs": true
+      }
+    ],
+    "eslint/max-statements": [
+      "error",
+      {
+        "max": 25
+      }
+    ],
+    "eslint/max-params": [
+      "error",
+      {
+        "max": 5
+      }
+    ],
+    "typescript/consistent-type-definitions": ["error", "type"],
+    "typescript/explicit-function-return-type": [
+      "error",
+      {
+        "allowExpressions": true,
+        "allowTypedFunctionExpressions": true,
+        "allowHigherOrderFunctions": true,
+        "allowDirectConstAssertionInArrowFunctions": true,
+        "allowConciseArrowFunctionExpressionsStartingWithVoid": true
+      }
+    ],
+    "typescript/dot-notation": [
+      "error",
+      {
+        "allowIndexSignaturePropertyAccess": true
+      }
+    ],
+    "typescript/no-confusing-void-expression": [
+      "error",
+      {
+        "ignoreArrowShorthand": true,
+        "ignoreVoidOperator": true
+      }
+    ],
+    "typescript/strict-boolean-expressions": [
+      "error",
+      {
+        "allowNullableBoolean": true,
+        "allowNullableObject": true,
+        "allowNumber": true,
+        "allowString": true,
+        "allowNullableNumber": false,
+        "allowNullableString": false
+      }
+    ],
+    "oxc/no-accumulating-spread": "error",
+    "react-doctor/active-static-asset": "error",
+    "react-doctor/advanced-event-handler-refs": "error",
+    "react-doctor/anchor-target-exists": "error",
+    "react-doctor/aria-braille-equivalent": "error",
+    "react-doctor/artifact-env-leak": "error",
+    "react-doctor/artifact-secret-leak": "error",
+    "react-doctor/async-await-in-loop": "error",
+    "react-doctor/async-defer-await": "error",
+    "react-doctor/async-parallel": "error",
+    "react-doctor/auth-token-in-web-storage": "error",
+    "react-doctor/build-pipeline-secret-boundary": "error",
+    "react-doctor/class-component-missing-component-will-unmount-teardown": "error",
+    "react-doctor/clickjacking-redirect-risk": "error",
+    "react-doctor/client-passive-event-listeners": "error",
+    "react-doctor/command-execution-input-risk": "error",
+    "react-doctor/context-provider-value-from-unmemoized-local-literal": "error",
+    "react-doctor/cors-cookie-trust-risk": "error",
+    "react-doctor/dangerous-html-sink": "error",
+    "react-doctor/data-table-requires-accessible-name": "error",
+    "react-doctor/debounce-no-cleanup": "error",
+    "react-doctor/design-no-vague-button-label": "error",
+    "react-doctor/details-requires-summary": "error",
+    "react-doctor/dialog-has-accessible-name": "error",
+    "react-doctor/effect-listener-cleanup-mismatch": "error",
+    "react-doctor/effect-listener-cleanup-reference-mismatch": "error",
+    "react-doctor/effect-needs-cleanup": "error",
+    "react-doctor/effect-observer-needs-disconnect": "error",
+    "react-doctor/effect-raf-loop-needs-cancel": "error",
+    "react-doctor/effect-remove-listener-inline-handler": "error",
+    "react-doctor/empty-table-header": "error",
+    "react-doctor/fieldset-requires-legend": "error",
+    "react-doctor/form-control-requires-name": "error",
+    "react-doctor/forwarded-set-state-in-effect": "error",
+    "react-doctor/git-provider-url-injection-risk": "error",
+    "react-doctor/hook-import-rename-loses-use-prefix": "error",
+    "react-doctor/html-label-has-single-control": "error",
+    "react-doctor/html-no-invalid-paragraph-child": "error",
+    "react-doctor/html-no-invalid-table-nesting": "error",
+    "react-doctor/html-no-nested-form": "error",
+    "react-doctor/html-no-nested-interactive": "error",
+    "react-doctor/html-xml-lang-mismatch": "error",
+    "react-doctor/iframe-title-unique": "error",
+    "react-doctor/import-metadata-execution-risk": "error",
+    "react-doctor/insecure-crypto-risk": "error",
+    "react-doctor/insecure-session-cookie": "error",
+    "react-doctor/js-async-reduce-without-awaited-acc": "error",
+    "react-doctor/js-batch-dom-css": "error",
+    "react-doctor/js-cache-property-access": "error",
+    "react-doctor/js-cache-storage": "error",
+    "react-doctor/js-combine-iterations": "error",
+    "react-doctor/js-flatmap-filter": "error",
+    "react-doctor/js-hoist-intl": "error",
+    "react-doctor/js-hoist-regexp": "error",
+    "react-doctor/js-index-maps": "error",
+    "react-doctor/js-length-check-first": "error",
+    "react-doctor/js-min-max-loop": "error",
+    "react-doctor/js-set-map-lookups": "error",
+    "react-doctor/jsx-numeric-and-leaked-render": "error",
+    "react-doctor/jwt-insecure-verification": "error",
+    "react-doctor/key-lifecycle-risk": "error",
+    "react-doctor/loading-action-preserves-trigger": "error",
+    "react-doctor/local-rpc-native-bridge-risk": "error",
+    "react-doctor/no-adjust-state-on-prop-change": "error",
+    "react-doctor/no-all-caps-body-text": "error",
+    "react-doctor/no-aria-hidden-on-body": "error",
+    "react-doctor/no-aria-invalid-without-description": "error",
+    "react-doctor/no-arithmetic-on-optional-chained-operand": "error",
+    "react-doctor/no-array-find-result-member-access-without-guard": "error",
+    "react-doctor/no-array-index-as-key": "error",
+    "react-doctor/no-array-index-deref-without-bounds-or-empty-guard": "error",
+    "react-doctor/no-assertive-status": "error",
+    "react-doctor/no-async-effect-callback": "error",
+    "react-doctor/no-async-event-handler-without-reentry-guard": "error",
+    "react-doctor/no-auto-scrolling-content": "error",
+    "react-doctor/no-autoplay-without-muted": "error",
+    "react-doctor/no-barrel-import": "error",
+    "react-doctor/no-blocked-paste": "error",
+    "react-doctor/no-boolean-toggle-without-functional-update": "error",
+    "react-doctor/no-broken-image-source": "error",
+    "react-doctor/no-call-component-as-function": "error",
+    "react-doctor/no-chain-state-updates": "error",
+    "react-doctor/no-clipped-overlay": "error",
+    "react-doctor/no-collapse-request-error-to-empty-state": "error",
+    "react-doctor/no-collapsed-literal-or-chain-as-value": "error",
+    "react-doctor/no-controlled-input-value-without-state-update": "error",
+    "react-doctor/no-controlled-selection-focus-effect": "error",
+    "react-doctor/no-cramped-container-padding": "error",
+    "react-doctor/no-create-context-in-render": "error",
+    "react-doctor/no-create-object-url-in-render": "error",
+    "react-doctor/no-create-object-url-without-revoke": "error",
+    "react-doctor/no-create-ref-in-function-component": "error",
+    "react-doctor/no-create-store-in-render": "error",
+    "react-doctor/no-crushed-letter-spacing": "error",
+    "react-doctor/no-default-props": "error",
+    "react-doctor/no-deprecated-keyboard-event-keycode-which": "error",
+    "react-doctor/no-derived-state": "error",
+    "react-doctor/no-derived-state-effect": "error",
+    "react-doctor/no-derived-useState": "error",
+    "react-doctor/no-direct-state-mutation": "error",
+    "react-doctor/no-disabled-zoom": "error",
+    "react-doctor/no-document-start-view-transition": "error",
+    "react-doctor/no-document-write": "error",
+    "react-doctor/no-duplicate-static-id-reference": "error",
+    "react-doctor/no-dynamic-import-path": "error",
+    "react-doctor/no-eager-new-in-use-state-initializer": "error",
+    "react-doctor/no-ease-in-motion": "error",
+    "react-doctor/no-effect-chain": "error",
+    "react-doctor/no-effect-event-handler": "error",
+    "react-doctor/no-effect-event-in-deps": "error",
+    "react-doctor/no-effect-with-fresh-deps": "error",
+    "react-doctor/no-effect-wrapper-discards-callback-cleanup-return": "error",
+    "react-doctor/no-empty-card-shell": "error",
+    "react-doctor/no-enter-submit-without-ime-composition-guard": "error",
+    "react-doctor/no-eval": "error",
+    "react-doctor/no-event-handler": "error",
+    "react-doctor/no-event-trigger-state": "error",
+    "react-doctor/no-excessive-motion-stagger": "error",
+    "react-doctor/no-fetch-in-effect": "error",
+    "react-doctor/no-fetch-response-used-without-status-check": "error",
+    "react-doctor/no-fill-map-element-as-key": "error",
+    "react-doctor/no-fixed-inside-transformed-ancestor": "error",
+    "react-doctor/no-floating-then-in-jsx-handler": "error",
+    "react-doctor/no-flush-sync": "error",
+    "react-doctor/no-focus-in-animation-completion-handler": "error",
+    "react-doctor/no-focusable-content-in-aria-hidden": "error",
+    "react-doctor/no-focusable-content-in-role-text": "error",
+    "react-doctor/no-full-lodash-import": "error",
+    "react-doctor/no-full-viewport-width": "error",
+    "react-doctor/no-generic-handler-names": "error",
+    "react-doctor/no-giant-component": "error",
+    "react-doctor/no-global-css-variable-animation": "error",
+    "react-doctor/no-gradient-text": "error",
+    "react-doctor/no-high-complexity-react-function": "error",
+    "react-doctor/no-hover-only-reveal": "error",
+    "react-doctor/no-hydration-branch-on-browser-global": "error",
+    "react-doctor/no-img-lazy-with-high-fetchpriority": "error",
+    "react-doctor/no-img-without-dimensions": "error",
+    "react-doctor/no-impure-call-at-module-scope": "error",
+    "react-doctor/no-impure-state-updater": "error",
+    "react-doctor/no-indeterminate-attribute": "error",
+    "react-doctor/no-inert-sticky-position": "error",
+    "react-doctor/no-initialize-state": "error",
+    "react-doctor/no-inline-bounce-easing": "error",
+    "react-doctor/no-inline-exhaustive-style": "error",
+    "react-doctor/no-inline-hoc-on-component": "error",
+    "react-doctor/no-inline-prop-on-memo-component": "error",
+    "react-doctor/no-invalid-progress-range": "error",
+    "react-doctor/no-json-parse-stringify-clone": "error",
+    "react-doctor/no-justified-text": "error",
+    "react-doctor/no-large-animated-blur": "error",
+    "react-doctor/no-layout-property-animation": "error",
+    "react-doctor/no-layout-shifting-interaction-state": "error",
+    "react-doctor/no-layout-transition-inline": "error",
+    "react-doctor/no-legacy-class-lifecycles": "error",
+    "react-doctor/no-legacy-context-api": "error",
+    "react-doctor/no-loading-flag-reset-outside-finally": "error",
+    "react-doctor/no-locale-format-in-render": "error",
+    "react-doctor/no-long-transition-duration": "error",
+    "react-doctor/no-low-contrast-inline-style": "error",
+    "react-doctor/no-match-media-in-state-initializer": "error",
+    "react-doctor/no-mirror-prop-effect": "error",
+    "react-doctor/no-mixed-srcset-descriptors": "error",
+    "react-doctor/no-moment": "error",
+    "react-doctor/no-multiple-main-landmarks": "error",
+    "react-doctor/no-multiple-unlabeled-navigation-landmarks": "error",
+    "react-doctor/no-mutable-in-deps": "error",
+    "react-doctor/no-mutate-queried-dom-node-in-component": "error",
+    "react-doctor/no-mutate-then-set-or-return-same-reference": "error",
+    "react-doctor/no-mutating-array-method-on-prop-or-hook-result": "error",
+    "react-doctor/no-mutating-reducer-state": "error",
+    "react-doctor/no-nested-component-definition": "error",
+    "react-doctor/no-non-literal-selector-query-without-try-catch": "error",
+    "react-doctor/no-non-null-assertion-on-maybe-undefined-result": "error",
+    "react-doctor/no-nondeterministic-id-value-in-render-body": "error",
+    "react-doctor/no-nonresizable-textarea": "error",
+    "react-doctor/no-nullish-coalescing-arithmetic-precedence": "error",
+    "react-doctor/no-object-keys-values-entries-on-maybe-undefined": "error",
+    "react-doctor/no-object-or-array-coerced-to-string-in-template-literal": "error",
+    "react-doctor/no-outline-none": "error",
+    "react-doctor/no-overwide-text-measure": "error",
+    "react-doctor/no-pass-data-to-parent": "error",
+    "react-doctor/no-pass-live-state-to-parent": "error",
+    "react-doctor/no-passive-request-owner-ref": "error",
+    "react-doctor/no-path-prefix-containment": "error",
+    "react-doctor/no-permanent-will-change": "error",
+    "react-doctor/no-placeholder-only-field": "error",
+    "react-doctor/no-pointer-disabled-enabled-control": "error",
+    "react-doctor/no-predicate-function-reference-in-boolean-position": "error",
+    "react-doctor/no-presentation-role-conflict": "error",
+    "react-doctor/no-prevent-default": "error",
+    "react-doctor/no-promise-then-side-effect-in-effect-without-catch": "error",
+    "react-doctor/no-prop-callback-in-effect": "error",
+    "react-doctor/no-prop-callback-in-render": "error",
+    "react-doctor/no-prop-types": "error",
+    "react-doctor/no-random-key": "error",
+    "react-doctor/no-react-dom-deprecated-apis": "error",
+    "react-doctor/no-react19-deprecated-apis": "error",
+    "react-doctor/no-reduced-motion-content-removal": "error",
+    "react-doctor/no-redundant-title-tooltip": "error",
+    "react-doctor/no-ref-current-in-render": "error",
+    "react-doctor/no-render-in-render": "error",
+    "react-doctor/no-reset-all-state-on-prop-change": "error",
+    "react-doctor/no-responsive-hidden-accessible-name": "error",
+    "react-doctor/no-secrets-in-client-code": "error",
+    "react-doctor/no-self-updating-effect": "error",
+    "react-doctor/no-server-side-image-map": "error",
+    "react-doctor/no-set-state-after-await-in-effect": "error",
+    "react-doctor/no-set-state-in-render": "error",
+    "react-doctor/no-side-effect-in-state-updater-function": "error",
+    "react-doctor/no-skipped-heading-level": "error",
+    "react-doctor/no-small-form-control-text": "error",
+    "react-doctor/no-smooth-scroll-without-reduced-motion": "error",
+    "react-doctor/no-spread-accumulator-in-reduce": "error",
+    "react-doctor/no-spread-props-over-defaults-clobbers-with-undefined": "error",
+    "react-doctor/no-srcset-without-sizes": "error",
+    "react-doctor/no-stale-timer-ref": "error",
+    "react-doctor/no-string-false-on-boolean-attribute": "error",
+    "react-doctor/no-sync-xhr": "error",
+    "react-doctor/no-tight-body-leading": "error",
+    "react-doctor/no-tiny-text": "error",
+    "react-doctor/no-transition-all": "error",
+    "react-doctor/no-transitioned-focus-ring": "error",
+    "react-doctor/no-unbounded-animation-frame-loop": "error",
+    "react-doctor/no-uncontrolled-input": "error",
+    "react-doctor/no-undeferred-third-party": "error",
+    "react-doctor/no-undersized-icon-button": "error",
+    "react-doctor/no-unescaped-dynamic-string-in-regexp": "error",
+    "react-doctor/no-unguarded-browser-global-at-module-scope": "error",
+    "react-doctor/no-unguarded-browser-global-in-render-or-hook-init": "error",
+    "react-doctor/no-unguarded-numeric-input-parse": "error",
+    "react-doctor/no-unguarded-throwing-parse-call": "error",
+    "react-doctor/no-uninformative-aria-label": "error",
+    "react-doctor/no-unowned-async-error-clear": "error",
+    "react-doctor/no-unsafe-json-parse": "error",
+    "react-doctor/no-unthrottled-scroll-mutation": "error",
+    "react-doctor/no-usememo-simple-expression": "error",
+    "react-doctor/no-whole-object-default-losing-per-key-defaults": "error",
+    "react-doctor/no-whole-object-dep-with-member-reads": "error",
+    "react-doctor/no-z-index-9999": "error",
+    "react-doctor/nosql-injection-risk": "error",
+    "react-doctor/package-metadata-secret": "error",
+    "react-doctor/path-traversal-risk": "error",
+    "react-doctor/plugin-update-trust-risk": "error",
+    "react-doctor/pointer-capture-needs-cancel-handler": "error",
+    "react-doctor/postmessage-origin-risk": "error",
+    "react-doctor/prefer-dynamic-import": "error",
+    "react-doctor/prefer-html-dialog": "error",
+    "react-doctor/prefer-module-scope-pure-function": "error",
+    "react-doctor/prefer-module-scope-static-value": "error",
+    "react-doctor/prefer-stable-empty-fallback": "error",
+    "react-doctor/prefer-tabular-numeric-data": "error",
+    "react-doctor/prefer-use-effect-event": "error",
+    "react-doctor/prefer-use-sync-external-store": "error",
+    "react-doctor/prefer-useReducer": "error",
+    "react-doctor/public-debug-artifact": "error",
+    "react-doctor/public-env-secret-name": "error",
+    "react-doctor/query-destructure-result": "error",
+    "react-doctor/query-floating-mutate-async": "error",
+    "react-doctor/query-mutation-missing-invalidation": "error",
+    "react-doctor/query-no-mutation-in-effect-as-read": "error",
+    "react-doctor/query-no-query-in-effect": "error",
+    "react-doctor/query-no-rest-destructuring": "error",
+    "react-doctor/query-no-usequery-for-mutation": "error",
+    "react-doctor/query-no-void-query-fn": "error",
+    "react-doctor/query-stable-query-client": "error",
+    "react-doctor/radio-input-missing-name": "error",
+    "react-doctor/raw-sql-injection-risk": "error",
+    "react-doctor/rendering-conditional-render": "error",
+    "react-doctor/rendering-hoist-jsx": "error",
+    "react-doctor/rendering-hydration-mismatch-time": "error",
+    "react-doctor/rendering-hydration-no-flicker": "error",
+    "react-doctor/rendering-script-defer-async": "error",
+    "react-doctor/rendering-svg-precision": "error",
+    "react-doctor/repository-secret-file": "error",
+    "react-doctor/request-body-mass-assignment": "error",
+    "react-doctor/require-autoplay-video-poster": "error",
+    "react-doctor/require-scale-reveal-transform-origin": "error",
+    "react-doctor/rerender-defer-reads-hook": "error",
+    "react-doctor/rerender-dependencies": "error",
+    "react-doctor/rerender-derived-state-from-hook": "error",
+    "react-doctor/rerender-functional-setstate": "error",
+    "react-doctor/rerender-lazy-ref-init": "error",
+    "react-doctor/rerender-lazy-state-init": "error",
+    "react-doctor/rerender-memo-before-early-return": "error",
+    "react-doctor/rerender-memo-with-default-value": "error",
+    "react-doctor/rerender-state-only-in-handlers": "error",
+    "react-doctor/rerender-transitions-scroll": "error",
+    "react-doctor/role-button-requires-complete-keyboard-activation": "error",
+    "react-doctor/secret-in-fallback": "error",
+    "react-doctor/svg-filter-clickjacking-risk": "error",
+    "react-doctor/tenant-static-proxy-risk": "error",
+    "react-doctor/unsafe-json-in-html": "error",
+    "react-doctor/untrusted-redirect-following": "error",
+    "react-doctor/url-prefilled-privileged-action": "error",
+    "react-doctor/waapi-animation-in-render": "error",
+    "react-doctor/web-animation-offsets-valid": "error",
+    "react-doctor/webhook-signature-risk": "error",
+    "react-doctor/window-open-without-noopener": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.{ts,tsx}"],
+      "rules": {
+        "eslint/require-await": "off"
+      }
+    },
+    {
+      "files": ["astro.config.mjs", "eslint.config.js", "dev/layout-debug-app.js"],
+      "rules": {
+        "import/no-default-export": "off",
+        "import/no-anonymous-default-export": "off"
+      }
+    },
+    {
+      "files": ["**/*.{js,mjs,cjs}"],
+      "rules": {
+        "typescript/explicit-function-return-type": "off",
+        "typescript/explicit-module-boundary-types": "off"
+      }
+    },
+    {
+      "files": ["astro.config.mjs", "eslint.config.js", "dev/**"],
+      "rules": {
+        "import/no-nodejs-modules": "off",
+        "node/no-process-env": "off",
+        "node/no-sync": "off",
+        "eslint/no-console": "off",
+        "eslint/no-magic-numbers": "off",
+        "eslint/max-lines": "off",
+        "eslint/max-lines-per-function": "off",
+        "eslint/max-statements": "off"
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+      "rules": {
+        "import/no-nodejs-modules": "off",
+        "eslint/no-magic-numbers": "off",
+        "eslint/max-lines": "off",
+        "eslint/max-lines-per-function": "off",
+        "eslint/max-statements": "off"
+      }
+    },
+    {
+      "files": ["**/*.d.ts"],
+      "rules": {
+        "import/unambiguous": "off",
+        "typescript/consistent-type-definitions": "off"
+      }
+    }
+  ]
+}

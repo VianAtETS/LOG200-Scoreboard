@@ -435,8 +435,8 @@ cp ladder.example.toml ladder.toml          # equipes, temps, session
 target/release/isolation-ladder ladder.toml # Ctrl+C pour arreter, relancer reprend la session
 sqlite3 state/ladder.db "SELECT record FROM games ORDER BY seq" > parties.jsonl
 target/release/isolation-check parties.jsonl  # rejoue et valide toutes les parties
-npx http-server . -p 8000                   # sert data/ a la page
-(cd web && npm ci && SCOREBOARD_DEV_SERVER=http://localhost:8000 npm run dev)
+bunx http-server . -p 8000                  # sert data/ a la page
+(cd web && bun install --frozen-lockfile && SCOREBOARD_DEV_SERVER=http://localhost:8000 bun run dev)
 # puis ouvrir http://localhost:3000
 ```
 

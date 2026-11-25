@@ -1,0 +1,10 @@
+**
+!web/
+!web/**
+web/node_modules/
+web/dist/
+web/.astro/
+!deploy/
+!deploy/web.Dockerfile
+!deploy/web.Dockerfile.dockerignore
+!deploy/web-entrypoint.sh

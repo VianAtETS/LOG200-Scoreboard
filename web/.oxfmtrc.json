@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "singleQuote": true,
+  "printWidth": 100,
+  "tabWidth": 2,
+  "astro": true,
+  "sortImports": false,
+  "sortPackageJson": false,
+  "ignorePatterns": ["dist/", ".astro/", "node_modules/", "bun.lock"],
+  "overrides": [
+    {
+      "files": ["**/*.css"],
+      "options": {
+        "tabWidth": 4
+      }
+    }
+  ]
+}

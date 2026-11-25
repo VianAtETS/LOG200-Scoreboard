@@ -1,23 +1,19 @@
-import js from '@eslint/js';
-import { defineConfig } from 'eslint/config';
-import globals from 'globals';
-import reactHooks from 'eslint-plugin-react-hooks';
-import tseslint from 'typescript-eslint';
+import tsParser from '@typescript-eslint/parser';
+import { configs } from 'eslint-plugin-astro';
 
-export default defineConfig(
-  { ignores: ['dist', '.astro'] },
+export default [
   {
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    files: ['**/*.{ts,tsx}'],
+    ignores: ['dist/**', '.astro/**', 'node_modules/**', '**/*.{js,mjs,cjs,ts,tsx,jsx}'],
+  },
+  ...configs['flat/all'],
+  ...configs['flat/jsx-a11y-strict'],
+  {
+    files: ['**/*.astro'],
+    linterOptions: {
+      reportUnusedDisableDirectives: 'error',
+    },
     languageOptions: {
-      ecmaVersion: 2022,
-      globals: globals.browser,
+      parserOptions: { parser: tsParser },
     },
-    plugins: {
-      'react-hooks': reactHooks,
-    },
-    rules: {
-      ...reactHooks.configs.recommended.rules,
-    },
-  }
-);
+  },
+];
