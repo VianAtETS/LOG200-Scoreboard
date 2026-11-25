@@ -30,8 +30,8 @@ use crate::arena::Arena;
 use crate::db::{Db, GameFilter, PairFilter, Profiling, Stat};
 use crate::hub::Hub;
 use crate::openapi::{
-    ApiDoc, BuildRecord, DuelPair, GameProfile, HeadToHead, Jar, MoveTimes, Openings, RatingPoint, SubmissionRecord,
-    TeamRecord,
+    ApiDoc, BuildRecord, DuelPair, GameProfile, HeadToHead, Heatmap, Jar, MoveTimes, Openings, RatingPoint,
+    SubmissionRecord, TeamRecord,
 };
 use crate::profile::{PublicShare, public_share};
 use crate::remote::{self, Registry, Remote};
@@ -170,6 +170,7 @@ fn read_routes(db: PathBuf) -> OpenApiRouter {
         .routes(routes!(stats_builds))
         .routes(routes!(stats_ratings))
         .routes(routes!(stats_move_times))
+        .routes(routes!(stats_heatmap))
         .routes(routes!(stats_submissions))
         .routes(routes!(stats_template_share))
         .with_state(Arc::new(db))
@@ -386,6 +387,15 @@ async fn stats_ratings(State(db): State<Arc<PathBuf>>, Query(q): Query<TeamScope
 ))]
 async fn stats_move_times(State(db): State<Arc<PathBuf>>, Query(q): Query<TeamScope>) -> Response {
     stat(db, Stat::MoveTimes, q.session, Some(q.team)).await
+}
+
+/// Cartes de chaleur de l'équipe par build : où son pion est arrivé et quelles cases elle a détruites.
+#[utoipa::path(get, path = "/api/stats/heatmap", tag = "statistiques", params(TeamScope), responses(
+    (status = 200, body = Vec<Heatmap>), (status = 400, description = "`team` manquant."),
+    (status = 500, description = "Base indisponible."),
+))]
+async fn stats_heatmap(State(db): State<Arc<PathBuf>>, Query(q): Query<TeamScope>) -> Response {
+    stat(db, Stat::Heatmap, q.session, Some(q.team)).await
 }
 
 /// Jars soumis par l'équipe et leurs verdicts, du plus ancien au plus récent.

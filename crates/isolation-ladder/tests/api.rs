@@ -455,7 +455,7 @@ fn stats_answer_in_json_for_fifteen_seconds() {
     assert_eq!(ladder.request("GET", "/api/stats/pairs?a=a", None, b"").0, 400);
     assert_eq!(ladder.request("GET", "/api/stats/builds?team=a", None, b"").0, 200);
     assert_eq!(ladder.request("GET", "/api/stats/builds", None, b"").0, 400);
-    for name in ["ratings", "move-times", "submissions"] {
+    for name in ["ratings", "move-times", "heatmap", "submissions"] {
         assert_eq!(
             ladder.request("GET", &format!("/api/stats/{name}?team=a"), None, b"").0,
             200
@@ -484,6 +484,7 @@ fn openapi_spec_lists_every_http_route() {
             "/api/profiling",
             "/api/stats/builds",
             "/api/stats/head-to-head",
+            "/api/stats/heatmap",
             "/api/stats/move-times",
             "/api/stats/openings",
             "/api/stats/pairs",

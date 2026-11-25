@@ -193,6 +193,14 @@ Par build, dans l'ordre où ils ont joué pour la première fois : nombre de cou
 [ { "build": "812198fd4ad7b97e", "moves": 182340, "avg_ms": 212, "max_ms": 1487, "near_limit": 31 } ]
 ```
 
+### `heatmap?team=<équipe>` : cartes de chaleur
+
+Par build, dans l'ordre où ils ont joué pour la première fois, les cartes de l'arène isola : `moves` compte, par case, les arrivées du pion de l'équipe, `blocks` les cases qu'elle a détruites. Coups clients seulement, sans l'ouverture tirée par le ladder ; une case jamais touchée n'y figure pas. `games` compte les parties où le build a joué au moins un coup. `build` vaut `null` pour les bots de `[[team]]`. La page Analyse en dessine les deux versions de la partie.
+
+```json
+[ { "build": "812198fd4ad7b97e", "games": 5551, "moves": { "F4": 812, "G6": 1290 }, "blocks": { "A7": 95, "F10": 431 } } ]
+```
+
 ### `submissions?team=<équipe>` : soumissions
 
 Les jars soumis par l'équipe, du plus ancien au plus récent, avec leur verdict (`accepted`, `rejected` ou `error`). `detail` donne la raison d'un rejet ; il est vide pour une erreur du ladder, dont le message peut contenir des chemins du serveur. `session` n'a pas d'effet ici.
@@ -218,7 +226,7 @@ Sur les parties profilées d'un build, la part des échantillons où une méthod
 | Code | Sens |
 | --- | --- |
 | 200 | `application/json`. |
-| 400 | `builds`, `ratings`, `move-times` ou `submissions` sans `team`, `template-share` sans `team` ou `build`, ou paramètres illisibles. |
+| 400 | `builds`, `ratings`, `move-times`, `heatmap` ou `submissions` sans `team`, `template-share` sans `team` ou `build`, ou paramètres illisibles. |
 | 404 | Statistique inconnue (route inconnue), ou part du gabarit non publiée. |
 
 ## Requêtes libres

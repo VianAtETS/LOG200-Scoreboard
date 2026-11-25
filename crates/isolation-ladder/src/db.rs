@@ -50,6 +50,7 @@ pub enum Stat {
     Builds,
     Ratings,
     MoveTimes,
+    Heatmap,
     Submissions,
 }
 
@@ -62,6 +63,7 @@ impl Stat {
             Self::Builds => include_str!("sql/stats_builds.sql"),
             Self::Ratings => include_str!("sql/stats_ratings.sql"),
             Self::MoveTimes => include_str!("sql/stats_move_times.sql"),
+            Self::Heatmap => include_str!("sql/stats_heatmap.sql"),
             Self::Submissions => include_str!("sql/stats_submissions.sql"),
         }
     }
@@ -1168,6 +1170,24 @@ pub(crate) mod tests {
                 {"build": "h2", "moves": 2, "avg_ms": 20, "max_ms": 30, "near_limit": 0},
             ])
         );
+    }
+
+    #[test]
+    fn heatmap_counts_where_each_build_moved_and_destroyed() {
+        let db = league();
+        // g1 en rouge et g2 en noir pour h1, g3 pour h2 ; le tournoi g4 n'est pas compté.
+        assert_eq!(
+            stat(&db, Stat::Heatmap, None, Some("a")),
+            serde_json::json!([
+                {"build": "h1", "games": 2, "moves": {"F4": 2, "F6": 1}, "blocks": {"A7": 2, "F10": 1}},
+                {"build": "h2", "games": 1, "moves": {"F4": 1, "F6": 1}, "blocks": {"A7": 1, "F10": 1}},
+            ])
+        );
+        assert_eq!(
+            stat(&db, Stat::Heatmap, None, Some("c")),
+            serde_json::json!([{"build": null, "games": 1, "moves": {"C10": 1}, "blocks": {"I7": 1}}])
+        );
+        assert_eq!(stat(&db, Stat::Heatmap, None, Some("z")), serde_json::json!([]));
     }
 
     #[test]

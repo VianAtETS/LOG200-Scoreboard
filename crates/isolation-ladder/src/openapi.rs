@@ -191,6 +191,18 @@ pub struct MoveTimes {
     pub near_limit: u64,
 }
 
+/// Cartes de chaleur d'un build : par case (`F4`), combien de fois le pion de l'équipe y est arrivé
+/// et combien de fois elle l'a détruite. Une case jamais touchée n'y figure pas.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Heatmap {
+    /// `null` pour les bots du ladder.
+    pub build: Option<String>,
+    pub games: u64,
+    pub moves: BTreeMap<String, u64>,
+    pub blocks: BTreeMap<String, u64>,
+}
+
 /// Une soumission de jar et son verdict.
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -218,6 +230,7 @@ pub fn check(stat: crate::db::Stat, json: &str) {
         Stat::Builds => parse::<Vec<BuildRecord>>(json),
         Stat::Ratings => parse::<Vec<RatingPoint>>(json),
         Stat::MoveTimes => parse::<Vec<MoveTimes>>(json),
+        Stat::Heatmap => parse::<Vec<Heatmap>>(json),
         Stat::Submissions => parse::<Vec<SubmissionRecord>>(json),
     }
 }
