@@ -2,11 +2,13 @@
 
 import { API, DATA, LATEST_RELEASE, SERVER } from '@/dao/constants/api.const';
 import { ISOLATION, usable } from '@/lib/game';
+import { parseInstances } from '@/lib/instances';
 import type { TDescriptor } from '@/types/game.types';
 import type { TDuelPair, TDuelSide, TGame, TGameRow, THeatmap, TRunningGame } from '@/types/games.types';
 import type { TGameProfile, TProfiling, TTemplateShare } from '@/types/profile.types';
 import type { TModel, TQueueFile, TSummary } from '@/types/summary.types';
 import type { TTournament, TTournamentIndex } from '@/types/tournament.types';
+import type { TInstance } from '@/types/instances.types';
 
 const noStore: RequestInit = { cache: 'no-store' };
 
@@ -163,8 +165,30 @@ export async function getTemplateShare(team: string, build: string) {
 
 // Le jeu de l'instance (data/game.json). Absent ou incohérent (ladder d'avant la plateforme
 // multi-jeux) : Isolation.
-export async function getDescriptor(): Promise<TDescriptor> {
-  const res = await fetch(`${DATA}/game.json`, noStore).catch(() => null);
+export async function getDescriptor(data = DATA): Promise<TDescriptor> {
+  const res = await fetch(`${data}/game.json`, noStore).catch(() => null);
   const value = res?.ok ? await res.json().catch(() => null) : null;
   return usable(value) ? value : ISOLATION;
+}
+
+// Les instances d'un serveur à plusieurs jeux (instances.json à sa racine `root`). `null` sans lui : un
+// serveur d'une seule instance.
+export async function getInstances(root: string): Promise<TInstance[] | null> {
+  const res = await fetch(`${root}/instances.json`, noStore).catch(() => null);
+  return res?.ok ? parseInstances(await res.json().catch(() => null)) : null;
+}
+
+// Le résumé d'une instance pour l'accueil : son jeu, ses équipes classées, ses parties. `summary` vaut
+// `null` si l'instance ne répond pas (arrêtée, pas encore démarrée).
+export async function getInstanceCard(data: string) {
+  const [descriptor, summary] = await Promise.all([
+    getDescriptor(data),
+    json<TSummary>(`${data}/summary.json`).catch(() => null),
+  ]);
+  const all = summary?.scopes[''];
+  return {
+    descriptor,
+    summary: all ? { teams: all.ratings.filter((r) => !r.anchor).length, games: all.games, last: all.recent.at(-1)?.ts } : null,
+    sessions: summary?.sessions ?? [],
+  };
 }

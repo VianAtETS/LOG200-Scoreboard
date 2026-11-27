@@ -8,7 +8,7 @@ import { queryKeys } from './query-keys';
 export const useDescriptor = () => {
   const { data } = useQuery({
     queryKey: [queryKeys.descriptor],
-    queryFn: getDescriptor,
+    queryFn: () => getDescriptor(),
     staleTime: Infinity,
   });
   return data ?? ISOLATION;

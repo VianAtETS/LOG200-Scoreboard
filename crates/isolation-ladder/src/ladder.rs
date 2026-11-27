@@ -148,7 +148,7 @@ struct Ladder {
 impl Ladder {
     /// Ni arrêt en cours, ni `--rounds` atteint.
     fn accepting(&self) -> bool {
-        !self.arena.draining() && self.rounds.is_none_or(|n| self.pairs.round < n)
+        !self.arena.config().archived && !self.arena.draining() && self.rounds.is_none_or(|n| self.pairs.round < n)
     }
 
     /// Builds tenus loin des nœuds : leur temps y a été dépassé, ou leur équipe les profile (le
@@ -163,8 +163,10 @@ impl Ladder {
     }
 
     /// Plus rien ne tourne : la boucle peut s'arrêter.
+    /// Une session archivée ne finit qu'à l'arrêt demandé : elle n'a rien d'autre à attendre.
     fn finished(&self) -> bool {
-        self.pairs.idle() && self.arena.smoke_tests() == 0
+        let idle = self.pairs.idle() && self.arena.smoke_tests() == 0;
+        idle && (!self.arena.config().archived || self.arena.draining())
     }
 
     /// Avance le tournoi et lance ce qui tient dans les slots libres. Vrai si une paire du ladder

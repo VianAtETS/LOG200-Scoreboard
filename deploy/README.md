@@ -109,6 +109,20 @@ D'autres machines du LAN peuvent jouer des parties pour le ladder : un nœud pre
 - Un nœud qui tombe en pleine partie ne coûte rien à personne : la partie est annulée puis rejouée ailleurs. Trois échecs d'affilée le mettent en quarantaine 10 min.
 - Le nœud n'exécute aucune commande venue du ladder : seulement les bots de sa liste et des jars identifiés par leur sha256. Un jar qui sortirait de gVisor serait root dans le conteneur privilégié du nœud, comme au ladder.
 
+## Plusieurs jeux en parallèle (optionnel)
+
+Le jeu du lab change à chaque session ; un même serveur peut garder la session passée en ligne et en faire tourner une nouvelle, ou deux jeux pour deux groupes. Chaque instance (un jeu, une session) est un ladder à part, avec son `ladder.toml`, ses jars, sa base et ses fichiers ; la passerelle la sert sous son préfixe (`/isolation/`, `/hnefatafl/`) et l'accueil (`/`) liste les jeux. Conception : `docs/spec-multi-jeux.md`, « Instances ».
+
+1. Ranger chaque instance dans `instances/<id>/` : `ladder.toml`, `jars/`, `data/`, `state/`. Pour reprendre le serveur d'une seule instance, y déplacer `ladder.toml`, `jars/`, `data/` et `state/`.
+2. Copier `instances.example.json` en `instances.json` et y décrire les instances : `id` (le préfixe, en minuscules), `label` (la session, affichée sous le nom du jeu), `archived` pour une session terminée.
+3. Une instance de plus : son service `ladder-<id>` et son volume Docker dans `compose.multi.yml`, le montage de son `data/` dans la passerelle, une ligne `import instance <id>` dans `Caddyfile.multi`.
+4. `docker compose -f compose.multi.yml up -d`. La page est commune : chacune lit le jeu de son instance (`data/game.json`).
+
+- **Cœurs** : les ladders ne se voient pas. Donner à leurs slots des `cpuset_red` et `cpuset_black` disjoints, sinon deux parties de deux instances se disputent un cœur.
+- **Session terminée** : `archived = true` dans son `ladder.toml`, puis `docker compose -f compose.multi.yml restart ladder-<id>`. Le ladder ne lance plus aucune partie ni tournoi et refuse les jars (403), mais garde classement, replays et API en ligne.
+- **Un autre jeu** : son ladder pointe `rules` et `referee` vers l'arbitre de ce jeu (voir « Sous-commandes » dans `docs/formats.md`).
+- **GitHub Pages** reste pour un serveur d'une seule instance : `SCOREBOARD_SERVER` ne prend pas de chemin.
+
 ## Page sur GitHub Pages
 
 

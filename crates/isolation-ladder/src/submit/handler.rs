@@ -71,6 +71,8 @@ pub enum SubmitError {
     Install(io::Error),
     #[error("ladder en redémarrage : réessayer dans quelques minutes")]
     Draining,
+    #[error("session terminée : le ladder ne reçoit plus de jar")]
+    Archived,
     #[error("soumission inconnue : verdict gardé une heure, perdu si le ladder redémarre")]
     UnknownSubmission,
 }
@@ -88,6 +90,7 @@ impl SubmitError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Self::Draining => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Archived => StatusCode::FORBIDDEN,
         }
     }
 }
@@ -161,6 +164,9 @@ impl Submissions {
     }
 
     pub fn submit(&self, team: &TeamId, jar: &[u8]) -> Result<Accepted, SubmitError> {
+        if self.arena.config().archived {
+            return Err(SubmitError::Archived);
+        }
         check_jar(jar, self.submit.max_jar_mb)?;
         let multithread = manifest::multithread(Cursor::new(jar))?;
         let hash = short_hash(jar);
@@ -289,9 +295,14 @@ mod tests {
 
     /// Un ladder dont l'arbitre ne peut pas se lancer : toute partie échoue tout de suite.
     fn submissions(name: &str) -> (Submissions, String) {
+        submissions_with(name, "")
+    }
+
+    /// `extra` : des clés de premier niveau de ladder.toml en plus.
+    fn submissions_with(name: &str, extra: &str) -> (Submissions, String) {
         let dir = temp_dir(name);
         let toml = format!(
-            "referee = [\"isolation-arbitre-absent\"]\ntime_ms = 100\nsession = \"s\"\nout = {out:?}\ndb = {db:?}\n\
+            "{extra}referee = [\"isolation-arbitre-absent\"]\ntime_ms = 100\nsession = \"s\"\nout = {out:?}\ndb = {db:?}\n\
              [submit]\nteams = {teams:?}\njars = {jars:?}\nmax_jar_mb = 1\n",
             out = dir.join("games.jsonl"),
             db = dir.join("ladder.db"),
@@ -383,6 +394,19 @@ mod tests {
             log.iter()
                 .all(|(verdict, detail)| verdict == "error" && !detail.is_empty()),
             "{log:?}"
+        );
+    }
+
+    #[test]
+    fn an_archived_session_refuses_every_jar() {
+        let (submissions, _) = submissions_with("archived", "archived = true\n");
+        let error = submissions.submit(&team(), JAR).unwrap_err();
+        assert!(matches!(error, SubmitError::Archived), "{error}");
+        assert_eq!(error.status(), StatusCode::FORBIDDEN);
+        assert_eq!(submissions.arena.smoke_tests(), 0);
+        assert!(
+            logged(&submissions).is_empty(),
+            "rien au journal : la session est close"
         );
     }
 

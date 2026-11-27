@@ -16,4 +16,6 @@ export const queryKeys = {
   profiling: 'profiling',
   templateShare: 'templateShare',
   descriptor: 'descriptor',
+  instances: 'instances',
+  instanceCard: 'instanceCard',
 };

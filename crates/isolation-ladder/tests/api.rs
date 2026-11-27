@@ -38,6 +38,11 @@ struct Ladder {
 
 impl Ladder {
     fn start(name: &str) -> Self {
+        Self::start_with(name, "")
+    }
+
+    /// `extra` : des clés de premier niveau de ladder.toml en plus.
+    fn start_with(name: &str, extra: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("isolation-api-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("data")).unwrap();
@@ -45,7 +50,7 @@ impl Ladder {
         fs::write(
             dir.join("ladder.toml"),
             format!(
-                "referee = [\"unused\"]\nrules = [{rules:?}]\ntime_ms = 1000\nsession = \"api\"\nteam_cmd = [\"unused\"]\n\
+                "{extra}referee = [\"unused\"]\nrules = [{rules:?}]\ntime_ms = 1000\nsession = \"api\"\nteam_cmd = [\"unused\"]\n\
                  [submit]\nlisten = \"127.0.0.1:0\"\nmax_jar_mb = {MAX_JAR_MB}\n\
                  [remote]\nlisten = \"127.0.0.1:0\"\n\
                  [live]\nlisten = \"127.0.0.1:0\"\n\
@@ -502,4 +507,17 @@ fn openapi_spec_lists_every_http_route() {
     );
     assert!(spec["paths"]["/api/submit"]["post"].is_object());
     assert!(spec["components"]["schemas"]["GameRecord"].is_object());
+}
+
+#[test]
+fn an_archived_session_keeps_serving_its_games_and_refuses_jars() {
+    let ladder = Ladder::start_with("archived", "archived = true\n");
+    let token = ladder.add_team("eq01", REGISTRY);
+    // Le ladder ne s'arrête pas faute de partie à jouer : il sert encore la session.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(ladder.request("GET", "/api/games/g1", None, b"").0, 200);
+    assert_eq!(
+        ladder.request("PUT", "/api/submit", Some(&token), &jar()),
+        (403, "session terminée : le ladder ne reçoit plus de jar".into())
+    );
 }

@@ -36,6 +36,10 @@ pub struct Config {
     /// Base SQLite, source de vérité. Hors du dossier servi : elle contient les soumissions.
     #[serde(default = "default_db")]
     pub db: PathBuf,
+    /// Session terminée : le ladder sert encore sa page et son API (classement, replays), mais ne
+    /// lance plus aucune partie, ni ladder ni tournoi, et refuse les jars. Il tourne jusqu'à SIGTERM.
+    #[serde(default)]
+    pub archived: bool,
     /// Demi-coups aléatoires imposés en début de partie (pair). 0 si un client ignore le plateau initial.
     #[serde(default = "default_opening_plies")]
     pub opening_plies: usize,

@@ -547,6 +547,7 @@ fn outcome(result: Result<Accepted, SubmitError>) -> (StatusCode, String) {
          description = "Avec `?async` : chemin du verdict, aussi dans `Location`.", example = "/api/submit/1762979823004\n"),
         (status = 400, description = "Le corps n'est pas un jar."),
         (status = 401, description = "Token d'équipe absent ou inconnu."),
+        (status = 403, description = "Session terminée (`archived` dans ladder.toml) : plus aucun jar reçu."),
         (status = 413, description = "Jar trop gros."),
         (status = 422, description = "Refusé par le smoke test ; la raison est dans le corps."),
         (status = 429, description = "Soumission trop rapprochée de la précédente."),

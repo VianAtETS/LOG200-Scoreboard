@@ -1,0 +1,55 @@
+# Plusieurs jeux en parallèle : un ladder par instance (un jeu, une session), chacun avec son
+# ladder.toml, ses jars, sa base et ses fichiers dans instances/<id>/, servis sous /<id>/ par la
+# passerelle (Caddyfile.multi). Voir « Plusieurs jeux » dans README.md.
+#   docker compose -f compose.multi.yml up -d
+# Ajouter une instance : copier le bloc ladder-isolation (service, volume Docker, montage de data dans
+# la passerelle), une ligne dans Caddyfile.multi, une entrée dans instances.json.
+name: scoreboard
+
+# Ce que tous les ladders partagent (voir compose.yml pour le sens de chaque clé).
+x-ladder: &ladder
+  image: ghcr.io/vianatets/log200-scoreboard:${SCOREBOARD_TAG:-latest}
+  privileged: true
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 15m
+
+services:
+  ladder-isolation:
+    <<: *ladder
+    volumes:
+      - ./instances/isolation/ladder.toml:/srv/ladder.toml:ro
+      - ./instances/isolation/jars:/srv/jars
+      - ./instances/isolation/data:/srv/data
+      - ./instances/isolation/state:/srv/state
+      - docker-isolation:/var/lib/docker
+
+  # Une autre instance, une fois son arbitre dans l'image (`rules` et `referee` de son ladder.toml).
+  # ladder-hnefatafl:
+  #   <<: *ladder
+  #   volumes:
+  #     - ./instances/hnefatafl/ladder.toml:/srv/ladder.toml:ro
+  #     - ./instances/hnefatafl/jars:/srv/jars
+  #     - ./instances/hnefatafl/data:/srv/data
+  #     - ./instances/hnefatafl/state:/srv/state
+  #     - docker-hnefatafl:/var/lib/docker
+
+  gateway:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile.multi:/etc/caddy/Caddyfile:ro
+      - ./instances.json:/srv/instances.json:ro
+      - ./instances/isolation/data:/srv/isolation/data:ro
+      # - ./instances/hnefatafl/data:/srv/hnefatafl/data:ro
+
+  # La page, commune à toutes les instances : chacune la sert sous son préfixe.
+  web:
+    image: ghcr.io/vianatets/log200-scoreboard-web:${SCOREBOARD_TAG:-latest}
+    restart: unless-stopped
+
+volumes:
+  docker-isolation:
+  # docker-hnefatafl:

@@ -230,7 +230,8 @@ jobs:
       - name: Package deploy files
         run: |
           mkdir isolation-scoreboard-deploy
-          cp deploy/compose.yml deploy/Caddyfile deploy/README.md ladder.example.toml isolation-scoreboard-deploy/
+          cp deploy/compose.yml deploy/Caddyfile deploy/compose.multi.yml deploy/Caddyfile.multi \
+            deploy/instances.example.json deploy/README.md ladder.example.toml isolation-scoreboard-deploy/
           zip -r dist/isolation-scoreboard-deploy.zip isolation-scoreboard-deploy
 
       - name: Create release

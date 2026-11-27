@@ -4087,3 +4087,33 @@ summary.prow:hover {
 #duel a {
     color: var(--color-text);
 }
+
+/* Accueil d'un serveur à plusieurs jeux : une carte par instance. */
+.instances {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: var(--gutter);
+    padding: 0;
+    list-style: none;
+}
+
+.instance>a {
+    display: block;
+    height: 100%;
+    padding: var(--section-padding);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-xs);
+    color: inherit;
+    text-decoration: none;
+}
+
+.instance>a:hover,
+.instance>a:focus-visible {
+    border-color: var(--color-text);
+}
+
+.instance-label,
+.instance-meta {
+    margin-top: var(--space-2);
+    color: var(--color-text-muted);
+}

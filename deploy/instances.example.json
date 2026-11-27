@@ -1,0 +1,7 @@
+{
+  "v": 1,
+  "instances": [
+    { "id": "isolation", "label": "Automne 2026" },
+    { "id": "hnefatafl", "label": "Hiver 2026", "archived": true }
+  ]
+}

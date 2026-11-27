@@ -1,0 +1,52 @@
+# Plusieurs jeux en parallèle (docs/spec-multi-jeux.md, « Instances ») : un ladder par instance, servi
+# sous son préfixe. /isolation/web/ est la page d'Isolation, /isolation/api/ son API, /isolation/data/
+# ses fichiers ; la page est la même pour toutes, elle lit le jeu de son instance (data/game.json).
+# Ajouter une instance : une ligne `import instance <id>` ci-dessous, son service dans
+# compose.multi.yml et son entrée dans instances.json.
+
+(instance) {
+	redir /{args[0]} /{args[0]}/web/
+	redir /{args[0]}/ /{args[0]}/web/
+	handle_path /{args[0]}/* {
+		# Page commune : service web (une seule image pour toutes les instances).
+		reverse_proxy /web/* web:80
+		# Équipes distantes et direct : WebSocket, relayées telles quelles, avant /api/*.
+		reverse_proxy /api/remote ladder-{args[0]}:8091
+		reverse_proxy /api/live ladder-{args[0]}:8092
+		reverse_proxy /api/* ladder-{args[0]}:8090
+		# Origine libre, comme le Caddyfile d'une seule instance : aucun cookie, le token passe en en-tête.
+		@cors path /api/* /data/*
+		header @cors Access-Control-Allow-Origin *
+		header @cors Access-Control-Expose-Headers Content-Range
+		@preflight {
+			method OPTIONS
+			path /api/* /data/*
+		}
+		handle @preflight {
+			header Access-Control-Allow-Methods "GET, PUT, DELETE"
+			header Access-Control-Allow-Headers "Authorization, Content-Type, Range"
+			header Access-Control-Max-Age 86400
+			respond 204
+		}
+		# Journaux des joueurs : restent privés.
+		respond /data/logs/* 404
+		header /data/* Cache-Control "public, max-age=15"
+		root * /srv/{args[0]}
+		file_server
+	}
+}
+
+:80 {
+	encode zstd gzip
+
+	import instance isolation
+	# import instance hnefatafl
+
+	# Accueil : la liste des jeux (instances.json), lue par la page commune.
+	redir / /web/accueil.html
+	reverse_proxy /web/* web:80
+	header /instances.json Cache-Control "public, max-age=60"
+	header /instances.json Access-Control-Allow-Origin *
+	root * /srv
+	file_server
+}

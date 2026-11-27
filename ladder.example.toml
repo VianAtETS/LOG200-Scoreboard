@@ -23,6 +23,9 @@ referee = [
 port = 8888
 time_ms = 500
 session = "ladder-2026-11"
+# Session terminee : le ladder sert encore sa page et son API (classement, replays) mais ne lance plus
+# aucune partie, ni tournoi, et refuse les jars. Pour garder une session passee en ligne.
+# archived = true
 # Dossier des fichiers de la page (son dossier parent). Un ancien fichier des parties a cet endroit est
 # importe une fois dans db, puis renomme en .migrated.
 out = "data/games.jsonl"

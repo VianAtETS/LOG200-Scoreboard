@@ -1,6 +1,6 @@
 # Spec : plateforme multi-jeux
 
-Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 à 4 faites).
+Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 à 5 faites).
 
 ## Problème
 
@@ -128,6 +128,10 @@ Le ladder lit encore les résultats v1 (anciens arbitres, parties déjà enregis
 ## Instances
 
 Une instance du ladder par compétition (un jeu, une session) : son `ladder.toml`, sa base, son `data/`. Caddy sert chaque instance sous son préfixe (`/isolation/`, `/hnefatafl/`) et une page d'accueil liste les instances. Les cœurs sont partagés en donnant des `cpuset` disjoints aux slots de chaque instance. Une session terminée reste en ligne en lecture seule.
+
+- `deploy/compose.multi.yml` : un service `ladder-<id>` par instance (fichiers dans `instances/<id>/`), une passerelle, une page commune. `deploy/Caddyfile.multi` : un snippet par instance (`import instance <id>`) qui sert `/<id>/web/` (la page), `/<id>/api/` (préfixe retiré : le ladder voit `/api/`) et `/<id>/data/`. La page ne change pas : depuis `/<id>/web/`, elle lit `../data` et `../api`, donc ceux de son instance.
+- `instances.json` à la racine (`{"v": 1, "instances": [{"id", "label", "archived"}]}`) : l'accueil (`/web/accueil.html`, où `/` redirige) en fait une carte par instance, avec le nom de son jeu (`game.json`), ses équipes et ses parties (`summary.json`). Les pages d'une instance y renvoient (« Jeux ») quand le fichier existe.
+- Lecture seule : `archived = true` dans `ladder.toml`. Le ladder sert page et API, ne lance aucune partie ni tournoi, refuse les jars (403) et tourne jusqu'à SIGTERM.
 
 ## Page
 
