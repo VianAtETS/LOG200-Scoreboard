@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::Path;
 
-use isolation_core::record::Measure;
+use game_kit::record::Measure;
 
 /// La mesure d'une ligne `ARENA` ; les autres clés et les valeurs illisibles sont ignorées.
 pub fn parse(line: &str) -> Option<Measure> {

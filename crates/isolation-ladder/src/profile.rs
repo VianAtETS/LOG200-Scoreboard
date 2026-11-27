@@ -10,8 +10,8 @@ use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 
-use isolation_core::board::Color;
-use isolation_core::record::Measure;
+use game_kit::Color;
+use game_kit::record::Measure;
 
 use crate::measures;
 

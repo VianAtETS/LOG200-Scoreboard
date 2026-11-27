@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use isolation_core::board::Color;
-use isolation_core::record::{GameRecord, Reason};
+use game_kit::Color;
+use game_kit::record::{GameRecord, Reason};
 
 use crate::store::write_atomic;
 

@@ -23,8 +23,8 @@ use tungstenite::handshake::HandshakeError;
 use tungstenite::http::HeaderValue;
 use tungstenite::{Error as WsError, Message as Frame, WebSocket};
 
-use isolation_core::board::{ByColor, Color, Move};
-use isolation_core::record::RefereeEvent;
+use game_kit::record::RefereeEvent;
+use game_kit::{ByColor, Color};
 
 use super::config::NodeConfig;
 use super::jars::JarCache;
@@ -48,13 +48,22 @@ const STABLE: Duration = Duration::from_secs(60);
 /// Bornes d'une partie demandée : au-delà, ce n'est pas une partie du ladder.
 const MAX_TIME_MS: u64 = 60_000;
 const MAX_TIMEOUT_MS: u64 = 2 * 60 * 60 * 1000;
+/// Plus que toute ouverture raisonnable : au-delà, ce n'est plus une ouverture.
+const MAX_OPENING_PLIES: usize = 64;
+
+/// Un coup en notation, quel que soit le jeu : lettres, chiffres, `-` et `:`, mais pas au début.
+fn is_notation(mv: &str) -> bool {
+    (1..=32).contains(&mv.len())
+        && mv.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b':')
+        && mv.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
+}
 
 /// Une partie acceptée, prête à jouer : les commandes viennent de la config du nœud.
 pub struct Accepted {
     pub game: String,
     pub slot: usize,
     pub time_ms: u64,
-    pub opening: Vec<Move>,
+    pub opening: Vec<String>,
     pub timeout: Duration,
     pub red: Team,
     pub black: Team,
@@ -132,14 +141,12 @@ pub fn validate(game: &WireGame, cfg: &NodeConfig, jar: impl Fn(&str) -> Option<
     if game.time_ms == 0 || game.time_ms > MAX_TIME_MS || game.timeout_ms > MAX_TIMEOUT_MS {
         return bad("temps hors bornes");
     }
-    let Ok(opening) = game
-        .opening
-        .iter()
-        .map(|m| m.parse::<Move>())
-        .collect::<Result<Vec<_>, _>>()
-    else {
+    // Le nœud ne connaît pas les règles : l'arbitre refusera un coup illégal. Seulement des coups
+    // qui ne peuvent rien être d'autre dans la ligne de commande de l'arbitre.
+    if game.opening.len() > MAX_OPENING_PLIES || !game.opening.iter().all(|m| is_notation(m)) {
         return bad("ouverture illisible");
-    };
+    }
+    let opening = game.opening.clone();
     Ok(Accepted {
         game: game.game.clone(),
         slot: game.slot,
@@ -646,7 +653,7 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::mpsc::{self, Sender};
 
-    use isolation_core::record::{GameResult, InvalidCounts, RECORD_VERSION, Reason};
+    use game_kit::record::{GameResult, InvalidCounts, RECORD_VERSION, Reason};
 
     use rand::SeedableRng;
     use tungstenite::Message as Frame;
@@ -725,6 +732,11 @@ mod tests {
         let mut bad_opening = game(bot("aleatoire", &[]), bot("aleatoire", &[]));
         bad_opening.opening = vec!["$(reboot)".into()];
         assert!(refused(bad_opening));
+        for sneaky in ["--max-invalid", "G1-G4-F9,F12-F10-G7", ""] {
+            let mut bad = game(bot("aleatoire", &[]), bot("aleatoire", &[]));
+            bad.opening = vec![sneaky.into()];
+            assert!(refused(bad), "{sneaky:?}");
+        }
         let missing = validate(&game(jar(&sha()), bot("aleatoire", &[])), &cfg, |_| None);
         assert!(matches!(missing, Err(Refusal::NeedJar(s)) if s == sha()));
     }
@@ -870,7 +882,7 @@ mod tests {
     fn agent_fetches_missing_jars_then_obeys_abort_and_drain() {
         let (agent, stub, listener, started) = agent("jars");
         let jar = b"un jar".to_vec();
-        let sha = isolation_core::digest::sha256_hex(&jar);
+        let sha = game_kit::digest::sha256_hex(&jar);
         let id = "20261113T120000.000Z-eq01-niveau-1";
         let ladder = thread::spawn(move || {
             let mut ladder = FakeLadder::accept(&listener);

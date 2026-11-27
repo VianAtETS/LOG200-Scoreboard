@@ -11,11 +11,9 @@ use std::time::Duration;
 
 use thiserror::Error;
 
-use isolation_core::board::{ByColor, Color, Move};
-use isolation_core::digest::short_hash;
-use isolation_core::record::{
-    GameRecord, GameResult, Measures, Player, Reason, RefereeEvent, TournamentGame, ValidationError, now_rfc3339,
-};
+use game_kit::digest::short_hash;
+use game_kit::record::{GameRecord, GameResult, Measures, Player, Reason, RefereeEvent, TournamentGame, now_rfc3339};
+use game_kit::{ByColor, Color};
 
 use crate::config::Config;
 use crate::db::{Db, Profiling};
@@ -28,6 +26,7 @@ use crate::profile::{self, Profile};
 
 use crate::remote::Seat;
 use crate::roster::Team;
+use crate::rules::{self, Opening, Rules, RulesError};
 use crate::store::compact_timestamp;
 
 #[derive(Debug, Error)]
@@ -45,7 +44,10 @@ pub enum GameError {
     #[error("résultat illisible ({error}) : {json:?}")]
     BadResult { json: String, error: serde_json::Error },
     #[error("résultat incohérent : {0}")]
-    Inconsistent(#[from] ValidationError),
+    Inconsistent(String),
+    /// Les règles du jeu n'ont pas répondu (`rules` dans ladder.toml) : le serveur est en faute.
+    #[error("{0}")]
+    Rules(RulesError),
     /// Partie de tournoi avant son dernier essai (`Fixture::forfeit_counts`).
     #[error("{0} jamais connecté à l'arbitre, partie rejouée")]
     NoShow(String),
@@ -58,6 +60,15 @@ pub enum GameError {
     /// Le nœud qui jouait a disparu en pleine partie : elle est rejouée ailleurs.
     #[error("nœud {0} perdu pendant la partie")]
     NodeLost(String),
+}
+
+impl From<RulesError> for GameError {
+    fn from(error: RulesError) -> Self {
+        match error {
+            RulesError::Rejected(why) => Self::Inconsistent(why),
+            failed @ RulesError::Failed { .. } => Self::Rules(failed),
+        }
+    }
 }
 
 /// Partie de tournoi : son temps par coup et sa session remplacent ceux du ladder.
@@ -94,6 +105,8 @@ pub struct Arena {
     draining: AtomicBool,
     smoke_tests: AtomicUsize,
     hub: Arc<Hub>,
+    /// Les règles du jeu : ouvertures et validation de chaque résultat, d'ici ou d'un nœud.
+    rules: Arc<dyn Rules>,
 }
 
 impl Arena {
@@ -111,6 +124,7 @@ impl Arena {
             placement,
             local: Arc::new(Local::new(cfg.exec.clone())),
             nodes,
+            rules: rules::of(&cfg),
             cfg,
             draining: AtomicBool::new(false),
             smoke_tests: AtomicUsize::new(0),
@@ -120,6 +134,15 @@ impl Arena {
 
     pub const fn config(&self) -> &Config {
         &self.cfg
+    }
+
+    /// L'ouverture d'une nouvelle paire ou d'un smoke test : `opening_plies` demi-coups, graine au hasard.
+    pub fn draw_opening(&self, rng: &mut impl rand::Rng) -> Opening {
+        use rand::RngExt;
+        Opening {
+            plies: self.cfg.opening_plies,
+            seed: rng.random(),
+        }
     }
 
     pub const fn placement(&self) -> &Arc<Placement> {
@@ -196,11 +219,12 @@ impl Arena {
         lease: Option<&Lease>,
         red: &Team,
         black: &Team,
-        opening: &[Move],
+        opening: Opening,
         fixture: Option<&Fixture>,
         live: bool,
     ) -> Result<Finished, GameError> {
         let cfg = &self.cfg;
+        let opening = &self.rules.opening(opening)?;
         let time_ms = fixture.map_or(cfg.time_ms, |f| f.time_ms);
         // La classe ne compte que pour un smoke test : un slot du serveur principal du bon genre.
         let class = self.placement.class(red.multithread || black.multithread);
@@ -260,6 +284,8 @@ impl Arena {
         let result = self
             .executor(slot.slot())
             .run(&run, Arc::clone(&out) as Arc<dyn GameOutput>)?;
+        // Le résultat d'un arbitre d'ici comme celui d'un nœud : un nœud ne peut pas inventer une fin.
+        self.rules.check(&result)?;
         if let Some(absent) = annulled_no_show(&result, fixture, red, black) {
             return Err(GameError::NoShow(absent.id.clone()));
         }
@@ -531,13 +557,13 @@ mod tests {
                 };
                 if let Ok(ToNode::Start(start)) = serde_json::from_str(text.as_str()) {
                     let result = GameResult {
-                        v: isolation_core::record::RECORD_VERSION,
+                        v: game_kit::record::RECORD_VERSION,
                         time_ms: 100,
                         opening: vec![],
                         moves: vec![],
                         winner: Color::Black,
                         reason: Reason::Timeout,
-                        invalid: isolation_core::record::InvalidCounts::default(),
+                        invalid: game_kit::record::InvalidCounts::default(),
                         duration_ms: 5,
                         move_ms: vec![],
                     };
@@ -550,8 +576,9 @@ mod tests {
                 }
             }
         });
+        let (red, black) = (bot("aleatoire"), bot("niveau-1"));
         let record = arena
-            .play(Some(&lease), &bot("aleatoire"), &bot("niveau-1"), &[], None, false)
+            .play(Some(&lease), &red, &black, Opening::NONE, None, false)
             .unwrap()
             .record;
         node.join().unwrap();
@@ -564,6 +591,44 @@ mod tests {
 
         let local = arena.placement().try_lease(PairClass::Heavy).unwrap();
         assert!(local.slot().local());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_result_the_rules_reject_is_never_recorded() {
+        let dir = std::env::temp_dir().join(format!("isolation-arena-rules-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let team = |id: &str| Team {
+            id: id.into(),
+            cmd: crate::command::CommandTemplate::new(["true"]),
+            build: None,
+            anchor: false,
+            multithread: false,
+            portable: false,
+            remote: None,
+        };
+        // Avant le premier coup, c'est au rouge : il ne peut pas gagner au temps.
+        for (winner, accepted) in [("black", true), ("red", false)] {
+            let result = format!(
+                r#"{{"v":1,"time_ms":100,"opening":[],"moves":[],"winner":"{winner}","reason":"timeout","invalid":{{"red":0,"black":0}},"duration_ms":5}}"#
+            );
+            let script = format!("echo LISTENING >&2; echo 'CONNECTED red' >&2; echo '{result}'");
+            let cfg: Config = format!(
+                "referee = [\"sh\", \"-c\", {script:?}]\ntime_ms = 100\nsession = \"s\"\nout = {:?}\ndb = {:?}\n",
+                dir.join("data/games.jsonl"),
+                dir.join("state/ladder.db"),
+            )
+            .parse()
+            .unwrap();
+            fs::create_dir_all(cfg.logs_dir()).unwrap();
+            let arena = Arena::new(cfg, Hub::new(|_, _, _| {}));
+            let played = arena.play(None, &team("a"), &team("b"), Opening::NONE, None, false);
+            match played {
+                Ok(finished) => assert!(accepted, "accepté : {:?}", finished.record.result),
+                Err(GameError::Inconsistent(why)) => assert!(!accepted && why.contains("trait"), "{why}"),
+                Err(other) => panic!("{other}"),
+            }
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -608,13 +673,13 @@ mod tests {
         };
         let (red, black) = (team("eq01"), team("eq02"));
         let result = |winner, reason| GameResult {
-            v: isolation_core::record::RECORD_VERSION,
+            v: game_kit::record::RECORD_VERSION,
             time_ms: 5000,
             opening: vec![],
             moves: vec![],
             winner,
             reason,
-            invalid: isolation_core::record::InvalidCounts::default(),
+            invalid: game_kit::record::InvalidCounts::default(),
             duration_ms: 10_000,
             move_ms: vec![],
         };

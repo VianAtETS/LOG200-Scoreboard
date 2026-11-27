@@ -4,6 +4,7 @@
 #
 # Pour developper sans Docker, lancer l'arbitre et les joueurs directement :
 #   referee = ["target/release/isolation-referee", "--port", "{port}", "--time-ms", "{time_ms}", "--opening", "{opening}"]
+#   rules = ["target/release/isolation-referee"]
 #   cmd = ["target/bot/isolation-bot", "--strategy", "niveau-1", "--port", "{port}"]
 # et retirer cleanup. Les jars tournent alors sans aucune isolation.
 
@@ -15,6 +16,10 @@ referee = [
     "{time_ms}",
     "{opening}",
 ]
+# Regles du jeu : l'executable de l'arbitre, lance hors bac a sable pour ses sous-commandes `opening`
+# (ouvertures) et `check` (validation de chaque resultat). Le ladder ne connait aucun jeu : c'est lui qui
+# choisit le jeu de cette instance. Par defaut isolation-referee, dans le PATH (c'est le cas dans l'image).
+# rules = ["target/release/isolation-referee"]
 port = 8888
 time_ms = 500
 session = "ladder-2026-11"

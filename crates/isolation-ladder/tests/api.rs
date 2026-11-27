@@ -213,7 +213,7 @@ fn profiling_is_chosen_with_the_team_token_for_its_active_build() {
     let without_jar = ladder.add_team("eq02", REGISTRY);
     let jar = jar();
     install(&ladder.dir, "eq01", &jar);
-    let build = isolation_core::digest::short_hash(&jar);
+    let build = game_kit::digest::short_hash(&jar);
     let state = |private: bool, public: bool| format!(r#"{{"build":"{build}","private":{private},"public":{public}}}"#);
 
     assert_eq!(ladder.request("GET", "/api/profiling", None, b"").0, 401);

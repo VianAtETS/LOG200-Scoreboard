@@ -10,9 +10,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
-use isolation_core::board::{Color, Move};
-use isolation_core::record::{Reason, RefereeEvent, TournamentGame};
-use isolation_core::rules::Replay;
+use game_kit::Color;
+use game_kit::record::{Reason, RefereeEvent, TournamentGame};
 
 use crate::sync::lock;
 
@@ -37,9 +36,7 @@ struct State {
 
 struct Running {
     game: Game,
-    replay: Replay,
     turn_start: Instant,
-    broken: bool,
 }
 
 #[derive(Serialize)]
@@ -121,7 +118,7 @@ pub struct Start<'a> {
     pub black: &'a str,
     pub since: &'a str,
     pub time_ms: u64,
-    pub opening: &'a [Move],
+    pub opening: &'a [String],
     pub tournament: Option<&'a TournamentGame>,
 }
 
@@ -153,7 +150,6 @@ impl Hub {
     }
 
     pub fn start(&self, start: &Start) {
-        let replay = Replay::from_moves(start.opening.iter().copied());
         let running = Running {
             game: Game {
                 id: start.id.to_string(),
@@ -162,12 +158,10 @@ impl Hub {
                 since: start.since.to_string(),
                 time_ms: start.time_ms,
                 tournament: start.tournament.cloned(),
-                opening: start.opening.iter().map(Move::to_string).collect(),
+                opening: start.opening.to_vec(),
                 moves: Vec::new(),
                 move_ms: Vec::new(),
             },
-            broken: replay.is_err(),
-            replay: replay.unwrap_or_default(),
             turn_start: Instant::now(),
         };
         {
@@ -191,21 +185,9 @@ impl Hub {
                 running.turn_start = Instant::now();
                 return;
             }
+            // Relayé tel quel : l'arbitre fait foi, le ladder ne connaît pas les règles.
             RefereeEvent::Move { mv, ms, .. } => (mv, ms),
         };
-        if running.broken {
-            return;
-        }
-        let index = running.game.opening.len() + running.game.moves.len();
-        let played = mv
-            .parse::<Move>()
-            .map_err(|e| e.to_string())
-            .and_then(|parsed| running.replay.play(index, parsed).map_err(|e| e.to_string()));
-        if let Err(e) = played {
-            eprintln!("   [{id}] direct interrompu : {e}");
-            running.broken = true;
-            return;
-        }
         running.turn_start = Instant::now();
         let n = running.game.moves.len();
         let message = encode(Out::Move { id, n, mv: &mv, ms });
@@ -281,7 +263,7 @@ mod tests {
         Hub::new(|_, _, _| {})
     }
 
-    fn start(hub: &Hub, id: &str, opening: &[Move]) {
+    fn start(hub: &Hub, id: &str, opening: &[String]) {
         hub.start(&Start {
             id,
             red: "a",
@@ -331,15 +313,19 @@ mod tests {
     }
 
     #[test]
-    fn moves_after_the_opening_are_checked_and_an_illegal_one_cuts_the_game() {
+    fn moves_are_relayed_as_the_referee_sends_them_after_the_opening() {
         let hub = quiet();
-        let opening: Vec<Move> = ["G1-G4-F9", "F12-F10-G7"].iter().map(|m| m.parse().unwrap()).collect();
+        let opening = ["G1-G4-F9".to_string(), "F12-F10-G7".to_string()];
         start(&hub, "g1", &opening);
         let mut watcher = hub.subscribe().unwrap();
-        hub.event("g1", mv("G1-G2-A1"));
-        hub.event("g1", mv("pas un coup"));
-        hub.event("g1", mv("F10-F11-A2"));
-        assert!(watcher.events.try_recv().is_err(), "coup illégal : rien n'est relayé");
+        assert_eq!(
+            json(&watcher.snapshot)["games"][0]["opening"],
+            serde_json::json!(opening)
+        );
+        // Le ladder ne connaît pas les règles : l'arbitre fait foi, même pour un coup inconnu.
+        hub.event("g1", mv("H4-H7"));
+        let next = json(&watcher.events.try_recv().unwrap());
+        assert_eq!((next["n"].as_u64(), next["move"].as_str()), (Some(0), Some("H4-H7")));
         hub.end("g1", None);
         let ended = json(&watcher.events.try_recv().unwrap());
         assert_eq!(ended["cancelled"], true);

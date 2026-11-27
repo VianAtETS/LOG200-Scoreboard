@@ -50,7 +50,8 @@ RUN mkdir -p /etc/docker \
     && printf '{"runtimes":{"runsc-host-uds":{"path":"/usr/local/bin/runsc","runtimeArgs":["--host-uds=all"]}}}\n' \
     > /etc/docker/daemon.json
 
-COPY --from=binaries /artifacts/isolation-ladder /artifacts/isolation-check /usr/local/bin/
+# isolation-referee aussi ici, hors bac a sable : ses sous-commandes sont les regles du jeu (`rules`).
+COPY --from=binaries /artifacts/isolation-ladder /artifacts/isolation-check /artifacts/isolation-referee /usr/local/bin/
 # Contexte de l'image des bacs a sable, construite par le Docker interne au demarrage.
 COPY sandbox/Dockerfile sandbox/referee-entry.sh sandbox/player-entry.sh /opt/sandbox-image/
 COPY --from=binaries /artifacts/isolation-referee /artifacts/isolation-bot /opt/sandbox-image/

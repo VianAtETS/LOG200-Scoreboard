@@ -71,8 +71,8 @@ mod tests {
         );
         let cfg: Config = toml.parse().unwrap();
         let games = [
-            db::tests::game("g1", "a", "b", isolation_core::board::Color::Red),
-            db::tests::game("g2", "b", "a", isolation_core::board::Color::Black),
+            db::tests::game("g1", "a", "b", game_kit::Color::Red),
+            db::tests::game("g2", "b", "a", game_kit::Color::Black),
         ];
         let text: String = games.iter().map(|g| serde_json::to_string(g).unwrap() + "\n").collect();
         fs::write(&cfg.out, text).unwrap();

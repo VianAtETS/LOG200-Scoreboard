@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 
 use serde::Deserialize;
 
-use isolation_core::board::{ByColor, Color};
+use game_kit::{ByColor, Color};
 
 use crate::config::{
     Config, Slot, default_port, default_ready_marker, default_red_connected_marker, default_startup_ms,
@@ -88,7 +88,6 @@ impl CommandTemplate {
         Some((strategy, &self.0[at + 2..]))
     }
 
-    #[cfg(test)]
     pub fn args(&self) -> &[String] {
         &self.0
     }

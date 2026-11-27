@@ -1,12 +1,15 @@
 //! Ce qu'un jeu fournit à la plateforme et ce qu'il en reçoit : le trait `Game`, le descripteur,
-//! le cadre du protocole du serveur officiel, les formats des parties et un arbitre générique.
+//! le cadre du protocole du serveur officiel, les formats des parties et un arbitre générique ;
+//! et ce que la plateforme partage avec ses outils (empreintes, protocole du mode distant).
 //! Voir docs/spec-multi-jeux.md ; les formats échangés sont décrits dans docs/formats.md.
 
 pub mod descriptor;
+pub mod digest;
 pub mod game;
 pub mod protocol;
 pub mod record;
 pub mod referee;
+pub mod remote;
 pub mod replay;
 pub mod side;
 

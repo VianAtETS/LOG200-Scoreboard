@@ -93,7 +93,7 @@ pub struct GameProfile {
     pub overhead_ms: u64,
     pub tree: crate::profile::Tree,
     /// Ses lignes `ARENA`, s'il en imprime.
-    pub arena: Vec<isolation_core::record::Measure>,
+    pub arena: Vec<game_kit::record::Measure>,
 }
 
 /// Une paire complète du ladder : deux parties, même ouverture, couleurs inversées.

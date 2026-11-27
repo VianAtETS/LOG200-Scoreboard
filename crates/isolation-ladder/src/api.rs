@@ -23,8 +23,8 @@ use utoipa::{IntoParams, OpenApi};
 use utoipa_axum::router::{OpenApiRouter, UtoipaMethodRouter};
 use utoipa_axum::routes;
 
-use isolation_core::record::GameRecord;
-use isolation_core::remote::PATH as REMOTE_PATH;
+use game_kit::record::GameRecord;
+use game_kit::remote::PATH as REMOTE_PATH;
 
 use crate::arena::Arena;
 use crate::db::{Db, GameFilter, PairFilter, Profiling, Stat};

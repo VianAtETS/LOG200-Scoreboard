@@ -1,6 +1,6 @@
 # Spec : plateforme multi-jeux
 
-Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux`.
+Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 et 2 faites).
 
 ## Problème
 
@@ -141,7 +141,7 @@ Une instance du ladder par compétition (un jeu, une session) : son `ladder.toml
 Chaque étape est une PR qui garde Isolation identique (tests golden).
 
 1. `game-kit` : trait, descripteur, effets, cadre de l'arbitre ; Isolation l'implémente, `isolation-referee` devient `referee::run(Isolation)` et gagne `describe`, `opening` et `check`.
-2. Ladder sans règles : coups opaques, ouverture et validation par l'arbitre, plus de rejeu dans le hub.
+2. Ladder sans règles : coups opaques, ouverture et validation par l'arbitre (`rules` dans `ladder.toml`), plus de rejeu dans le hub. Le ladder ne dépend plus d'`isolation-core`.
 3. Format v2 et base : effets, descripteurs, nulles (Elo, modèle, tournoi).
 4. Page : descripteur, plateau générique, effets dans l'API et le direct.
 5. Instances multiples : configuration, déploiement, page d'accueil.

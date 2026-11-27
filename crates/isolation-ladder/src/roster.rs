@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use isolation_core::digest::short_hash;
+use game_kit::digest::short_hash;
 
 use crate::command::CommandTemplate;
 use crate::config::{Config, TeamConfig};
@@ -155,7 +155,7 @@ mod tests {
     use super::*;
     use crate::command::Vars;
     use crate::config::tests::MINIMAL;
-    use isolation_core::board::ByColor;
+    use game_kit::ByColor;
 
     #[test]
     fn multithread_slots_host_every_game_of_a_multithread_team() {

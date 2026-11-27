@@ -14,7 +14,7 @@ use axum::body::Bytes;
 use axum::extract::ws::Message as Frame;
 use axum::http::StatusCode;
 
-use isolation_core::remote::{Message, PROTOCOL_VERSION, is_build};
+use game_kit::remote::{Message, PROTOCOL_VERSION, is_build};
 
 use super::stream::RefereeStream;
 use super::{GameSpec, Registry};

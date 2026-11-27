@@ -13,12 +13,12 @@ use serde::Serialize;
 
 use jiff::civil::Date;
 
-use isolation_core::board::{Color, Move};
-use isolation_core::record::{GameRecord, TournamentGame};
-use isolation_core::rules::random_opening;
+use game_kit::Color;
+use game_kit::record::{GameRecord, TournamentGame};
 
 use crate::config::Config;
 use crate::roster::Team;
+use crate::rules::Opening;
 use crate::standings::Standings;
 use bracket::{Bracket, Side, Slot, Source, Status};
 pub use draw::{Draw, discard_jars, draw, draw_path, preview, tournament_id};
@@ -95,7 +95,8 @@ pub struct Pending {
     pub game: TournamentGame,
     pub red: Team,
     pub black: Team,
-    pub opening: Vec<Move>,
+    /// Même graine pour les deux manches d'une paire : même ouverture.
+    pub opening: Opening,
     pub time_ms: u64,
     /// Dernier essai avant suspension : un `no_show` y compte comme une défaite. Avant, la partie
     /// est annulée et rejouée : un jar figé a passé le smoke test, il sait se connecter.
@@ -287,7 +288,10 @@ impl Tournament {
         let m = &self.bracket.matches[k];
         let played = self.wins[k][0] + self.wins[k][1];
         let mut rng = StdRng::seed_from_u64(self.draw.seed ^ (k as u64) << 16 ^ u64::from(played / 2));
-        let opening = random_opening(self.opening_plies, &mut rng);
+        let opening = Opening {
+            plies: self.opening_plies,
+            seed: rng.random(),
+        };
         let first_red = if played + 1 == m.best_of {
             rng.random()
         } else {
@@ -312,7 +316,7 @@ impl Tournament {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use isolation_core::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason};
+    use game_kit::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason};
 
     use super::*;
     use crate::command::CommandTemplate;
@@ -369,7 +373,7 @@ pub(super) mod tests {
             .collect()
     }
 
-    fn opening_of(t: &Tournament, match_id: &str) -> Vec<Move> {
+    fn opening_of(t: &Tournament, match_id: &str) -> Opening {
         let pending = t.pending(&HashSet::new());
         pending
             .into_iter()
@@ -463,7 +467,7 @@ pub(super) mod tests {
                 ("W2".into(), 1, "t1".into(), "t2".into())
             ]
         );
-        assert_eq!(first[0].opening.len(), 2);
+        assert_eq!(first[0].opening.plies, 2);
         t.start(first[0].match_index);
         assert!(!t.finish("W1", Some(&record(&first[0], true))));
         let second = t.pending(&HashSet::new());

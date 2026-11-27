@@ -27,6 +27,7 @@ fn a_started_tournament_is_played_to_its_winner() {
         &config,
         format!(
             "referee = [{referee:?}, \"--port\", \"{{port}}\", \"--time-ms\", \"{{time_ms}}\", \"--opening\", \"{{opening}}\"]\n\
+             rules = [{referee:?}]\n\
              port = {port}\ntime_ms = 100\nsession = \"e2e\"\nout = {out:?}\ndb = {db:?}\n\
              team_cmd = [{bot:?}, \"--strategy\", \"random\", \"--port\", \"{{port}}\"]\n\
              [submit]\nlisten = \"127.0.0.1:0\"\nteams = {teams:?}\njars = {jars:?}\n\

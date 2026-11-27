@@ -4,8 +4,8 @@
 
 use std::process::{Command, Stdio};
 
+use game_kit::record::{GameResult, RefereeEvent};
 use isolation_core::board::{Board, Color};
-use isolation_core::record::{GameResult, RefereeEvent};
 use isolation_core::rules::legal_moves;
 
 mod support;

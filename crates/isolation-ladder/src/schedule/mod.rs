@@ -12,7 +12,7 @@ use rand::seq::{IndexedRandom, SliceRandom};
 use rand::{Rng, RngExt};
 use serde::Serialize;
 
-use isolation_core::record::GameRecord;
+use game_kit::record::GameRecord;
 
 use crate::roster::Team;
 use crate::store::write_atomic;
@@ -285,8 +285,8 @@ mod tests {
     use rand::rngs::StdRng;
 
     use super::*;
-    use isolation_core::board::Color;
-    use isolation_core::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason};
+    use game_kit::Color;
+    use game_kit::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason};
 
     use crate::command::CommandTemplate;
 

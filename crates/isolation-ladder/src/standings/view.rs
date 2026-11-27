@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use serde::Serialize;
 
-use isolation_core::board::Color;
-use isolation_core::record::{Reason, TournamentGame};
+use game_kit::Color;
+use game_kit::record::{Reason, TournamentGame};
 
 use crate::db::Rating;
 

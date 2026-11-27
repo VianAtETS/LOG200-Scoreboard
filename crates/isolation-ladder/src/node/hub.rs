@@ -20,9 +20,9 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
 
-use isolation_core::board::{ByColor, Color};
-use isolation_core::digest::sha256_hex;
-use isolation_core::record::{GameResult, RefereeEvent};
+use game_kit::digest::sha256_hex;
+use game_kit::record::{GameResult, RefereeEvent};
+use game_kit::{ByColor, Color};
 
 use super::protocol::{FromNode, Outcome, PROTOCOL, ToNode, WireGame, WirePlayer};
 use crate::api::blocking;
@@ -507,8 +507,8 @@ impl Executor for NodeExecutor {
 mod tests {
     use std::sync::mpsc::Sender;
 
-    use isolation_core::digest::sha256_hex;
-    use isolation_core::record::{InvalidCounts, RECORD_VERSION, Reason};
+    use game_kit::digest::sha256_hex;
+    use game_kit::record::{InvalidCounts, RECORD_VERSION, Reason};
     use tokio::sync::mpsc::UnboundedReceiver;
 
     use super::*;

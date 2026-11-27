@@ -451,6 +451,7 @@ dependencies = [
  "rand 0.10.3",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "utoipa",
 ]
@@ -660,7 +661,6 @@ dependencies = [
  "rand 0.10.3",
  "serde",
  "serde_json",
- "sha2",
  "thiserror",
 ]
 
@@ -680,6 +680,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "game-kit",
  "http-body-util",
  "isolation-core",
  "jiff",
@@ -710,7 +711,7 @@ name = "isolation-remote"
 version = "0.45.0"
 dependencies = [
  "clap",
- "isolation-core",
+ "game-kit",
  "rustls",
  "tungstenite 0.30.0",
 ]

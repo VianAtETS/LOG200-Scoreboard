@@ -6,9 +6,6 @@ use std::sync::mpsc::Sender;
 
 use rand::Rng;
 
-use isolation_core::notation;
-use isolation_core::rules::random_opening;
-
 use crate::arena::Arena;
 use crate::config::Config;
 use crate::placement::{Lease, PairClass, Placement};
@@ -111,15 +108,16 @@ impl Pairs {
         self.scheduler.record(&a.id, &b.id, 2);
         self.busy.extend([a.id.clone(), b.id.clone()]);
         self.publish(cfg, teams);
-        let opening = random_opening(cfg.opening_plies, rng);
+        let opening = arena.draw_opening(rng);
         eprintln!(
-            "== paire {} : {} contre {} sur {}/{} (ouverture {})",
+            "== paire {} : {} contre {} sur {}/{} (ouverture {} demi-coups, graine {})",
             self.round,
             a.id,
             b.id,
             lease.slot().node,
             lease.slot().index,
-            notation::join(&opening)
+            opening.plies,
+            opening.seed
         );
         spawn_pair(Arc::clone(arena), lease, a, b, opening, reports.clone());
         true

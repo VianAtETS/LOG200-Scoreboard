@@ -13,9 +13,8 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
 
-use isolation_core::board::{ByColor, Color, Move};
-use isolation_core::notation;
-use isolation_core::record::{GameResult, Reason, RefereeEvent};
+use game_kit::record::{GameResult, Reason, RefereeEvent};
+use game_kit::{ByColor, Color};
 
 use crate::arena::GameError;
 use crate::command::{ExecConfig, Vars};
@@ -27,7 +26,7 @@ pub struct GameRun<'a> {
     /// Index du slot sur la machine qui joue : ses cœurs et ses remplacements de `[sandbox]`.
     pub slot: usize,
     pub time_ms: u64,
-    pub opening: &'a [Move],
+    pub opening: &'a [String],
     pub red: &'a Team,
     pub black: &'a Team,
     pub timeout: Duration,
@@ -83,7 +82,7 @@ impl Executor for Local {
         let vars = Vars {
             cfg,
             slot: run.slot,
-            opening: notation::join(run.opening),
+            opening: run.opening.join(","),
             game: run.id,
             time_ms: run.time_ms,
             profile: run.profile,
@@ -239,7 +238,6 @@ impl RefereeProcess {
             return Err(GameError::RefereeFailed(status));
         }
         let result: GameResult = serde_json::from_str(&json).map_err(|error| GameError::BadResult { json, error })?;
-        result.validate(&isolation_core::Isolation)?;
         Ok(result)
     }
 }
@@ -559,13 +557,13 @@ pub mod tests {
     #[test]
     fn an_absent_player_whose_docker_failed_is_an_infra_error() {
         let result = |winner, reason| GameResult {
-            v: isolation_core::record::RECORD_VERSION,
+            v: game_kit::record::RECORD_VERSION,
             time_ms: 500,
             opening: vec![],
             moves: vec![],
             winner,
             reason,
-            invalid: isolation_core::record::InvalidCounts::default(),
+            invalid: game_kit::record::InvalidCounts::default(),
             duration_ms: 0,
             move_ms: vec![],
         };

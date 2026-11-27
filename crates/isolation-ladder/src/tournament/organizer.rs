@@ -5,8 +5,7 @@ use std::time::Duration;
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
-use isolation_core::notation;
-use isolation_core::record::{GameRecord, TournamentGame};
+use game_kit::record::{GameRecord, TournamentGame};
 
 use super::admin::{self, Request};
 use super::calendar::{Calendar, now};
@@ -142,13 +141,8 @@ impl Organizer {
             t.start(p.match_index);
             self.publish(cfg);
             eprintln!(
-                "== {} {} manche {} : {} contre {} (ouverture {})",
-                p.game.id,
-                p.game.match_id,
-                p.game.game,
-                p.red.id,
-                p.black.id,
-                notation::join(&p.opening)
+                "== {} {} manche {} : {} contre {} (ouverture {} demi-coups, graine {})",
+                p.game.id, p.game.match_id, p.game.game, p.red.id, p.black.id, p.opening.plies, p.opening.seed
             );
         }
     }

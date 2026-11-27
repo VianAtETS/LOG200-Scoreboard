@@ -6,8 +6,8 @@ use anyhow::Context;
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
-use isolation_core::digest::short_hash;
-use isolation_core::record::now_rfc3339;
+use game_kit::digest::short_hash;
+use game_kit::record::now_rfc3339;
 
 use crate::config::Config;
 use crate::roster::Team;

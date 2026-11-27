@@ -5,8 +5,8 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use isolation_core::board::{Color, Move};
-use isolation_core::record::{GameRecord, Player, Reason, TournamentGame, rfc3339_at};
+use game_kit::Color;
+use game_kit::record::{GameRecord, Player, Reason, TournamentGame, rfc3339_at};
 
 use crate::arena::{Arena, Finished, Fixture, GameError};
 use crate::config::Config;
@@ -15,6 +15,7 @@ use crate::placement::{Lease, PairClass, SlotKind};
 
 use crate::remote::Registry;
 use crate::roster::Team;
+use crate::rules::Opening;
 use crate::tournament::Pending;
 
 /// Pause après une partie annulée : une config cassée ne doit pas faire tourner le ladder à vide.
@@ -91,12 +92,12 @@ pub fn live_hub(reports: &Sender<Report>) -> Arc<Hub> {
 
 /// Joue la paire dans les deux couleurs, avec la même ouverture, sur le slot de `lease`, gardé
 /// jusqu'à la fin de la pause. Pendant l'arrêt, la seconde couleur n'est pas jouée.
-pub fn spawn_pair(arena: Arc<Arena>, lease: Lease, a: Team, b: Team, opening: Vec<Move>, reports: Sender<Report>) {
+pub fn spawn_pair(arena: Arc<Arena>, lease: Lease, a: Team, b: Team, opening: Opening, reports: Sender<Report>) {
     thread::spawn(move || {
         let mut slot = Some(&lease);
         let mut first: Option<String> = None;
         for (red, black) in [(&a, &b), (&b, &a)] {
-            let played = play_and_report(&arena, slot, &reports, [red, black], &opening, None, first.take());
+            let played = play_and_report(&arena, slot, &reports, [red, black], opening, None, first.take());
             first = played.id;
             if played.timed_out {
                 slot = None;
@@ -133,7 +134,7 @@ pub fn spawn_game(arena: Arc<Arena>, lease: Lease, p: Pending, reports: Sender<R
             Some(&lease),
             &reports,
             [&p.red, &p.black],
-            &p.opening,
+            p.opening,
             Some(&fixture),
             None,
         );
@@ -191,7 +192,7 @@ fn play_and_report(
     lease: Option<&Lease>,
     reports: &Sender<Report>,
     [red, black]: [&Team; 2],
-    opening: &[Move],
+    opening: Opening,
     fixture: Option<&Fixture>,
     after: Option<String>,
 ) -> Played {

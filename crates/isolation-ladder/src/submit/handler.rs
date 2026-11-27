@@ -10,8 +10,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use thiserror::Error;
 
-use isolation_core::digest::short_hash;
-use isolation_core::record::now_rfc3339;
+use game_kit::digest::short_hash;
+use game_kit::record::now_rfc3339;
 
 use super::auth::{RegistryError, bearer, find_team, load_teams};
 use super::manifest::{self, BadThreads};

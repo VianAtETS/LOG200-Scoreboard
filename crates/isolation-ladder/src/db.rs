@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior, named_params};
 
-use isolation_core::board::Color;
-use isolation_core::record::{GameRecord, Jsonl};
+use game_kit::Color;
+use game_kit::record::{GameRecord, Jsonl};
 
 use crate::profile::{Profile, TemplateShare};
 
@@ -506,7 +506,7 @@ fn insert_rating(conn: &Connection, r: &Rating) -> rusqlite::Result<()> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use isolation_core::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason, TournamentGame};
+    use game_kit::record::{GameResult, InvalidCounts, Player, RECORD_VERSION, Reason, TournamentGame};
 
     pub(crate) fn game(id: &str, red: &str, black: &str, winner: Color) -> GameRecord {
         let player = |team: &str| Player {
@@ -620,7 +620,7 @@ pub(crate) mod tests {
                 samples: 40,
                 ..Tree::default()
             },
-            arena: vec![isolation_core::record::Measure {
+            arena: vec![game_kit::record::Measure {
                 depth: Some(6),
                 nodes: 9,
             }],

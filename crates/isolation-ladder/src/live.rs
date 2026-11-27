@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use isolation_core::record::{TournamentGame, now_rfc3339};
+use game_kit::record::{TournamentGame, now_rfc3339};
 
 use crate::store::write_atomic;
 

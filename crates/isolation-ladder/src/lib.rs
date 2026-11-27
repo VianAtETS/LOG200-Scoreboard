@@ -20,6 +20,7 @@ mod placement;
 mod play;
 mod profile;
 mod roster;
+mod rules;
 mod schedule;
 mod thermal;
 mod tournament;

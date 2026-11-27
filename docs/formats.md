@@ -81,11 +81,11 @@ Avant le résultat, l'arbitre peut écrire des objets JSON d'une ligne qui porte
 | `{"event":"ready"}` | Les deux joueurs sont connectés : le temps du premier coup court. |
 | `{"event":"move","move":"G1-E3-C12","ms":1234,"changes":[...]}` | Coup client accepté, au format de `moves`, et son temps (comme `move_ms`). Les coups d'`opening` n'en ont pas. `changes` (facultatif) : les effets du coup sur le plateau, dans l'ordre, chacun `{"cell":138,"code":0,"role":"from"}` (index de la case dans le plateau du protocole, nouvelle valeur, `from`, `to` ou `effect`) ; voir docs/spec-multi-jeux.md. |
 
-Le résultat est la première ligne JSON sans `event`. Une ligne qui n'est pas du JSON est journalisée puis ignorée, et un événement inconnu est ignoré. Un arbitre qui n'écrit aucun événement reste conforme : ses parties sont annoncées en direct, sans coups. Le ladder rejoue chaque coup reçu ; au premier coup illisible ou illégal, le direct de la partie s'arrête, sans effet sur la partie. `isolation-referee` n'écrit ces lignes que si sa sortie n'est pas un terminal : lancé à la main, il n'affiche que le résultat.
+Le résultat est la première ligne JSON sans `event`. Une ligne qui n'est pas du JSON est journalisée puis ignorée, et un événement inconnu est ignoré. Un arbitre qui n'écrit aucun événement reste conforme : ses parties sont annoncées en direct, sans coups. Le ladder relaie chaque coup tel quel : il ne connaît pas les règles, l'arbitre fait foi. `isolation-referee` n'écrit ces lignes que si sa sortie n'est pas un terminal : lancé à la main, il n'affiche que le résultat.
 
 ### Sous-commandes
 
-`isolation-referee`, comme tout arbitre construit avec `game_kit::referee`, a aussi trois sous-commandes qui ne parlent à aucun joueur. Le ladder ne s'en sert pas encore (étape 2 de docs/spec-multi-jeux.md) ; un autre arbitre n'est pas tenu de les fournir pour l'instant.
+`isolation-referee`, comme tout arbitre construit avec `game_kit::referee`, a aussi trois sous-commandes qui ne parlent à aucun joueur. Le ladder les lance directement, hors bac à sable, avec l'exécutable de `rules` dans `ladder.toml` (`isolation-referee` dans le `PATH` par défaut) : `opening` pour chaque nouvelle paire, smoke test ou paire de manches de tournoi (même graine pour les deux couleurs, donc même ouverture), et `check` pour chaque résultat. Un autre arbitre peut garder son propre exécutable pour les parties et confier `rules` à `isolation-referee`.
 
 | Commande | Sortie |
 | --- | --- |
@@ -125,7 +125,7 @@ Si une autre implémentation n'écrit pas `LISTENING` ni `CONNECTED red`, il suf
 | `duration_ms` | entier | Durée de la partie. |
 | `move_ms` | liste (facultatif) | Temps de chaque coup de `moves`, même index, de la demande de coup au coup accepté (coups refusés compris). Absent ou de longueur différente de `moves` : ignoré. |
 
-Avant d'enregistrer un résultat, le ladder rejoue la partie avec notre moteur ; un coup illégal ou un gagnant incohérent la fait rejeter.
+Avant d'enregistrer un résultat, qu'il vienne de cette machine ou d'un nœud, le ladder le fait rejouer par `check` ; un coup illégal ou un gagnant incohérent le fait rejeter. Si `check` ne peut pas répondre (exécutable absent, sortie illisible), la partie est annulée comme une panne du serveur.
 
 ## Base des parties (`state/ladder.db`)
 

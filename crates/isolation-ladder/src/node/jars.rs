@@ -9,7 +9,7 @@ use std::time::SystemTime;
 
 use thiserror::Error;
 
-use isolation_core::digest::sha256_hex;
+use game_kit::digest::sha256_hex;
 
 use super::protocol::is_sha256;
 
@@ -104,7 +104,7 @@ impl JarCache {
 
 #[cfg(test)]
 mod tests {
-    use isolation_core::digest::sha256_hex;
+    use game_kit::digest::sha256_hex;
 
     use super::*;
 

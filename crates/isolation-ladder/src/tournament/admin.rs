@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-use isolation_core::record::now_rfc3339;
+use game_kit::record::now_rfc3339;
 
 use crate::config::Config;
 use crate::store::{compact_timestamp, write_atomic};

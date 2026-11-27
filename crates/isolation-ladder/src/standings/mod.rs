@@ -9,8 +9,8 @@ use std::fs::{self, File};
 use std::io::{self, BufWriter, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
-use isolation_core::board::{ByColor, Color};
-use isolation_core::record::{GameRecord, Player};
+use game_kit::record::{GameRecord, Player};
+use game_kit::{ByColor, Color};
 
 use crate::db::Db;
 use crate::model::Model;
@@ -491,7 +491,7 @@ impl Standings {
 
 #[cfg(test)]
 mod tests {
-    use isolation_core::record::{GameResult, InvalidCounts, RECORD_VERSION, Reason, TournamentGame};
+    use game_kit::record::{GameResult, InvalidCounts, RECORD_VERSION, Reason, TournamentGame};
 
     use super::*;
 

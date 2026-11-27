@@ -4,9 +4,8 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use isolation_core::board::Color;
-use isolation_core::record::{GameResult, Reason};
-use isolation_core::rules::random_opening;
+use game_kit::Color;
+use game_kit::record::{GameResult, Reason};
 
 use crate::arena::{Arena, Finished, GameError};
 use crate::config::SubmitConfig;
@@ -106,8 +105,8 @@ pub fn smoke_test(arena: &Arena, submit: &SubmitConfig, id: &TeamId, jar: &Path,
         (&candidate, &opponent, Color::Red),
         (&opponent, &candidate, Color::Black),
     ] {
-        let opening = random_opening(cfg.opening_plies, &mut rand::rng());
-        match arena.play(None, red, black, &opening, None, false) {
+        let opening = arena.draw_opening(&mut rand::rng());
+        match arena.play(None, red, black, opening, None, false) {
             Err(e) => return Verdict::Error(e),
             Ok(Finished { record, .. }) => {
                 if let Some(forfeit) = Forfeit::of(&record.result, side) {
@@ -123,7 +122,7 @@ pub fn smoke_test(arena: &Arena, submit: &SubmitConfig, id: &TeamId, jar: &Path,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use isolation_core::record::{InvalidCounts, RECORD_VERSION};
+    use game_kit::record::{InvalidCounts, RECORD_VERSION};
 
     fn result(winner: Color, reason: Reason) -> GameResult {
         GameResult {

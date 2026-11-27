@@ -3,8 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use isolation_core::board::{ByColor, Color};
-use isolation_core::record::{GameResult, RefereeEvent};
+use game_kit::record::{GameResult, RefereeEvent};
+use game_kit::{ByColor, Color};
 
 use crate::arena::GameError;
 
@@ -120,13 +120,10 @@ impl From<&GameError> for Outcome {
 }
 
 impl Outcome {
-    /// Le résultat tel que le ladder l'enregistrera : revalidé, un nœud ne peut pas inventer une fin.
+    /// Le résultat du nœud, que l'arène revalide avec les règles du jeu avant de l'enregistrer.
     pub fn into_result(self, node: &str) -> Result<GameResult, GameError> {
         match self {
-            Self::Ok { result } => {
-                result.validate(&isolation_core::Isolation)?;
-                Ok(result)
-            }
+            Self::Ok { result } => Ok(result),
             Self::Infra { side, code } => Err(GameError::Infra { side, code }),
             Self::Error { message } => Err(GameError::Remote {
                 node: node.into(),
@@ -143,7 +140,7 @@ pub fn is_sha256(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use isolation_core::record::{InvalidCounts, RECORD_VERSION, Reason};
+    use game_kit::record::{InvalidCounts, RECORD_VERSION, Reason};
 
     use super::*;
 
@@ -264,15 +261,6 @@ mod tests {
         assert!(matches!(timeout.into_result("node-a"), Err(GameError::Remote { .. })));
         let ok = Outcome::Ok { result: result() }.into_result("node-a").unwrap();
         assert_eq!(ok, result());
-        let mut wrong = result();
-        wrong.winner = Color::Red;
-        assert!(
-            matches!(
-                Outcome::Ok { result: wrong }.into_result("node-a"),
-                Err(GameError::Inconsistent(_))
-            ),
-            "un résultat de nœud est revalidé"
-        );
     }
 
     #[test]

@@ -9,7 +9,7 @@ use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use isolation_core::digest::{hex, sha256_hex};
+use game_kit::digest::{hex, sha256_hex};
 
 use crate::store::write_atomic;
 use crate::team_id::TeamId;

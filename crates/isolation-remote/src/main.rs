@@ -17,9 +17,9 @@ use tungstenite::http::HeaderValue;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Bytes, Error as WsError, Message as Frame, WebSocket};
 
-use isolation_core::board::Color;
-use isolation_core::digest::short_hash;
-use isolation_core::remote::{Message, PATH, PROTOCOL_VERSION};
+use game_kit::Color;
+use game_kit::digest::short_hash;
+use game_kit::remote::{Message, PATH, PROTOCOL_VERSION};
 
 /// Attente maximale d'une ligne du ladder ou du jar avant d'être relayée.
 const GAME_POLL: Duration = Duration::from_millis(5);

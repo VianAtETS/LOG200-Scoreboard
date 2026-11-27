@@ -95,7 +95,7 @@ mod tests {
     use tungstenite::protocol::frame::coding::CloseCode;
     use tungstenite::{Message as Frame, WebSocket as Client};
 
-    use isolation_core::record::RefereeEvent;
+    use game_kit::record::RefereeEvent;
 
     use super::*;
     use crate::hub;

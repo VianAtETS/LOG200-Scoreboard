@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::board::Color;
+use crate::side::Color;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const PATH: &str = "/api/remote";

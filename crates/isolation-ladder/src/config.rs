@@ -22,6 +22,10 @@ const MAX_PLIES: u64 = 144;
 pub struct Config {
     /// `{port}`, `{time_ms}`, `{opening}` et `{game}` sont remplacés.
     pub referee: CommandTemplate,
+    /// L'exécutable de l'arbitre, lancé directement (hors bac à sable) pour ses sous-commandes
+    /// `opening` et `check` : les règles du jeu, que le ladder ne connaît pas (`rules.rs`).
+    /// Absent : `isolation-referee`, cherché dans le `PATH`.
+    pub rules: Option<CommandTemplate>,
     #[serde(default = "default_port")]
     pub port: u16,
     pub time_ms: u64,

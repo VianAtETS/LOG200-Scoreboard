@@ -12,7 +12,7 @@ use anyhow::Context;
 use rand::RngExt;
 use rand::rngs::ThreadRng;
 
-use isolation_core::record::GameRecord;
+use game_kit::record::GameRecord;
 
 use crate::api;
 use crate::arena::{Arena, Finished, GameError, Sigterm};

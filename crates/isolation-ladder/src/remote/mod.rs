@@ -21,7 +21,7 @@ use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 
-use isolation_core::board::Color;
+use game_kit::Color;
 
 use crate::api::blocking;
 use crate::command::CommandTemplate;
@@ -248,7 +248,7 @@ mod tests {
     use tungstenite::http::HeaderValue;
     use tungstenite::{Error as WsError, Message as Frame, WebSocket};
 
-    use isolation_core::remote::{Message, PATH, PROTOCOL_VERSION};
+    use game_kit::remote::{Message, PATH, PROTOCOL_VERSION};
 
     use super::*;
     use crate::submit::{add_team, test_support::temp_dir};
