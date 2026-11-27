@@ -411,7 +411,8 @@ fn insert(conn: &Connection, game: &GameRecord) -> rusqlite::Result<i64> {
         ":black_team": game.black.team,
         ":black_build": game.black.build,
         ":black_remote": game.black.remote,
-        ":winner": name(&result.winner),
+        // `draw` pour une nulle : la colonne reste NOT NULL, et `winner = 'red'` reste faux.
+        ":winner": result.winner.map_or("draw", Color::name),
         ":reason": name(&result.reason),
         ":invalid_red": result.invalid.red,
         ":invalid_black": result.invalid.black,
@@ -526,10 +527,12 @@ pub(crate) mod tests {
             measures: None,
             result: GameResult {
                 v: RECORD_VERSION,
+                game: None,
+                game_version: None,
                 time_ms: 500,
                 opening: vec!["G1-I1-C12".into(), "F12-D10-F1".into()],
                 moves: vec!["I1-F4-A7".into(), "D10-C10-I7".into(), "F4-F6-F10".into()],
-                winner,
+                winner: Some(winner),
                 reason: Reason::NoMoves,
                 invalid: InvalidCounts { red: 0, black: 1 },
                 duration_ms: 1500,
@@ -1052,6 +1055,32 @@ pub(crate) mod tests {
                 {"a": "a", "b": "b", "games": 2, "a_wins": 2, "b_wins": 0},
                 {"a": "a", "b": "c", "games": 1, "a_wins": 1, "b_wins": 0},
             ])
+        );
+    }
+
+    #[test]
+    fn a_draw_counts_as_a_game_for_both_and_a_win_or_loss_for_neither() {
+        let db = league();
+        let mut draw = game("g5", "b", "a", Color::Red);
+        draw.result.winner = None;
+        draw.result.reason = Reason::Game("repetition".into());
+        db.insert_game(&draw, None, &[]).unwrap();
+        let back = db.games().unwrap().pop().unwrap();
+        assert_eq!(
+            (back.result.winner, back.result.reason),
+            (None, Reason::Game("repetition".into()))
+        );
+        assert_eq!(
+            stat(&db, Stat::HeadToHead, None, None)[0],
+            serde_json::json!({"a": "a", "b": "b", "games": 3, "a_wins": 2, "b_wins": 0})
+        );
+        let teams = stat(&db, Stat::Teams, None, None);
+        let b = teams.as_array().unwrap().iter().find(|t| t["team"] == "b").unwrap();
+        assert_eq!((&b["games"], &b["wins"]), (&3.into(), &0.into()));
+        assert_eq!(
+            b["losses"],
+            serde_json::json!({"no_moves": 1, "timeout": 1}),
+            "la nulle n'est pas une défaite"
         );
     }
 

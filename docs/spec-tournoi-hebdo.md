@@ -37,6 +37,7 @@ Format annoncé par l'enseignant : double élimination, avec un premier tour for
 - **Meilleur de 3.** Manches 1 et 2 : couleurs inversées. Belle à 1–1 : couleur tirée au sort.
 - **Ouvertures** : 2 demi-coups aléatoires, comme au ladder (`opening_plies`). Les manches 1 et 2 partagent l'ouverture A ; la belle part d'une ouverture B. Raison : les jars étudiants sont presque tous déterministes, et depuis le plateau initial la belle recopierait une manche.
 - **Grande finale** : premier à 3 ; ouvertures A, A, B, B, C.
+- **Nulles** (jeux qui en ont, jamais en Isolation) : une manche nulle est enregistrée et rejouée, sans victoire pour personne, avec une nouvelle ouverture et les couleurs inversées. À la troisième nulle d'un match, la meilleure tête de série gagne la manche : un match finit toujours (D22).
 - **Temps par coup** : `[tournament] time_ms`, 5000 par défaut. Le ladder garde son `time_ms`.
 - **Défaites normales** : `no_moves`, `timeout`, `disconnect`, `protocol` comptent comme au final. Un `no_show` aussi, mais seulement au dernier essai avant suspension (voir « Pannes et reprise »).
 
@@ -171,6 +172,7 @@ Dans `games.jsonl`, sous leur propre session, avec un champ facultatif `tourname
 | D19 | Fuseau | `jiff` 0.2, feature `tzdb-bundle-always` | Midi reste midi après le changement d'heure ; l'image alpine n'a pas de base de fuseaux | Interview | 2026-10-31 |
 | D20 | Visuel | Tableau façon Challonge, couleurs du ladder | Référence fournie, lisible pour les étudiants | Interview | 2026-10-31 |
 | D21 | Absences | Un `no_show` de tournoi est rejoué, sauf au dernier essai ; garde-fou thermique `[thermal]` | Tournoi du 2026-11-08 : le conteneur du ladder, sans init, avait accumulé 37 581 zombies jusqu'à sa limite de processus ; les joueurs ne démarraient plus et W13, W14 et W15 ont été décidés par forfait (D14). Le garde-fou thermique est un filet de sécurité, la surchauffe n'était pas en cause (91 °C au plus) | Incident | 2026-11-08 |
+| D22 | Nulles | Manche nulle rejouée (nouvelle ouverture, couleurs inversées), la 3e nulle donne la manche à la meilleure tête de série | Deux jars déterministes rejoueraient la même nulle ; un match doit finir | Spec multi-jeux | 2026-11-27 |
 
 ## Dependency Graph & Implementation Order
 

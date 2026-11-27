@@ -101,7 +101,9 @@ Si une autre implémentation n'écrit pas `LISTENING` ni `CONNECTED red`, il suf
 
 ```json
 {
-  "v": 1,
+  "v": 2,
+  "game": "isolation",
+  "game_version": 1,
   "time_ms": 500,
   "opening": ["G1-H2-I12", "F12-F11-E2"],
   "moves": ["G1-F2-C12", "F12-E11-C5"],
@@ -115,12 +117,13 @@ Si une autre implémentation n'écrit pas `LISTENING` ni `CONNECTED red`, il suf
 
 | Champ | Type | Sens |
 | --- | --- | --- |
-| `v` | entier | Version du format : 1. |
+| `v` | entier | Version du format : 2. Le ladder lit aussi la v1, sans `game` ni `game_version`, sans nulle. |
+| `game`, `game_version` | chaîne, entier (facultatifs) | Le jeu et la version de ses règles, comme dans le descripteur (`describe`). |
 | `time_ms` | entier | Temps par coup appliqué. |
 | `opening` | liste | Demi-coups imposés (peut être vide). |
-| `moves` | liste | Coups des clients au format `G1-E3-C12` (départ, arrivée, case détruite). |
-| `winner` | `"red"` ou `"black"` | Il n'y a pas de nulle en Isolation. |
-| `reason` | chaîne | `no_moves` : le perdant n'avait plus de coup. `timeout` : temps dépassé. `disconnect` : connexion perdue. `protocol` : trop de coups invalides, si une limite est fixée. `no_show` : le perdant ne s'est jamais connecté (jar qui plante au démarrage, conteneur tué). |
+| `moves` | liste | Coups des clients, en notation canonique du jeu ; en Isolation `G1-E3-C12` (départ, arrivée, case détruite). |
+| `winner` | `"red"`, `"black"` ou `null` | `null` : partie nulle, seulement pour une fin selon les règles (jamais en Isolation). Un abandon a toujours un gagnant. |
+| `reason` | chaîne | Une fin selon les règles : `no_moves` (le perdant n'avait plus de coup, la fin d'Isolation) ou une raison propre au jeu, déclarée avec son libellé dans `reasons` de son descripteur (`king_captured`, `repetition`...). Ou un abandon : `timeout` : temps dépassé. `disconnect` : connexion perdue. `protocol` : trop de coups invalides, si une limite est fixée. `no_show` : le perdant ne s'est jamais connecté (jar qui plante au démarrage, conteneur tué). |
 | `invalid` | objet | Nombre de coups refusés (`4`) par couleur. |
 | `duration_ms` | entier | Durée de la partie. |
 | `move_ms` | liste (facultatif) | Temps de chaque coup de `moves`, même index, de la demande de coup au coup accepté (coups refusés compris). Absent ou de longueur différente de `moves` : ignoré. |
@@ -160,7 +163,7 @@ Le schéma est dans [`crates/isolation-ladder/src/sql/schema.sql`](../crates/iso
 
 | Table | Une ligne par | Contenu |
 | --- | --- | --- |
-| `games` | partie | `seq` (ordre de jeu), `id`, l'objet complet dans `record`, et ses champs en colonnes pour les requêtes : `session`, `ts`, `time_ms`, `red_team`, `red_build`, `red_remote`, `black_*`, `winner`, `reason`, `invalid_red`, `invalid_black`, `duration_ms`, `plies` (coups clients), `opening` (JSON), `tournament_id`, `tournament_match`, `tournament_game`. `pair` : le `seq` de la première partie de sa paire du ladder (même ouverture, couleurs inversées), le sien pour une partie seule, `NULL` pour un tournoi. Écrit par le ladder ; l'historique d'une base v1 et les parties importées sont appariés par la règle de [spec-analyse-isola.md](spec-analyse-isola.md#migration-v1--v2). |
+| `games` | partie | `seq` (ordre de jeu), `id`, l'objet complet dans `record`, et ses champs en colonnes pour les requêtes : `session`, `ts`, `time_ms`, `red_team`, `red_build`, `red_remote`, `black_*`, `winner` (`red`, `black` ou `draw` pour une nulle), `reason`, `invalid_red`, `invalid_black`, `duration_ms`, `plies` (coups clients), `opening` (JSON), `tournament_id`, `tournament_match`, `tournament_game`. `pair` : le `seq` de la première partie de sa paire du ladder (même ouverture, couleurs inversées), le sien pour une partie seule, `NULL` pour un tournoi. Écrit par le ladder ; l'historique d'une base v1 et les parties importées sont appariés par la règle de [spec-analyse-isola.md](spec-analyse-isola.md#migration-v1--v2). |
 | `moves` | coup client | `game` (le `seq` de la partie), `ply` (0 pour le premier coup client, joué par le rouge), `color`, `move`, `ms` (temps de réflexion, absent chez d'autres arbitres). |
 | `ratings` | équipe et partie | `game_id`, `team`, `all_rating`, `all_delta`, `session_rating`, `session_delta` : comme `all` et `session` des lignes de la page (plus bas). Recalculée au démarrage. |
 | `submissions` | soumission de jar | `ts`, `team`, `hash`, `verdict` (`accepted`, `rejected` ou `error`) et `detail` (raison d'un refus). |
@@ -236,7 +239,7 @@ Le serveur parle seul. Chaque message est un objet JSON avec `v` (version du pro
 | `snapshot` | `games` | Premier message : toutes les parties en cours. |
 | `started` | `game` | Une partie commence. |
 | `move` | `id`, `n`, `move`, `ms` | Coup client numéro `n` (index dans `moves`, à partir de 0) de la partie `id`. |
-| `ended` | `id`, puis `winner` et `reason`, ou `cancelled: true` | Fin de la partie. Annulée (arbitre en échec, résultat refusé…), elle ne sera pas dans la base. |
+| `ended` | `id`, puis `winner` (`null` pour une nulle) et `reason`, ou `cancelled: true` | Fin de la partie. Annulée (arbitre en échec, résultat refusé…), elle ne sera pas dans la base. |
 
 Une partie (`games`, `game`) : `id`, `red`, `black`, `since` (lancement), `time_ms`, `tournament` (absent hors tournoi), `opening`, `moves`, `move_ms`, et `turn_ms` : temps déjà écoulé sur le coup en cours, mesuré par le ladder pour ne pas dépendre de l'horloge du client.
 

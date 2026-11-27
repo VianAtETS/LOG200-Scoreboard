@@ -264,6 +264,8 @@ impl Game {
         let confirmed = match outcome {
             Outcome::Win => !rules::has_moves(&self.board, self.color.other()),
             Outcome::Loss => !rules::has_moves(&self.board, self.color),
+            // Isolation n'a pas de nulle : un arbitre qui en annonce une se trompe.
+            Outcome::Draw => false,
             Outcome::Timeout => true,
         };
         if !confirmed {

@@ -79,7 +79,7 @@ impl Game for Isolation {
 
     fn ending(&self, board: &Board, mover: Color) -> Option<Ending> {
         rules::winner_after(board, mover).map(|winner| Ending {
-            winner,
+            winner: Some(winner),
             reason: Reason::NoMoves,
         })
     }
@@ -107,10 +107,12 @@ mod tests {
     fn result(moves: Vec<String>, winner: Color, reason: Reason) -> GameResult {
         GameResult {
             v: RECORD_VERSION,
+            game: None,
+            game_version: None,
             time_ms: 500,
             opening: vec![],
             moves,
-            winner,
+            winner: Some(winner),
             reason,
             invalid: InvalidCounts::default(),
             duration_ms: 1234,
@@ -134,7 +136,7 @@ mod tests {
                 .unwrap();
             replay.play(&Isolation, mv).unwrap();
             moves.push(mv);
-            if let Some(ending) = replay.ending {
+            if let Some(ending) = replay.ending.clone() {
                 return (moves, ending);
             }
         }
@@ -164,19 +166,18 @@ mod tests {
     #[test]
     fn a_finished_game_validates_only_with_its_winner() {
         let (moves, ending) = random_game(3);
+        let winner = ending.winner.unwrap();
         let moves: Vec<String> = moves.iter().map(ToString::to_string).collect();
         assert_eq!(
-            result(moves.clone(), ending.winner, Reason::NoMoves).validate(&Isolation),
+            result(moves.clone(), winner, Reason::NoMoves).validate(&Isolation),
             Ok(())
         );
         assert_eq!(
-            result(moves.clone(), ending.winner.other(), Reason::NoMoves).validate(&Isolation),
-            Err(ValidationError::WrongWinner {
-                replayed: Some(ending.winner)
-            })
+            result(moves.clone(), winner.other(), Reason::NoMoves).validate(&Isolation),
+            Err(ValidationError::WrongEnding { replayed: Some(ending) })
         );
         assert_eq!(
-            result(moves, ending.winner, Reason::Timeout).validate(&Isolation),
+            result(moves, winner, Reason::Timeout).validate(&Isolation),
             Err(ValidationError::ForfeitAfterEnd)
         );
     }
@@ -194,7 +195,7 @@ mod tests {
         );
         assert_eq!(
             result(first_move(), Color::Red, Reason::NoMoves).validate(&Isolation),
-            Err(ValidationError::WrongWinner { replayed: None })
+            Err(ValidationError::WrongEnding { replayed: None })
         );
     }
 

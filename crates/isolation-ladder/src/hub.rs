@@ -87,13 +87,19 @@ enum Out<'a> {
     },
     Ended {
         id: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        winner: Option<Color>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        reason: Option<Reason>,
+        /// Absent : partie annulée.
+        #[serde(flatten, skip_serializing_if = "Option::is_none")]
+        finish: Option<Finish>,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         cancelled: bool,
     },
+}
+
+/// La fin d'une partie jouée : `winner` à `null` pour une nulle.
+#[derive(Serialize)]
+struct Finish {
+    winner: Option<Color>,
+    reason: Reason,
 }
 
 #[derive(Serialize)]
@@ -196,7 +202,8 @@ impl Hub {
         state.publish(&message);
     }
 
-    pub fn end(&self, id: &str, result: Option<(Color, Reason)>) {
+    /// `result` : le gagnant (`None` pour une nulle) et la raison ; absent, la partie est annulée.
+    pub fn end(&self, id: &str, result: Option<(Option<Color>, Reason)>) {
         let mut state = self.lock();
         let before = state.games.len();
         state.games.retain(|r| r.game.id != id);
@@ -205,9 +212,8 @@ impl Hub {
         }
         let message = encode(Out::Ended {
             id,
-            winner: result.map(|(winner, _)| winner),
-            reason: result.map(|(_, reason)| reason),
             cancelled: result.is_none(),
+            finish: result.map(|(winner, reason)| Finish { winner, reason }),
         });
         state.publish(&message);
     }
@@ -288,6 +294,24 @@ mod tests {
     }
 
     #[test]
+    fn a_draw_ends_with_a_null_winner_and_a_cancelled_game_without_one() {
+        let hub = quiet();
+        start(&hub, "g1", &[]);
+        start(&hub, "g2", &[]);
+        let mut watcher = hub.subscribe().unwrap();
+        hub.end("g1", Some((None, Reason::Game("repetition".into()))));
+        hub.end("g2", None);
+        let draw = json(&watcher.events.try_recv().unwrap());
+        assert_eq!(
+            (draw["winner"].is_null(), &draw["reason"]),
+            (true, &"repetition".into())
+        );
+        assert!(draw.get("winner").is_some() && draw.get("cancelled").is_none());
+        let cancelled = json(&watcher.events.try_recv().unwrap());
+        assert!(cancelled.get("winner").is_none() && cancelled["cancelled"] == true);
+    }
+
+    #[test]
     fn a_spectator_gets_the_state_then_every_change_once() {
         let hub = quiet();
         start(&hub, "g1", &[]);
@@ -301,7 +325,7 @@ mod tests {
         assert!(snapshot["games"][0]["turn_ms"].is_u64());
 
         hub.event("g1", mv("F12-F10-G7"));
-        hub.end("g1", Some((Color::Red, Reason::Timeout)));
+        hub.end("g1", Some((Some(Color::Red), Reason::Timeout)));
         let next = json(&watcher.events.try_recv().unwrap());
         assert_eq!((next["type"].as_str(), next["n"].as_u64()), (Some("move"), Some(1)));
         assert_eq!(next["move"], "F12-F10-G7");

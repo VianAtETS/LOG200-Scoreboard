@@ -39,7 +39,7 @@ impl<G: Game> Clone for Replay<G> {
         Self {
             state: self.state.clone(),
             turn: self.turn,
-            ending: self.ending,
+            ending: self.ending.clone(),
             changes: self.changes.clone(),
         }
     }

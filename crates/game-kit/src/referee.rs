@@ -21,7 +21,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde::Serialize;
 
-use crate::game::{Change, Game};
+use crate::game::{Change, Ending, Game};
 use crate::protocol::{self as wire, LineConn, Outcome, RecvError};
 use crate::record::{GameResult, InvalidCounts, RECORD_VERSION, Reason, RefereeEvent};
 use crate::replay::Replay;
@@ -207,8 +207,8 @@ fn play<G: Game>(game: &G, args: &PlayArgs) -> anyhow::Result<()> {
                 let _ = red.send(wire::end(Outcome::Win, None));
                 red.shutdown();
             }
-            let verdict = Verdict {
-                winner: absent.other(),
+            let verdict = Ending {
+                winner: Some(absent.other()),
                 reason: Reason::NoShow,
             };
             (verdict, Vec::new(), Vec::new(), InvalidCounts::default())
@@ -217,6 +217,8 @@ fn play<G: Game>(game: &G, args: &PlayArgs) -> anyhow::Result<()> {
 
     let result = GameResult {
         v: RECORD_VERSION,
+        game: Some(descriptor.game),
+        game_version: Some(descriptor.version),
         time_ms,
         opening: opening.iter().map(ToString::to_string).collect(),
         moves: moves.iter().map(ToString::to_string).collect(),
@@ -226,12 +228,10 @@ fn play<G: Game>(game: &G, args: &PlayArgs) -> anyhow::Result<()> {
         duration_ms: millis(start),
         move_ms,
     };
-    eprintln!(
-        "gagnant {} ({:?}) en {} coups",
-        verdict.winner,
-        verdict.reason,
-        result.moves.len()
-    );
+    match result.winner {
+        Some(winner) => eprintln!("gagnant {winner} ({}) en {} coups", result.reason, result.moves.len()),
+        None => eprintln!("nulle ({}) en {} coups", result.reason, result.moves.len()),
+    }
     println!("{}", serde_json::to_string(&result)?);
     Ok(())
 }
@@ -335,11 +335,6 @@ fn allowed(time: Duration, grace: Duration, extra: Duration, played: usize) -> D
     extra + if played < 2 { time + grace } else { time }
 }
 
-struct Verdict {
-    winner: Color,
-    reason: Reason,
-}
-
 struct Referee<'g, G: Game> {
     game: &'g G,
     state: G::State,
@@ -359,7 +354,7 @@ impl<G: Game> Referee<'_, G> {
         self.players[color].send(line).is_ok()
     }
 
-    fn run(&mut self) -> Verdict {
+    fn run(&mut self) -> Ending {
         let mut turn = Color::Red;
         loop {
             let request = match self.moves.last() {
@@ -386,13 +381,14 @@ impl<G: Game> Referee<'_, G> {
             });
             if let Some(ending) = self.game.ending(&self.state, turn) {
                 let last = self.game.protocol_move(mv);
-                for (color, outcome) in [(ending.winner, Outcome::Win), (ending.winner.other(), Outcome::Loss)] {
+                let outcomes = match ending.winner {
+                    Some(winner) => [(winner, Outcome::Win), (winner.other(), Outcome::Loss)],
+                    None => [(Color::Red, Outcome::Draw), (Color::Black, Outcome::Draw)],
+                };
+                for (color, outcome) in outcomes {
                     self.send(color, &wire::end(outcome, Some(&last)));
                 }
-                return Verdict {
-                    winner: ending.winner,
-                    reason: ending.reason,
-                };
+                return ending;
             }
             turn = turn.other();
         }
@@ -425,7 +421,7 @@ impl<G: Game> Referee<'_, G> {
 
     /// Comme le serveur officiel : `5 TIMEOUT` aux deux joueurs pour un temps dépassé, sinon WIN ou
     /// LOSS ; jamais de dernier coup.
-    fn forfeit(&mut self, loser: Color, reason: Reason) -> Verdict {
+    fn forfeit(&mut self, loser: Color, reason: Reason) -> Ending {
         let winner = loser.other();
         for (color, outcome) in [(winner, Outcome::Win), (loser, Outcome::Loss)] {
             let outcome = if reason == Reason::Timeout {
@@ -435,13 +431,76 @@ impl<G: Game> Referee<'_, G> {
             };
             self.send(color, &wire::end(outcome, None));
         }
-        Verdict { winner, reason }
+        Ending {
+            winner: Some(winner),
+            reason,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::toy::{PLIES, Toy};
+
+    /// Un client qui joue toujours le seul coup légal du jeu `Toy` ; rend les lignes reçues.
+    fn toy_client(port: u16) -> std::thread::JoinHandle<Vec<String>> {
+        std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let stream = loop {
+                match TcpStream::connect(("127.0.0.1", port)) {
+                    Ok(stream) => break stream,
+                    Err(_) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+                    Err(e) => panic!("connexion : {e}"),
+                }
+            };
+            let mut conn = LineConn::new(stream).unwrap();
+            let mut seen = Vec::new();
+            while let Ok(line) = conn.recv(Some(Instant::now() + Duration::from_secs(5))) {
+                // `1 <cases>` ou `3 <coup>` : la case unique compte les demi-coups joués.
+                let ply = match line.split_whitespace().collect::<Vec<_>>()[..] {
+                    ["1", cells] => cells.parse::<u8>().ok(),
+                    ["3", last] => last.parse::<u8>().ok().map(|n| n + 1),
+                    _ => None,
+                };
+                let end = line.starts_with('5');
+                seen.push(line);
+                if let Some(ply) = ply {
+                    conn.send(ply).unwrap();
+                }
+                if end {
+                    break;
+                }
+            }
+            seen
+        })
+    }
+
+    #[test]
+    fn a_draw_by_the_rules_sends_draw_to_both_players() {
+        let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let args = PlayArgs {
+            port: Some(port),
+            time_ms: Some(1000),
+            opening: String::new(),
+            max_invalid: 3,
+            connect_timeout_ms: 5000,
+            first_move_grace_ms: 0,
+            bind: "127.0.0.1".into(),
+            extra_red_ms: 0,
+            extra_black_ms: 0,
+        };
+        let referee = std::thread::spawn(move || play(&Toy, &args));
+        let red = toy_client(port);
+        std::thread::sleep(Duration::from_millis(100));
+        let black = toy_client(port);
+        referee.join().unwrap().unwrap();
+        let (red, black) = (red.join().unwrap(), black.join().unwrap());
+        let last = (PLIES - 1).to_string();
+        assert_eq!(red.first().map(String::as_str), Some("0 2 1 1 1000 0"));
+        assert_eq!(red.last(), Some(&format!("5 DRAW {last}")), "{red:?}");
+        assert_eq!(black.last(), Some(&format!("5 DRAW {last}")), "{black:?}");
+    }
 
     #[test]
     fn only_each_players_first_move_gets_the_grace() {

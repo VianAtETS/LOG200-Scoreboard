@@ -84,6 +84,7 @@ struct Standing {
     games: u32,
     wins: u32,
     losses: u32,
+    draws: u32,
     anchor: bool,
     build: Option<String>,
     games_on_build: u32,
@@ -113,6 +114,7 @@ impl Scope {
             games: 0,
             wins: 0,
             losses: 0,
+            draws: 0,
             anchor: false,
             build: None,
             games_on_build: 0,
@@ -147,7 +149,7 @@ impl Scope {
         let timed = result.move_ms.len() == result.moves.len();
         let mut out = ByColor::default();
         for color in [Color::Red, Color::Black] {
-            let won = result.winner == color;
+            let score = result.score(color);
             let exp = if color == Color::Red {
                 expected_red
             } else {
@@ -159,20 +161,18 @@ impl Scope {
             } else {
                 K_STABLE
             };
-            let delta = if s.anchor {
-                0.0
-            } else {
-                k * (f64::from(u8::from(won)) - exp)
-            };
+            let delta = if s.anchor { 0.0 } else { k * (score - exp) };
             s.rating += delta;
             s.peak = s.peak.max(s.rating);
             s.games += 1;
             s.games_on_build += 1;
-            if won {
-                s.wins += 1;
-                s.wins_on_build += 1;
-            } else {
-                s.losses += 1;
+            match result.winner {
+                Some(winner) if winner == color => {
+                    s.wins += 1;
+                    s.wins_on_build += 1;
+                }
+                Some(_) => s.losses += 1,
+                None => s.draws += 1,
             }
             s.last.clone_from(&game.ts);
             // Le rouge joue les coups pairs.
@@ -220,6 +220,7 @@ impl Scope {
                 games: s.games,
                 wins: s.wins,
                 losses: s.losses,
+                draws: s.draws,
                 build_games: s.games_on_build,
                 build_wins: s.wins_on_build,
                 anchor: s.anchor,
@@ -448,7 +449,7 @@ impl Standings {
             session: game.session.clone(),
             time_ms: result.time_ms,
             winner: result.winner,
-            reason: result.reason,
+            reason: result.reason.clone(),
             moves: result.moves.len(),
             duration_ms: result.duration_ms,
             red: side(&game.red, Color::Red),
@@ -516,10 +517,12 @@ mod tests {
             measures: None,
             result: GameResult {
                 v: RECORD_VERSION,
+                game: None,
+                game_version: None,
                 time_ms: 500,
                 opening: vec![],
                 moves: vec![],
-                winner,
+                winner: Some(winner),
                 reason: Reason::NoMoves,
                 invalid: InvalidCounts::default(),
                 duration_ms: 0,
@@ -566,6 +569,34 @@ mod tests {
         assert_eq!(ratings[0].team, "a");
         assert_eq!((ratings[0].wins, ratings[1].losses), (1, 1));
         assert!(ratings[0].provisional);
+    }
+
+    #[test]
+    fn a_draw_scores_half_and_is_neither_a_win_nor_a_loss() {
+        let mut scope = Scope::default();
+        let mut draw = game("a", "b", Color::Red);
+        draw.result.winner = None;
+        draw.result.reason = Reason::Game("repetition".into());
+        let out = scope.play(&draw);
+        assert_eq!(
+            (out.red, out.black),
+            ([START, 0.0], [START, 0.0]),
+            "Elo égaux : rien ne bouge"
+        );
+        let ratings = scope.ratings(false);
+        let a = rating(&ratings, "a");
+        assert_eq!((a.games, a.wins, a.losses, a.draws), (1, 0, 0, 1));
+        let row = serde_json::to_value(a).unwrap();
+        assert_eq!(row["draws"], 1);
+
+        // Contre plus fort, la nulle rapporte.
+        let out = scope.play(&game("a", "c", Color::Red));
+        let mut upset = game("b", "a", Color::Red);
+        upset.result.winner = None;
+        let after = scope.play(&upset);
+        assert!(after.red[1] > 0.0 && after.black[1] < 0.0, "{out:?} puis {after:?}");
+        let quiet = serde_json::to_value(rating(&scope.ratings(false), "c")).unwrap();
+        assert!(quiet.get("draws").is_none(), "absent sans nulle, comme en Isolation");
     }
 
     #[test]

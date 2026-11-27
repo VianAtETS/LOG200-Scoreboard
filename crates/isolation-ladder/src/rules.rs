@@ -192,10 +192,12 @@ mod tests {
     fn result(moves: &[&str]) -> GameResult {
         GameResult {
             v: RECORD_VERSION,
+            game: None,
+            game_version: None,
             time_ms: 500,
             opening: vec![],
             moves: moves.iter().map(ToString::to_string).collect(),
-            winner: game_kit::Color::Red,
+            winner: Some(game_kit::Color::Red),
             reason: Reason::Timeout,
             invalid: ByColor::default(),
             duration_ms: 1,

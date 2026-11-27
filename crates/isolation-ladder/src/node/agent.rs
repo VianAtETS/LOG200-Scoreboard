@@ -309,6 +309,7 @@ enum Probe {
 }
 
 /// Ce que les threads de partie et de sonde disent à la boucle.
+#[expect(clippy::large_enum_variant, reason = "quelques messages par partie")]
 enum Note {
     Send(FromNode),
     Probed(Result<(), String>),
@@ -769,10 +770,12 @@ mod tests {
             if run.id.starts_with(PROBE) {
                 return Ok(GameResult {
                     v: RECORD_VERSION,
+                    game: None,
+                    game_version: None,
                     time_ms: run.time_ms,
                     opening: vec![],
                     moves: vec![],
-                    winner: Color::Black,
+                    winner: Some(Color::Black),
                     reason: Reason::Timeout,
                     invalid: InvalidCounts::default(),
                     duration_ms: 1,

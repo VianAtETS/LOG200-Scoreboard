@@ -26,11 +26,12 @@ pub struct Forfeit {
 
 impl Forfeit {
     fn of(result: &GameResult, side: Color) -> Option<Self> {
-        if result.winner == side {
+        // Une nulle, comme une défaite selon les règles, n'est pas un forfait.
+        if result.loser() != Some(side) {
             return None;
         }
         let why = match result.reason {
-            Reason::NoMoves => return None,
+            Reason::NoMoves | Reason::Game(_) => return None,
             Reason::Timeout => "temps dépassé",
             Reason::Disconnect => "connexion perdue",
             Reason::NoShow => "jamais connecté à l'arbitre",
@@ -127,10 +128,12 @@ mod tests {
     fn result(winner: Color, reason: Reason) -> GameResult {
         GameResult {
             v: RECORD_VERSION,
+            game: None,
+            game_version: None,
             time_ms: 500,
             opening: vec![],
             moves: vec![],
-            winner,
+            winner: Some(winner),
             reason,
             invalid: InvalidCounts::default(),
             duration_ms: 0,
@@ -142,6 +145,11 @@ mod tests {
     fn only_forfeits_fail() {
         assert_eq!(Forfeit::of(&result(Color::Red, Reason::Timeout), Color::Red), None);
         assert_eq!(Forfeit::of(&result(Color::Black, Reason::NoMoves), Color::Red), None);
+        let mut draw = result(Color::Black, Reason::Game("repetition".into()));
+        draw.winner = None;
+        assert_eq!(Forfeit::of(&draw, Color::Red), None, "une nulle n'est pas un forfait");
+        let lost = result(Color::Black, Reason::Game("king_captured".into()));
+        assert_eq!(Forfeit::of(&lost, Color::Red), None, "perdre selon les règles non plus");
         for reason in [Reason::Timeout, Reason::Disconnect, Reason::NoShow, Reason::Protocol] {
             assert!(Forfeit::of(&result(Color::Black, reason), Color::Red).is_some());
         }

@@ -163,7 +163,7 @@ fn infra_failure(result: &GameResult, exits: ByColor<Option<i32>>) -> Option<(Co
     if result.reason != Reason::NoShow {
         return None;
     }
-    let absent = result.winner.other();
+    let absent = result.loser()?;
     exits[absent]
         .filter(|code| DOCKER_FAILED.contains(code))
         .map(|code| (absent, code))
@@ -467,7 +467,7 @@ pub mod tests {
         };
         let out = Arc::clone(&seen) as Arc<dyn GameOutput>;
         let game = Local::new(cfg).run(&run, out).unwrap();
-        assert_eq!((game.winner, game.reason), (Color::Black, Reason::Timeout));
+        assert_eq!((game.winner, game.reason), (Some(Color::Black), Reason::Timeout));
         assert_eq!(*seen.events.lock().unwrap(), [RefereeEvent::Ready]);
         for side in ["red", "black"] {
             let log = std::fs::read_to_string(dir.join(format!("{side}.log"))).unwrap();
@@ -558,10 +558,12 @@ pub mod tests {
     fn an_absent_player_whose_docker_failed_is_an_infra_error() {
         let result = |winner, reason| GameResult {
             v: game_kit::record::RECORD_VERSION,
+            game: None,
+            game_version: None,
             time_ms: 500,
             opening: vec![],
             moves: vec![],
-            winner,
+            winner: Some(winner),
             reason,
             invalid: game_kit::record::InvalidCounts::default(),
             duration_ms: 0,

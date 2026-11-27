@@ -147,10 +147,12 @@ mod tests {
     fn result() -> GameResult {
         GameResult {
             v: RECORD_VERSION,
+            game: None,
+            game_version: None,
             time_ms: 1000,
             opening: vec![],
             moves: vec![],
-            winner: Color::Black,
+            winner: Some(Color::Black),
             reason: Reason::Timeout,
             invalid: InvalidCounts::default(),
             duration_ms: 5,

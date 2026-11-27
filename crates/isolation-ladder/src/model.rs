@@ -41,7 +41,8 @@ fn round4(x: f64) -> f64 {
 struct Sample {
     red: String,
     black: String,
-    red_won: bool,
+    /// Points du rouge : 1, 0,5 pour une nulle, 0.
+    red_score: f64,
     tournament: bool,
     /// Probabilité que le rouge gagne selon l'Elo d'avant la partie.
     elo_red: f64,
@@ -79,7 +80,7 @@ fn fit(samples: &[Sample]) -> Fit {
     let rows: Vec<_> = samples
         .iter()
         .zip(&weights)
-        .map(|(g, &w)| (index[&g.red], index[&g.black], f64::from(u8::from(g.red_won)), w))
+        .map(|(g, &w)| (index[&g.red], index[&g.black], g.red_score, w))
         .collect();
     let mut beta = vec![0.0; dim];
     for _ in 0..NEWTON_STEPS {
@@ -160,7 +161,7 @@ struct Tally {
 
 impl Tally {
     fn add(&mut self, game: &Sample, fit: &Fit) {
-        let y = f64::from(u8::from(game.red_won));
+        let y = game.red_score;
         self.model += (fit.red_wins(&game.red, &game.black) - y).powi(2);
         self.elo += (game.elo_red - y).powi(2);
         self.n += 1;
@@ -282,7 +283,7 @@ impl Model {
         self.samples.push(Sample {
             red: game.red.team.clone(),
             black: game.black.team.clone(),
-            red_won: game.result.winner == Color::Red,
+            red_score: game.result.score(Color::Red),
             tournament: game.tournament.is_some(),
             elo_red,
         });
@@ -363,7 +364,7 @@ mod tests {
         Sample {
             red: red.into(),
             black: black.into(),
-            red_won,
+            red_score: f64::from(u8::from(red_won)),
             tournament: false,
             elo_red,
         }
@@ -455,7 +456,7 @@ mod tests {
         oracle.samples = ranked_games(400, 0.5)
             .into_iter()
             .map(|g| Sample {
-                elo_red: f64::from(u8::from(g.red_won)),
+                elo_red: g.red_score,
                 ..g
             })
             .collect();

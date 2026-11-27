@@ -287,12 +287,17 @@ fn save(
         eprintln!("   classement non publié : {e}");
     }
     let result = &record.result;
-    eprintln!(
-        "   {red} (rouge) contre {black} (noir) : {} gagne ({:?}, {} coups)",
-        result.winner,
-        result.reason,
-        result.moves.len()
-    );
+    let plies = result.moves.len();
+    match result.winner {
+        Some(winner) => eprintln!(
+            "   {red} (rouge) contre {black} (noir) : {winner} gagne ({}, {plies} coups)",
+            result.reason
+        ),
+        None => eprintln!(
+            "   {red} (rouge) contre {black} (noir) : nulle ({}, {plies} coups)",
+            result.reason
+        ),
+    }
     Ok(Some(record))
 }
 

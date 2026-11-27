@@ -36,7 +36,8 @@ pub(super) struct Row {
     pub(super) ts: String,
     pub(super) session: String,
     pub(super) time_ms: u64,
-    pub(super) winner: Color,
+    /// `null` pour une nulle.
+    pub(super) winner: Option<Color>,
     pub(super) reason: Reason,
     pub(super) moves: usize,
     pub(super) duration_ms: u64,
@@ -105,6 +106,9 @@ pub(super) struct RatingRow<'a> {
     pub(super) games: u32,
     pub(super) wins: u32,
     pub(super) losses: u32,
+    /// Absent sans nulle : jamais en Isolation.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(super) draws: u32,
     pub(super) build_games: u32,
     pub(super) build_wins: u32,
     pub(super) anchor: bool,
@@ -138,4 +142,9 @@ pub(super) struct Summary<'a> {
     /// Mêmes clés que `scopes`, sans les parties distantes ; absent tant qu'il n'y en a pas eu.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) verified: Option<BTreeMap<&'a str, ScopeView<'a>>>,
+}
+
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "signature imposée par serde")]
+const fn is_zero(n: &u32) -> bool {
+    *n == 0
 }

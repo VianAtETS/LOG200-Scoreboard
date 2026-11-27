@@ -62,9 +62,10 @@ pub trait Game {
 }
 
 /// Fin de partie selon les règles.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Ending {
-    pub winner: Color,
+    /// `None` : partie nulle.
+    pub winner: Option<Color>,
     pub reason: Reason,
 }
 
@@ -96,6 +97,80 @@ impl Change {
             cell: u16::try_from(cell).unwrap_or(u16::MAX),
             code,
             role,
+        }
+    }
+}
+
+/// Un jeu minuscule pour tester le cadre sans Isolation : chaque joueur écrit à son tour le numéro du
+/// demi-coup (`0`, `1`...), et la partie est nulle après `PLIES` demi-coups.
+#[cfg(test)]
+pub(crate) mod toy {
+    use super::{Change, Ending, Game, Role};
+    use crate::descriptor::{Descriptor, Piece, SideInfo};
+    use crate::record::Reason;
+    use crate::side::{ByColor, Color};
+
+    pub const PLIES: u8 = 4;
+
+    pub struct Toy;
+
+    impl Game for Toy {
+        type State = u8;
+        type Move = u8;
+
+        fn descriptor(&self) -> Descriptor {
+            Descriptor {
+                game: "toy".into(),
+                version: 1,
+                name: "Toy".into(),
+                rows: 1,
+                cols: 1,
+                sides: ByColor {
+                    red: SideInfo {
+                        label: "Premier".into(),
+                    },
+                    black: SideInfo { label: "Second".into() },
+                },
+                initial: vec![0],
+                pieces: (0..=PLIES)
+                    .map(|code| Piece {
+                        code,
+                        label: code.to_string(),
+                        style: "empty".into(),
+                        side: None,
+                    })
+                    .collect(),
+                special: Vec::new(),
+                reasons: [("max_plies".to_string(), "limite de coups".to_string())].into(),
+            }
+        }
+
+        fn initial(&self) -> u8 {
+            0
+        }
+
+        fn cells(&self, plies: &u8) -> Vec<u8> {
+            vec![*plies]
+        }
+
+        fn is_legal(&self, plies: &u8, _: Color, mv: u8) -> bool {
+            mv == *plies
+        }
+
+        fn legal_moves(&self, plies: &u8, _: Color) -> Vec<u8> {
+            vec![*plies]
+        }
+
+        fn apply(&self, plies: &mut u8, _: Color, _: u8) -> Vec<Change> {
+            *plies += 1;
+            vec![Change::new(0, *plies, Role::Effect)]
+        }
+
+        fn ending(&self, plies: &u8, _: Color) -> Option<Ending> {
+            (*plies == PLIES).then(|| Ending {
+                winner: None,
+                reason: Reason::Game("max_plies".into()),
+            })
         }
     }
 }

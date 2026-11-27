@@ -168,7 +168,7 @@ fn elsewhere(arena: &Arena) -> Option<Lease> {
 /// Le joueur qui a dépassé son temps sur un nœud : la partie ne compte pas.
 fn node_timeout(record: &GameRecord) -> Option<&Player> {
     record.node.as_ref()?;
-    let loser = match record.result.winner.other() {
+    let loser = match record.result.loser()? {
         Color::Red => &record.red,
         Color::Black => &record.black,
     };

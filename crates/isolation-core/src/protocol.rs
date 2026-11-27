@@ -201,7 +201,7 @@ mod tests {
             Err(DecodeError::UnknownColor(7))
         ));
         assert!(matches!(
-            "5 DRAW".parse::<ServerMsg>(),
+            "5 TIE".parse::<ServerMsg>(),
             Err(DecodeError::UnknownOutcome(_))
         ));
         assert!(matches!("9".parse::<ServerMsg>(), Err(DecodeError::UnknownCommand(_))));

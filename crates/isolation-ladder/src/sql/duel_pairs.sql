@@ -2,7 +2,8 @@
 -- sont donnés, sont exigés dans les deux parties de la paire.
 WITH duel AS (
     SELECT seq, id, pair, opening,
-           iif(winner = 'red', red_team, black_team) AS won,
+           -- NULL pour une nulle.
+           CASE winner WHEN 'red' THEN red_team WHEN 'black' THEN black_team END AS won,
            iif(red_team = :a, red_build, black_build) AS build_a,
            iif(red_team = :a, black_build, red_build) AS build_b
     FROM games

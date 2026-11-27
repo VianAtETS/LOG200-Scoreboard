@@ -24,6 +24,9 @@ use bracket::{Bracket, Side, Slot, Source, Status};
 pub use draw::{Draw, discard_jars, draw, draw_path, preview, tournament_id};
 pub use organizer::Organizer;
 
+/// Nulles d'affilée qu'un match tolère : à la troisième, la meilleure tête de série gagne la manche.
+const MAX_DRAWS: u32 = 3;
+
 /// `None` : trop peu d'équipes.
 pub fn start(cfg: &Config, standings: &Standings, date: Date, seed: u64) -> anyhow::Result<Option<Tournament>> {
     let id = tournament_id(date, |id| draw_path(cfg, id).exists());
@@ -110,6 +113,8 @@ pub struct Tournament {
     opening_plies: usize,
     retries: u32,
     wins: Vec<[u32; 2]>,
+    /// Manches nulles de chaque match : rejouées, sans victoire (`MAX_DRAWS`).
+    draws: Vec<u32>,
     failures: Vec<u32>,
     running: Vec<bool>,
     suspended: Vec<bool>,
@@ -128,6 +133,7 @@ impl Tournament {
             opening_plies,
             retries,
             wins: vec![[0; 2]; n],
+            draws: vec![0; n],
             failures: vec![0; n],
             running: vec![false; n],
             suspended: vec![false; n],
@@ -215,24 +221,38 @@ impl Tournament {
             .collect()
     }
 
+    /// Compte une manche jouée. Une nulle ne donne de victoire à personne et la manche est rejouée ;
+    /// à la `MAX_DRAWS`-ième, la meilleure tête de série l'emporte, pour qu'un match finisse toujours.
     fn win(&mut self, k: usize, game: &GameRecord) {
-        let team = match game.result.winner {
-            Color::Red => &game.red.team,
-            Color::Black => &game.black.team,
+        let Status::Ready(seeds) = self.bracket.statuses(&self.wins)[k] else {
+            return;
         };
-        if let Status::Ready(seeds) = self.bracket.statuses(&self.wins)[k]
-            && let Some(slot) = seeds.iter().position(|&s| self.teams[s].id == *team)
-        {
+        let slot_of = |team: &str| seeds.iter().position(|&s| self.teams[s].id == team);
+        let (Some(red), Some(black)) = (slot_of(&game.red.team), slot_of(&game.black.team)) else {
+            return;
+        };
+        let slot = match game.result.winner {
+            Some(Color::Red) => Some(red),
+            Some(Color::Black) => Some(black),
+            None => {
+                self.draws[k] += 1;
+                // La meilleure tête de série a le plus petit numéro.
+                self.draws[k]
+                    .is_multiple_of(MAX_DRAWS)
+                    .then(|| usize::from(seeds[1] < seeds[0]))
+            }
+        };
+        if let Some(slot) = slot {
             self.wins[k][slot] += 1;
-            self.games[k].push(game.id.clone());
-            let end = game.ts.parse::<jiff::Timestamp>().ok().and_then(|t| {
-                t.checked_add(jiff::SignedDuration::from_millis(
-                    i64::try_from(game.result.duration_ms).ok()?,
-                ))
-                .ok()
-            });
-            self.ended = self.ended.max(end);
         }
+        self.games[k].push(game.id.clone());
+        let end = game.ts.parse::<jiff::Timestamp>().ok().and_then(|t| {
+            t.checked_add(jiff::SignedDuration::from_millis(
+                i64::try_from(game.result.duration_ms).ok()?,
+            ))
+            .ok()
+        });
+        self.ended = self.ended.max(end);
     }
 
     pub fn view(&self) -> View<'_> {
@@ -284,10 +304,14 @@ impl Tournament {
     }
 
     /// Une ouverture par paire de manches ; la belle d'un meilleur de 3 tire ses couleurs au sort.
+    /// Après une nulle, la manche rejouée change d'ouverture et de couleurs : deux bots
+    /// déterministes ne rejouent pas la même nulle.
     fn game(&self, k: usize, seeds: [usize; 2]) -> Pending {
         let m = &self.bracket.matches[k];
         let played = self.wins[k][0] + self.wins[k][1];
-        let mut rng = StdRng::seed_from_u64(self.draw.seed ^ (k as u64) << 16 ^ u64::from(played / 2));
+        let draws = self.draws[k];
+        let mut rng =
+            StdRng::seed_from_u64(self.draw.seed ^ (k as u64) << 16 ^ u64::from(played / 2) ^ u64::from(draws) << 32);
         let opening = Opening {
             plies: self.opening_plies,
             seed: rng.random(),
@@ -297,13 +321,14 @@ impl Tournament {
         } else {
             played.is_multiple_of(2)
         };
+        let first_red = first_red == draws.is_multiple_of(2);
         let [red, black] = if first_red { seeds } else { [seeds[1], seeds[0]] };
         Pending {
             match_index: k,
             game: TournamentGame {
                 id: self.draw.id.clone(),
                 match_id: m.id.clone(),
-                game: played + 1,
+                game: played + draws + 1,
             },
             red: self.teams[red].clone(),
             black: self.teams[black].clone(),
@@ -400,10 +425,12 @@ pub(super) mod tests {
             measures: None,
             result: GameResult {
                 v: RECORD_VERSION,
+                game: None,
+                game_version: None,
                 time_ms: 5000,
                 opening: vec![],
                 moves: vec![],
-                winner: if red_wins { Color::Red } else { Color::Black },
+                winner: Some(if red_wins { Color::Red } else { Color::Black }),
                 reason: Reason::NoMoves,
                 invalid: InvalidCounts::default(),
                 duration_ms: 1500,
@@ -416,6 +443,43 @@ pub(super) mod tests {
         let pending = t.pending(&HashSet::new());
         let p = pending.iter().find(|p| p.game.match_id == match_id).unwrap();
         record(p, p.red.id == team)
+    }
+
+    #[test]
+    fn a_drawn_game_is_replayed_with_new_colours_and_opening_then_the_better_seed_wins() {
+        let mut t = tournament(5);
+        let pending = |t: &Tournament| {
+            t.pending(&HashSet::new())
+                .into_iter()
+                .find(|p| p.game.match_id == "W2")
+                .unwrap()
+        };
+        let first = pending(&t);
+        let mut seen = vec![(first.red.id.clone(), first.opening)];
+        for draw in 1..=MAX_DRAWS {
+            let p = pending(&t);
+            assert_eq!(p.game.game, draw, "chaque manche a son numéro, nulles comprises");
+            let mut game = record(&p, true);
+            game.result.winner = None;
+            game.id = format!("W2-nulle-{draw}");
+            t.finish("W2", Some(&game));
+            let view = serde_json::to_value(t.view()).unwrap();
+            if draw < MAX_DRAWS {
+                assert_eq!(
+                    view["matches"][1]["score"],
+                    serde_json::json!([0, 0]),
+                    "nulle : personne ne marque"
+                );
+                let next = pending(&t);
+                assert_ne!(next.red.id, p.red.id, "couleurs inversées");
+                assert!(seen.iter().all(|(_, o)| *o != next.opening), "nouvelle ouverture");
+                seen.push((next.red.id.clone(), next.opening));
+            } else {
+                // W2 oppose les têtes de série 4 et 5 (t3, t4) : la meilleure, t3, marque.
+                assert_eq!(view["matches"][1]["score"], serde_json::json!([1, 0]));
+                assert_eq!(view["matches"][1]["games"].as_array().unwrap().len(), 3);
+            }
+        }
     }
 
     #[test]

@@ -18,6 +18,8 @@ pub const PROTOCOL_VERSION: u32 = 2;
 pub enum Outcome {
     Win,
     Loss,
+    /// Partie nulle, envoyée aux deux joueurs.
+    Draw,
     /// Envoyé aux deux joueurs quand l'un d'eux dépasse son temps.
     Timeout,
 }
@@ -27,6 +29,7 @@ impl Outcome {
         match self {
             Self::Win => "WIN",
             Self::Loss => "LOSS",
+            Self::Draw => "DRAW",
             Self::Timeout => "TIMEOUT",
         }
     }
@@ -46,7 +49,7 @@ impl FromStr for Outcome {
     type Err = UnknownOutcome;
 
     fn from_str(s: &str) -> Result<Self, UnknownOutcome> {
-        [Self::Win, Self::Loss, Self::Timeout]
+        [Self::Win, Self::Loss, Self::Draw, Self::Timeout]
             .into_iter()
             .find(|o| o.as_str() == s)
             .ok_or_else(|| UnknownOutcome(s.to_string()))
@@ -171,7 +174,8 @@ mod tests {
         assert_eq!(end(Outcome::Win, Some("G1 - E3 - C12")), "5 WIN G1 - E3 - C12");
         assert_eq!(end(Outcome::Timeout, None), "5 TIMEOUT");
         assert_eq!("LOSS".parse(), Ok(Outcome::Loss));
-        assert!("DRAW".parse::<Outcome>().is_err());
+        assert_eq!("DRAW".parse(), Ok(Outcome::Draw));
+        assert!("TIE".parse::<Outcome>().is_err());
     }
 
     #[test]

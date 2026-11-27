@@ -290,7 +290,7 @@ impl Arena {
             return Err(GameError::NoShow(absent.id.clone()));
         }
         if let Some(on_air) = &mut on_air {
-            on_air.result = Some((result.winner, result.reason));
+            on_air.result = Some((result.winner, result.reason.clone()));
         }
 
         let profiles = jar_profiles(
@@ -392,12 +392,12 @@ impl GameOutput for LadderOutput {
 struct OnAir {
     hub: Arc<Hub>,
     id: String,
-    result: Option<(Color, Reason)>,
+    result: Option<(Option<Color>, Reason)>,
 }
 
 impl Drop for OnAir {
     fn drop(&mut self) {
-        self.hub.end(&self.id, self.result);
+        self.hub.end(&self.id, self.result.take());
     }
 }
 
@@ -418,7 +418,10 @@ fn annulled_no_show<'t>(
     black: &'t Team,
 ) -> Option<&'t Team> {
     let counts = fixture.is_none_or(|f| f.forfeit_counts);
-    (!counts && result.reason == Reason::NoShow).then(|| match result.winner.other() {
+    if counts || result.reason != Reason::NoShow {
+        return None;
+    }
+    result.loser().map(|absent| match absent {
         Color::Red => red,
         Color::Black => black,
     })
@@ -558,10 +561,12 @@ mod tests {
                 if let Ok(ToNode::Start(start)) = serde_json::from_str(text.as_str()) {
                     let result = GameResult {
                         v: game_kit::record::RECORD_VERSION,
+                        game: None,
+                        game_version: None,
                         time_ms: 100,
                         opening: vec![],
                         moves: vec![],
-                        winner: Color::Black,
+                        winner: Some(Color::Black),
                         reason: Reason::Timeout,
                         invalid: game_kit::record::InvalidCounts::default(),
                         duration_ms: 5,
@@ -674,10 +679,12 @@ mod tests {
         let (red, black) = (team("eq01"), team("eq02"));
         let result = |winner, reason| GameResult {
             v: game_kit::record::RECORD_VERSION,
+            game: None,
+            game_version: None,
             time_ms: 5000,
             opening: vec![],
             moves: vec![],
-            winner,
+            winner: Some(winner),
             reason,
             invalid: game_kit::record::InvalidCounts::default(),
             duration_ms: 10_000,

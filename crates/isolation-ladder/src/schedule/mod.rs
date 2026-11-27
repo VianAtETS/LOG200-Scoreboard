@@ -398,10 +398,12 @@ mod tests {
             measures: None,
             result: GameResult {
                 v: RECORD_VERSION,
+                game: None,
+                game_version: None,
                 time_ms: 500,
                 opening: vec![],
                 moves: vec![],
-                winner: Color::Red,
+                winner: Some(Color::Red),
                 reason: Reason::NoMoves,
                 invalid: InvalidCounts::default(),
                 duration_ms: 0,
