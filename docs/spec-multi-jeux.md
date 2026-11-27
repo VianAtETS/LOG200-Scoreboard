@@ -154,6 +154,6 @@ Chaque étape est une PR qui garde Isolation identique (tests golden).
 
 ## Questions ouvertes
 
-- ~~Variante d'Hnefatafl~~ : tranchée par l'énoncé et le code du serveur officiel (`docs/rules-hnefatafl.md`). Reste à confirmer en jouant contre le serveur lui-même (sous Wine, comme pour Isolation).
+- ~~Variante d'Hnefatafl~~ : tranchée par l'énoncé et le code du serveur officiel, et confirmée par sept parties contre lui, sans divergence (`docs/rules-hnefatafl.md`, « Conformance »).
 - ~~Nulle en tournoi~~ : rejouée, la 3e donne la manche à la meilleure tête de série (D22 de `docs/spec-tournoi-hebdo.md`).
 - Renommage des crates `isolation-*` (le mot désigne aussi le bac à sable) : en fin de migration, dans une PR à part.

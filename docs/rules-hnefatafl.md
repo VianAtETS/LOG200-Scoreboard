@@ -59,3 +59,19 @@ Pour la rejouer : le serveur dans le conteneur `server` du devcontainer (copier 
 ```sh
 cargo run -p hnefatafl --bin hnefatafl-bot -- --port 8888 --check --max-plies 290
 ```
+
+### Résultats (2026-11-27)
+
+Sept parties contre l'IA du serveur officiel (`BoardGame.exe` sous Wine), notre bot `--check` au hasard de chaque côté et contre chaque niveau. **Aucune divergence** : chaque coup du serveur est légal selon nos règles, chacun des nôtres est accepté, et chaque fin tombe au même coup des deux côtés.
+
+| Notre bot | IA | Fin |
+| --- | --- | --- |
+| noir | niveau 1 | roi pris, au 99e demi-coup |
+| rouge | niveau 1 | aucune en 290 demi-coups |
+| noir | niveau 1 | roi pris |
+| rouge | niveau 2 | roi sorti (A1) |
+| noir | niveau 2 | aucune en 291 demi-coups |
+| rouge | niveau 3 | roi sorti (M13) |
+| noir | niveau 3 | roi pris |
+
+Non couvert par ces parties : la nulle faute de coups (rare entre ces joueurs), et un roi qui s'enferme lui-même, déduits du code seulement (tests de `crates/hnefatafl`).
