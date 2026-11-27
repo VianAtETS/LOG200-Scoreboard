@@ -53,6 +53,7 @@ Le smoke test joue deux parties et attend la fin de la partie en cours du ladder
 | `HTTP 503` | Ladder en redémarrage | **Run workflow** dans quelques minutes |
 | `HTTP 404` | Verdict perdu : le ladder a redémarré pendant le smoke test | Regarder la version affichée sur la page ; si elle n'a pas changé, **Run workflow** |
 | `HTTP 000` | Ladder injoignable | Vérifier `LADDER_URL` ; sinon, soumettre par le formulaire de la page |
+| `verdict inconnu` (avertissement, run vert) | Un proxy (Cloudflare) a intercepté l'envoi ou la lecture du verdict : ce n'est pas une réponse du ladder | Si le tag `V<n>` est posé, le jar est accepté. Sinon, chercher le build affiché dans `GET /api/stats/submissions?team=<équipe>`, ou **Run workflow** dans quelques minutes |
 
 Perdre le smoke test n'est pas un refus : seul compte le fait de jouer jusqu'au bout avec des coups valides.
 

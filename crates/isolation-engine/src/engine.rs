@@ -81,7 +81,7 @@ impl Engine {
         let seeds: Vec<u64> = (1..self.threads).map(|_| rng.next_u64()).collect();
         let stop = &*self.stop;
         let (main, helpers) = self.searches.split_first_mut()?;
-        thread::scope(|scope| {
+        let best = thread::scope(|scope| {
             let helpers: Vec<_> = helpers
                 .iter_mut()
                 .zip(seeds)
@@ -98,7 +98,9 @@ impl Engine {
                     Some(best) if best.depth >= other.depth => Some(best),
                     _ => Some(other),
                 })
-        })
+        })?;
+        let nodes = self.searches.iter().map(|search| search.nodes).sum();
+        Some(Choice { nodes, ..best })
     }
 
     /// Cherche pour `side`, l'adversaire au trait, jusqu'au prochain `choose`.
@@ -151,13 +153,18 @@ impl Search {
         ordered.shuffle(rng);
         let &(_, only) = ordered.first()?;
         if ordered.len() == 1 {
-            return Some(Choice { mv: only, depth: None });
+            return Some(Choice {
+                mv: only,
+                depth: None,
+                nodes: 0,
+            });
         }
         ordered.sort_unstable_by_key(|&(score, _)| Reverse(score));
         let mut moves: Vec<Move> = ordered.into_iter().map(|(_, mv)| mv).collect();
         let mut best = Choice {
             mv: moves[0],
             depth: Some(0),
+            nodes: 0,
         };
         for depth in first..=MAX_DEPTH {
             self.age_history();
@@ -173,6 +180,7 @@ impl Search {
                 break;
             }
         }
+        best.nodes = self.nodes;
         Some(best)
     }
 }
@@ -1565,6 +1573,7 @@ mod tests {
         )
         .unwrap();
         assert!(rules::is_legal(&Board::initial(), Color::Red, choice.mv));
+        assert!(choice.nodes > 0, "nœuds comptés");
         assert!(start.elapsed() < Duration::from_millis(400), "{:?}", start.elapsed());
     }
 

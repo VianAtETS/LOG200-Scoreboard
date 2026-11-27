@@ -7,7 +7,8 @@ import { pages, type TPageKey } from './masthead.data';
 import { VersionBadge } from './version-badge';
 
 type Props = PropsWithChildren & {
-  current: TPageKey;
+  // Absent : une page hors du menu (Duel).
+  current?: TPageKey;
   showVersion?: boolean;
   status?: ReactNode;
 };

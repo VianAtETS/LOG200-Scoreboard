@@ -1,7 +1,8 @@
 // Lectures du ladder : fichiers publiés dans /data, et API.
 
 import { API, DATA, LATEST_RELEASE, SERVER } from '@/dao/constants/api.const';
-import type { TGame, TGameRow, TRunningGame } from '@/types/games.types';
+import type { TDuelPair, TDuelSide, TGame, TGameRow, THeatmap, TRunningGame } from '@/types/games.types';
+import type { TGameProfile, TProfiling, TTemplateShare } from '@/types/profile.types';
 import type { TModel, TQueueFile, TSummary } from '@/types/summary.types';
 import type { TTournament, TTournamentIndex } from '@/types/tournament.types';
 
@@ -45,6 +46,17 @@ export async function getModel(): Promise<TModel | null> {
     return null;
   }
 }
+
+// Paires complètes entre deux équipes ; un build absent : toutes ses versions.
+export function getDuelPairs([a, b]: TDuelSide[]) {
+  const query = new URLSearchParams({ a: a.team, b: b.team });
+  if (a.build) query.set('build_a', a.build);
+  if (b.build) query.set('build_b', b.build);
+  return json<TDuelPair[]>(`${API}/stats/pairs?${query}`);
+}
+
+// Cartes de chaleur de chaque build de l'équipe, hors tournois.
+export const getHeatmaps = (team: string) => json<THeatmap[]>(`${API}/stats/heatmap?${new URLSearchParams({ team })}`);
 
 export async function getGame(row: Pick<TGameRow, 'id' | 'at'>): Promise<TGame> {
   const g = row.at ? await getGameFromJsonl(row.at) : await json<TGame>(`${API}/games/${encodeURIComponent(row.id)}`, {});
@@ -120,4 +132,29 @@ export async function submitJar(token: string, file: File) {
     } while (res.status === 202);
   }
   return { ok: res.ok, message: (await res.text()).trim() };
+}
+
+// Route d'équipe : `null` sur 404 ; un refus lève avec le message du ladder.
+async function asTeam<T>(path: string, token: string, init: RequestInit = {}): Promise<T | null> {
+  const res = await fetch(`${API}${path}`, { ...init, cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+  return res.json();
+}
+
+export const getProfile = (game: string, token: string) =>
+  asTeam<TGameProfile>(`/games/${encodeURIComponent(game)}/profile`, token);
+
+// `null` : aucun jar actif.
+export const getProfiling = (token: string) => asTeam<TProfiling>('/profiling', token);
+
+export const putProfiling = (token: string, choice: Omit<TProfiling, 'build'>) =>
+  asTeam<TProfiling>('/profiling', token, { method: 'PUT', body: JSON.stringify(choice) });
+
+export const deleteProfiles = (token: string) => asTeam<{ deleted: number }>('/profiles', token, { method: 'DELETE' });
+
+// `null` : part non publiée.
+export async function getTemplateShare(team: string, build: string) {
+  const res = await fetch(`${API}/stats/template-share?${new URLSearchParams({ team, build })}`);
+  return res.ok ? (res.json() as Promise<TTemplateShare>) : null;
 }

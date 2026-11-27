@@ -34,20 +34,25 @@ jobs:
       - name: Tests
         run: cargo test --workspace --locked
 
-  version:
-    if: github.event_name == 'pull_request'
+  # The version is bumped after CI on main (version.yml): here, its rule and the scripts
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
-      - name: Version bump
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-          TITLE: ${{ github.event.pull_request.title }}
-        run: python3 .github/scripts/version_bump.py "$BASE" "$HEAD" "$TITLE"
+      - name: Version bump rule
+        run: bash tests/release/check.sh
+
+      # Against a fake server in a JDK: one line per move, none with a dedicated reader thread
+      - name: Profiler
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo eclipse-temurin:24-jdk bash sandbox/profiler/test.sh
+
+      # Every tracked script, so a new one is checked without being listed here
+      - name: Shell scripts
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck
+
+      - name: Workflows
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
 
   web:
     runs-on: ubuntu-latest
@@ -74,3 +79,16 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # The one check a ruleset needs to require
+  gate:
+    if: always()
+    needs: [rust, lint, web]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' <<<"$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null

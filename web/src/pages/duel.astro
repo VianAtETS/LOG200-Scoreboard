@@ -1,0 +1,8 @@
+---
+import DuelPage from '@/app/duel';
+import Layout from '@/layouts/layout.astro';
+---
+
+<Layout title="Duel entre deux équipes du ladder Isolation">
+  <DuelPage client:only="react" />
+</Layout>

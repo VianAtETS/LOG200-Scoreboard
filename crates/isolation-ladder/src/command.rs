@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 
 use serde::Deserialize;
 
-use isolation_core::board::Color;
+use isolation_core::board::{ByColor, Color};
 
 use crate::config::{
     Config, Slot, default_port, default_ready_marker, default_red_connected_marker, default_startup_ms,
@@ -102,6 +102,20 @@ pub struct Vars<'a> {
     pub opening: String,
     pub game: &'a str,
     pub time_ms: u64,
+    /// Couleurs dont le jar tourne avec le profileur.
+    pub profile: ByColor<bool>,
+}
+
+/// Marge d'une couleur profilée sur chaque coup : 5 % du temps par coup, de 25 à 500 ms.
+pub const fn margin_ms(time_ms: u64) -> u64 {
+    let margin = time_ms / 20;
+    if margin < 25 {
+        25
+    } else if margin > 500 {
+        500
+    } else {
+        margin
+    }
 }
 
 impl Vars<'_> {
@@ -126,6 +140,19 @@ impl Vars<'_> {
                 other => other.to_string(),
             };
             command.env(format!("SANDBOX_{}", key.to_uppercase()), value);
+        }
+        // Le joueur profilé reçoit le profileur ; l'arbitre, sa marge, que le joueur ne voit pas.
+        match side {
+            Some(side) if self.profile[side] => {
+                command.env("SANDBOX_PROFILE", "1");
+            }
+            Some(_) => {}
+            None => {
+                for color in [Color::Red, Color::Black].into_iter().filter(|&c| self.profile[c]) {
+                    let key = format!("ISOLATION_EXTRA_{}_MS", color.name().to_uppercase());
+                    command.env(key, margin_ms(self.time_ms).to_string());
+                }
+            }
         }
         Ok(command)
     }
@@ -187,6 +214,7 @@ mod tests {
             opening: "G1-G4-F9".into(),
             game: "g1",
             time_ms: cfg.time_ms,
+            profile: ByColor::default(),
         };
         let command = vars.command(&cfg.referee, None).unwrap();
         let args: Vec<_> = command.get_args().collect();
@@ -208,6 +236,7 @@ mod tests {
             opening: String::new(),
             game: "g1",
             time_ms: 5000,
+            profile: ByColor::default(),
         };
         let command = vars.command(&cfg.referee, None).unwrap();
         assert_eq!(command.get_args().collect::<Vec<_>>(), ["5000"]);
@@ -229,6 +258,7 @@ mod tests {
                 opening: String::new(),
                 game: "g1",
                 time_ms: cfg.time_ms,
+                profile: ByColor::default(),
             };
             let command = vars.command(&cfg.referee, None).unwrap();
             let port = command.get_args().next().unwrap().to_string_lossy().into_owned();
@@ -243,5 +273,41 @@ mod tests {
         };
         assert_eq!(env(0), ("8888".into(), Some("2".into()), Some("512m".into())));
         assert_eq!(env(1), ("8888".into(), Some("4".into()), Some("512m".into())));
+    }
+
+    fn env_of(command: &Command, key: &str) -> Option<String> {
+        command
+            .get_envs()
+            .find(|&(k, _)| k == key)
+            .and_then(|(_, v)| v)
+            .map(|v| v.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn a_profiled_side_runs_with_the_profiler_and_a_margin_at_the_referee() {
+        let cfg: Config = MINIMAL.parse().unwrap();
+        let vars = Vars {
+            cfg: &cfg.exec,
+            slot: 0,
+            opening: String::new(),
+            game: "g1",
+            time_ms: 1000,
+            profile: ByColor {
+                red: false,
+                black: true,
+            },
+        };
+        let referee = vars.command(&cfg.referee, None).unwrap();
+        assert_eq!(env_of(&referee, "ISOLATION_EXTRA_BLACK_MS").as_deref(), Some("50"));
+        assert_eq!(env_of(&referee, "ISOLATION_EXTRA_RED_MS"), None);
+        let player = |side| vars.command(&cfg.referee, Some(side)).unwrap();
+        assert_eq!(env_of(&player(Color::Black), "SANDBOX_PROFILE").as_deref(), Some("1"));
+        assert_eq!(env_of(&player(Color::Red), "SANDBOX_PROFILE"), None);
+        assert_eq!(
+            env_of(&player(Color::Black), "ISOLATION_EXTRA_BLACK_MS"),
+            None,
+            "le jar ne voit pas sa marge"
+        );
+        assert_eq!((margin_ms(100), margin_ms(1000), margin_ms(20_000)), (25, 50, 500));
     }
 }

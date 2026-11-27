@@ -9,4 +9,10 @@ export const queryKeys = {
   health: 'health',
   tournaments: 'tournaments',
   tournament: 'tournament',
+  game: 'game',
+  pairs: 'pairs',
+  heatmaps: 'heatmaps',
+  profile: 'profile',
+  profiling: 'profiling',
+  templateShare: 'templateShare',
 };

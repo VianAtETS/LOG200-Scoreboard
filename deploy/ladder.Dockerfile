@@ -26,6 +26,11 @@ COPY --chmod=755 prebuilt/${TARGETARCH}/ /artifacts/
 
 FROM ${BINARIES} AS binaries
 
+# Le profileur des jars (sandbox/profiler/) : du bytecode, compile une fois pour toutes les architectures.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:24-jdk@sha256:7493205ffe6caa8074fa8a06a276bb1c5ac41d3dd0fd43a0db66d7f776e80b3e AS profiler
+COPY sandbox/profiler /src/profiler
+RUN bash /src/profiler/build.sh /out
+
 # runsc et ses binaires annexes sont statiques : on les prend dans le depot apt de gVisor. Le suite date
 # (ex. 20261019) garde sa version, contrairement a "release" qui suit la derniere.
 FROM debian:bookworm-slim AS gvisor
@@ -50,6 +55,8 @@ COPY --from=binaries /artifacts/isolation-ladder /artifacts/isolation-check /usr
 COPY sandbox/Dockerfile sandbox/referee-entry.sh sandbox/player-entry.sh /opt/sandbox-image/
 COPY --from=binaries /artifacts/isolation-referee /artifacts/isolation-bot /opt/sandbox-image/
 COPY sandbox/run-referee.sh sandbox/run-player.sh sandbox/cleanup.sh /srv/sandbox/
+# Monte par run-player.sh dans le bac a sable d'un jar profile : l'image des jars n'en a pas.
+COPY --from=profiler /out/profiler.jar /srv/sandbox/
 COPY deploy/ladder-entrypoint.sh /usr/local/bin/
 
 # Les chemins relatifs de ladder.toml (data/, jars/, sandbox/) partent d'ici.

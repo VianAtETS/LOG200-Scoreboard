@@ -10,7 +10,7 @@ use anyhow::Context;
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::{DefaultBodyLimit, Path as UrlPath, Query, State};
-use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, LOCATION};
+use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, LOCATION, VARY};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -27,11 +27,13 @@ use isolation_core::record::GameRecord;
 use isolation_core::remote::PATH as REMOTE_PATH;
 
 use crate::arena::Arena;
-use crate::db::{Db, GameFilter, Stat};
+use crate::db::{Db, GameFilter, PairFilter, Profiling, Stat};
 use crate::hub::Hub;
 use crate::openapi::{
-    ApiDoc, BuildRecord, HeadToHead, Jar, MoveTimes, Openings, RatingPoint, SubmissionRecord, TeamRecord,
+    ApiDoc, BuildRecord, DuelPair, GameProfile, HeadToHead, Heatmap, Jar, MoveTimes, Openings, RatingPoint,
+    SubmissionRecord, TeamRecord,
 };
+use crate::profile::{PublicShare, public_share};
 use crate::remote::{self, Registry, Remote};
 use crate::spectate;
 use crate::submit::{Accepted, Submissions, SubmitError};
@@ -144,6 +146,9 @@ fn submit_routes(submissions: Arc<Submissions>) -> OpenApiRouter {
         .routes(or_404(routes!(version)))
         .routes(or_404(routes!(submit)))
         .routes(or_404(routes!(verdict)))
+        .routes(or_404(routes!(get_profiling, put_profiling)))
+        .routes(or_404(routes!(game_profile)))
+        .routes(or_404(routes!(delete_profiles)))
         .with_state(SubmitState {
             submissions,
             jobs: Arc::new(Jobs::new()),
@@ -160,11 +165,14 @@ fn read_routes(db: PathBuf) -> OpenApiRouter {
         .routes(routes!(game))
         .routes(routes!(stats_teams))
         .routes(routes!(stats_head_to_head))
+        .routes(routes!(stats_pairs))
         .routes(routes!(stats_openings))
         .routes(routes!(stats_builds))
         .routes(routes!(stats_ratings))
         .routes(routes!(stats_move_times))
+        .routes(routes!(stats_heatmap))
         .routes(routes!(stats_submissions))
+        .routes(routes!(stats_template_share))
         .with_state(Arc::new(db))
         .merge(
             OpenApiRouter::new()
@@ -324,6 +332,20 @@ async fn stats_teams(State(db): State<Arc<PathBuf>>, Query(q): Query<Scope>) -> 
     stat(db, Stat::Teams, q.session, None).await
 }
 
+/// Les paires complètes du ladder entre deux équipes (même ouverture, couleurs inversées), la plus
+/// récente d'abord, pour la page Duel. Tournois exclus.
+#[utoipa::path(get, path = "/api/stats/pairs", tag = "statistiques", params(PairFilter), responses(
+    (status = 200, body = Vec<DuelPair>),
+    (status = 400, description = "`a` ou `b` manquant."),
+    (status = 500, description = "Base indisponible."),
+))]
+async fn stats_pairs(State(db): State<Arc<PathBuf>>, Query(filter): Query<PairFilter>) -> Response {
+    match blocking(move || Db::open_read(&db)?.duel_pairs(&filter)).await {
+        Ok(body) => json("public, max-age=15", body),
+        Err(e) => unavailable(&e),
+    }
+}
+
 /// Face-à-face de chaque paire d'équipes qui se sont rencontrées.
 #[utoipa::path(get, path = "/api/stats/head-to-head", tag = "statistiques", params(Scope), responses(
     (status = 200, body = Vec<HeadToHead>), (status = 500, description = "Base indisponible."),
@@ -367,6 +389,15 @@ async fn stats_move_times(State(db): State<Arc<PathBuf>>, Query(q): Query<TeamSc
     stat(db, Stat::MoveTimes, q.session, Some(q.team)).await
 }
 
+/// Cartes de chaleur de l'équipe par build : où son pion est arrivé et quelles cases elle a détruites.
+#[utoipa::path(get, path = "/api/stats/heatmap", tag = "statistiques", params(TeamScope), responses(
+    (status = 200, body = Vec<Heatmap>), (status = 400, description = "`team` manquant."),
+    (status = 500, description = "Base indisponible."),
+))]
+async fn stats_heatmap(State(db): State<Arc<PathBuf>>, Query(q): Query<TeamScope>) -> Response {
+    stat(db, Stat::Heatmap, q.session, Some(q.team)).await
+}
+
 /// Jars soumis par l'équipe et leurs verdicts, du plus ancien au plus récent.
 #[utoipa::path(get, path = "/api/stats/submissions", tag = "statistiques", params(Team), responses(
     (status = 200, body = Vec<SubmissionRecord>), (status = 400, description = "`team` manquant."),
@@ -374,6 +405,38 @@ async fn stats_move_times(State(db): State<Arc<PathBuf>>, Query(q): Query<TeamSc
 ))]
 async fn stats_submissions(State(db): State<Arc<PathBuf>>, Query(q): Query<Team>) -> Response {
     stat(db, Stat::Submissions, None, Some(q.team)).await
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct BuildScope {
+    /// L'équipe (`eq100`).
+    team: String,
+    /// Le build (`3f9c2a1b5d7e9f01`).
+    build: String,
+}
+
+/// La part du temps de calcul passée dans les méthodes du code de départ du cours, sur les parties
+/// profilées d'un build, si son équipe la publie. Ni arbre ni profondeur.
+#[utoipa::path(get, path = "/api/stats/template-share", tag = "statistiques", params(BuildScope), responses(
+    (status = 200, body = PublicShare),
+    (status = 400, description = "`team` ou `build` manquant."),
+    (status = 404, description = "Part non publiée, ou aucune partie profilée de ce build."),
+    (status = 500, description = "Base indisponible."),
+))]
+async fn stats_template_share(State(db): State<Arc<PathBuf>>, Query(q): Query<BuildScope>) -> Response {
+    let shares = blocking(move || {
+        let shares = Db::open_read(&db)?.template_shares(&q.team, &q.build)?;
+        Ok(public_share(&q.team, &q.build, &shares))
+    });
+    match shares.await {
+        Ok(Some(share)) => match serde_json::to_string(&share) {
+            Ok(body) => json("public, max-age=15", body),
+            Err(e) => unavailable(&rusqlite::Error::ToSqlConversionFailure(Box::new(e))),
+        },
+        Ok(None) => (StatusCode::NOT_FOUND, "aucune part publiée\n").into_response(),
+        Err(e) => unavailable(&e),
+    }
 }
 
 async fn not_found() -> SubmitError {
@@ -522,6 +585,149 @@ async fn verdict(
         .ok()
         .and_then(|id| state.jobs.verdict(id, &team))
         .ok_or(SubmitError::UnknownSubmission)
+}
+
+/// Le choix de profilage d'une équipe pour son build actif.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct ProfilingState {
+    build: String,
+    #[serde(flatten)]
+    choice: Profiling,
+}
+
+/// Le choix de profilage de l'équipe pour son build actif, désactivé tant qu'elle ne l'a pas changé.
+#[utoipa::path(get, path = "/api/profiling", tag = "profileur", security(("token" = [])), responses(
+    (status = 200, body = ProfilingState),
+    (status = 401, description = "Token d'équipe absent ou inconnu."),
+    (status = 404, description = "Aucun jar actif."),
+    (status = 500, description = "Base indisponible."),
+))]
+async fn get_profiling(State(state): State<SubmitState>, headers: HeaderMap) -> Response {
+    for_team(&state.submissions, &headers, |submissions, team| {
+        profiling(submissions, team, None)
+    })
+    .await
+}
+
+/// Choisit le profilage du build actif de l'équipe : `private` fait tourner son jar avec le profileur
+/// dans les parties du ladder au serveur principal, jamais en tournoi ; `public` publie en plus la
+/// part du gabarit, et demande `private`. Un nouveau build repart désactivé.
+#[utoipa::path(put, path = "/api/profiling", tag = "profileur", security(("token" = [])),
+    request_body = Profiling,
+    responses(
+        (status = 200, body = ProfilingState),
+        (status = 400, description = "Corps illisible, ou `public` sans `private`."),
+        (status = 401, description = "Token d'équipe absent ou inconnu."),
+        (status = 404, description = "Aucun jar actif."),
+        (status = 500, description = "Base indisponible."),
+    ),
+)]
+async fn put_profiling(State(state): State<SubmitState>, headers: HeaderMap, body: Bytes) -> Response {
+    let choice = match serde_json::from_slice::<Profiling>(&body) {
+        Ok(choice) if choice.public && !choice.private => {
+            return private(Err((StatusCode::BAD_REQUEST, "public demande private\n".into())));
+        }
+        Ok(choice) => choice,
+        Err(e) => return private(Err((StatusCode::BAD_REQUEST, format!("corps illisible : {e}\n")))),
+    };
+    for_team(&state.submissions, &headers, move |submissions, team| {
+        profiling(submissions, team, Some(choice))
+    })
+    .await
+}
+
+/// Lit, et change si `choice` est donné, le choix de `team` pour son build actif.
+fn profiling(
+    submissions: &Submissions,
+    team: &TeamId,
+    choice: Option<Profiling>,
+) -> Result<String, (StatusCode, String)> {
+    let build = submissions.current_build(team).ok_or((
+        StatusCode::NOT_FOUND,
+        "aucun jar actif : soumettre un jar d'abord\n".to_owned(),
+    ))?;
+    let failed = |e: anyhow::Error| team_unavailable(team, &e);
+    let db = Db::open(submissions.db()).map_err(failed)?;
+    if let Some(choice) = choice {
+        db.set_profiling(team.as_str(), &build, choice)
+            .map_err(|e| failed(e.into()))?;
+    }
+    let choice = db.profiling(team.as_str(), &build).map_err(|e| failed(e.into()))?;
+    serde_json::to_string(&ProfilingState { build, choice }).map_err(|e| failed(e.into()))
+}
+
+/// Le profil de l'équipe du token dans une partie : son côté seulement. Même 404 qu'elle n'ait pas
+/// joué la partie, qu'elle n'y ait pas de profil ou que la partie n'existe pas.
+#[utoipa::path(get, path = "/api/games/{id}/profile", tag = "profileur", security(("token" = [])),
+    params(("id" = String, Path, description = "Id de la partie", example = "20261024T142103.512Z-eq07-eq12")),
+    responses(
+        (status = 200, body = GameProfile),
+        (status = 401, description = "Token d'équipe absent ou inconnu."),
+        (status = 404, description = "Aucun profil de l'équipe dans cette partie."),
+        (status = 500, description = "Base indisponible."),
+    ),
+)]
+async fn game_profile(State(state): State<SubmitState>, UrlPath(id): UrlPath<String>, headers: HeaderMap) -> Response {
+    for_team(&state.submissions, &headers, move |submissions, team| {
+        Db::open_read(submissions.db())
+            .and_then(|db| db.profile_json(&id, team.as_str()))
+            .map_err(|e| team_unavailable(team, &e.into()))?
+            .ok_or((StatusCode::NOT_FOUND, "aucun profil\n".to_owned()))
+    })
+    .await
+}
+
+/// Supprime tous les profils de l'équipe du token, part publiée comprise ; rend leur nombre.
+#[utoipa::path(delete, path = "/api/profiles", tag = "profileur", security(("token" = [])), responses(
+    (status = 200, body = Deleted),
+    (status = 401, description = "Token d'équipe absent ou inconnu."),
+    (status = 500, description = "Base indisponible."),
+))]
+async fn delete_profiles(State(state): State<SubmitState>, headers: HeaderMap) -> Response {
+    for_team(&state.submissions, &headers, |submissions, team| {
+        let failed = |e: anyhow::Error| team_unavailable(team, &e);
+        let deleted = Db::open(submissions.db())
+            .map_err(failed)?
+            .delete_profiles(team.as_str())
+            .map_err(|e| failed(e.into()))?;
+        serde_json::to_string(&Deleted { deleted }).map_err(|e| failed(e.into()))
+    })
+    .await
+}
+
+/// Profils supprimés.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+struct Deleted {
+    deleted: usize,
+}
+
+/// Authentifie l'équipe du token puis fait `work` hors du runtime. La réponse est privée.
+async fn for_team(
+    submissions: &Arc<Submissions>,
+    headers: &HeaderMap,
+    work: impl FnOnce(&Submissions, &TeamId) -> Result<String, (StatusCode, String)> + Send + 'static,
+) -> Response {
+    let team = match authenticate(submissions, headers).await {
+        Ok(team) => team,
+        Err(e) => return private(Err((e.status(), format!("{e}\n")))),
+    };
+    let submissions = Arc::clone(submissions);
+    private(blocking(move || work(&submissions, &team)).await)
+}
+
+/// La base a échoué pour une route d'équipe : le détail va au journal, pas au client.
+fn team_unavailable(team: &TeamId, error: &anyhow::Error) -> (StatusCode, String) {
+    eprintln!("base, pour {team} : {error:#}");
+    (StatusCode::INTERNAL_SERVER_ERROR, "base indisponible\n".to_owned())
+}
+
+/// La réponse d'une équipe, refus compris : ni un cache partagé ni le navigateur ne la gardent.
+fn private(result: Result<String, (StatusCode, String)>) -> Response {
+    let headers = [(CACHE_CONTROL, "private, no-store"), (VARY, "Authorization")];
+    match result {
+        Ok(body) => (headers, [(CONTENT_TYPE, "application/json")], body).into_response(),
+        Err((status, body)) => (status, headers, body).into_response(),
+    }
 }
 
 async fn authenticate(submissions: &Arc<Submissions>, headers: &HeaderMap) -> Result<TeamId, SubmitError> {

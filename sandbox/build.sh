@@ -11,3 +11,5 @@ cp target/release/isolation-referee target/bot/isolation-bot sandbox/referee-ent
 image=${SANDBOX_IMAGE:-isolation-sandbox}
 docker build -t "$image" -f sandbox/Dockerfile "$ctx"
 docker build -t "$image-jar" --target jar -f sandbox/Dockerfile "$ctx"
+# Le profileur, a cote de run-player.sh qui le monte (bytecode : compile dans un JDK jetable).
+docker run --rm -v "$PWD/sandbox:/sandbox" -w /sandbox eclipse-temurin:24-jdk bash profiler/build.sh /sandbox

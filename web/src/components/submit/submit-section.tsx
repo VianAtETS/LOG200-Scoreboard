@@ -1,5 +1,6 @@
 import { useGetHealth } from '@/dao/hooks/use-ladder';
 import { submitJar } from '@/dao/scoreboard.repository';
+import { useTeamToken } from '@/hooks/use-team-token';
 import { useState, type FC, type SubmitEvent } from 'react';
 
 type TSubmitState = 'pending' | 'ok' | 'error';
@@ -10,7 +11,7 @@ const INTRO =
 // Le formulaire n'apparaît que si le service de soumission répond (absent en hébergement statique).
 const SubmitSection: FC = () => {
   const { data: available } = useGetHealth();
-  const [token, setToken] = useState('');
+  const [token, setToken] = useTeamToken();
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<TSubmitState>();
   const [message, setMessage] = useState(INTRO);

@@ -1,7 +1,7 @@
 import { REFRESH_MS } from '@/dao/constants/api.const';
-import { teamUrl, timelineUrl } from '@/dao/scoreboard.repository';
+import { getDuelPairs, getGame, getHeatmaps, teamUrl, timelineUrl } from '@/dao/scoreboard.repository';
 import { tail, tailState, type TTailState } from '@/lib/tail';
-import type { TGameRow, TTimelineRow } from '@/types/games.types';
+import type { TDuelSide, TGame, TGameRow, TTimelineRow } from '@/types/games.types';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useRef } from 'react';
 import { queryKeys } from './query-keys';
@@ -54,3 +54,30 @@ export const useGetTimeline = () => {
     structuralSharing: false,
   });
 };
+
+// Partie complète ; une partie terminée ne change plus.
+export const useGetGame = (row: Pick<TGameRow, 'id' | 'at'> | undefined) =>
+  useQuery<TGame>({
+    queryKey: [queryKeys.game, row?.id],
+    queryFn: () => getGame(row!),
+    enabled: Boolean(row),
+    staleTime: Infinity,
+  });
+
+// Paires complètes d'un duel, suivies au rythme de la page ; `null` : pas encore de duel.
+export const useGetDuelPairs = (sides: TDuelSide[] | null) =>
+  useQuery({
+    queryKey: [queryKeys.pairs, sides?.map((s) => `${s.team}@${s.build ?? ''}`).join(',')],
+    queryFn: () => getDuelPairs(sides!),
+    enabled: Boolean(sides),
+    refetchInterval: REFRESH_MS,
+  });
+
+// Cartes de chaleur des builds d'une équipe. Des milliers de parties : lues une fois par visite, la
+// suivante ne change presque rien.
+export const useGetHeatmaps = (team: string) =>
+  useQuery({
+    queryKey: [queryKeys.heatmaps, team],
+    queryFn: () => getHeatmaps(team),
+    staleTime: Infinity,
+  });

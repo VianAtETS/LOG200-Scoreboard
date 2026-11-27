@@ -3,6 +3,7 @@
 # lecture seule, et seulement la socket de sa couleur. Les variables SANDBOX_* viennent de la section
 # [sandbox] de ladder.toml.
 # Usage : run-player.sh GAME SIDE PORT FICHIER.jar
+#         (SANDBOX_PROFILE=1 : le jar tourne avec le profileur, profiler.jar a cote de ce script)
 #         run-player.sh GAME SIDE PORT --bot random|greedy|aleatoire|niveau-1|...|niveau-5 [OPTIONS DU BOT]
 set -euo pipefail
 game=$1 side=$2 port=$3
@@ -31,6 +32,12 @@ if [ "$1" = --bot ]; then
 else
     image=${SANDBOX_JAR_IMAGE:-$SANDBOX_IMAGE-jar}
     args+=(-v "$(realpath "$1"):/bot.jar:ro")
-    cmd=(java -XX:-UsePerfData -Djava.net.preferIPv4Stack=true "-Xmx$SANDBOX_JAVA_HEAP" -jar /bot.jar)
+    agent=()
+    # Profil demande par l'equipe : le profileur est monte comme le jar, l'image n'en a pas.
+    if [ "${SANDBOX_PROFILE:-}" = 1 ]; then
+        args+=(-v "$(dirname "$(realpath "$0")")/profiler.jar:/profiler.jar:ro")
+        agent=(-javaagent:/profiler.jar)
+    fi
+    cmd=(java -XX:-UsePerfData -Djava.net.preferIPv4Stack=true "-Xmx$SANDBOX_JAVA_HEAP" "${agent[@]}" -jar /bot.jar)
 fi
 exec docker run "${args[@]}" "$image" player-entry.sh "$port" "${cmd[@]}"

@@ -45,7 +45,11 @@ pub enum Strategy {
 
 impl Strategy {
     pub fn choose(self, board: &Board, color: Color, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
-        let unsearched = |mv| Choice { mv, depth: None };
+        let unsearched = |mv| Choice {
+            mv,
+            depth: None,
+            nodes: 0,
+        };
         match self {
             Self::Random | Self::Aleatoire => rules::legal_moves(board, color).choose(rng).copied().map(unsearched),
             Self::Greedy => greedy(board, color, &rules::legal_moves(board, color), rng).map(unsearched),

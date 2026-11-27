@@ -155,6 +155,7 @@ mod tests {
     use super::*;
     use crate::command::Vars;
     use crate::config::tests::MINIMAL;
+    use isolation_core::board::ByColor;
 
     #[test]
     fn multithread_slots_host_every_game_of_a_multithread_team() {
@@ -178,6 +179,7 @@ mod tests {
             opening: String::new(),
             game: "g1",
             time_ms: cfg.time_ms,
+            profile: ByColor::default(),
         };
         let command = vars.command(&cfg.referee, None).unwrap();
         let keys: Vec<_> = command

@@ -22,6 +22,7 @@ use utoipa::{Modify, OpenApi, ToSchema};
         (name = "parties", description = "Parties complètes, coups compris."),
         (name = "statistiques", description = "Statistiques calculées dans la base, rafraîchies toutes les 15 s."),
         (name = "soumission", description = "Envoi d'un jar, avec le token de l'équipe."),
+        (name = "profileur", description = "Profil des jars : choix et lecture avec le token de l'équipe, qui ne voit que les siens."),
         (name = "serveur", description = "État du ladder."),
     ),
     modifiers(&Token)
@@ -74,6 +75,36 @@ pub struct HeadToHead {
     pub games: u64,
     pub a_wins: u64,
     pub b_wins: u64,
+}
+
+/// Le profil du jar d'une équipe dans une partie, privé : son côté seulement.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GameProfile {
+    pub game: String,
+    /// `red` ou `black`.
+    pub color: String,
+    pub build: String,
+    /// Segments de calcul vus par le profileur (deux tours rapides peuvent n'en faire qu'un).
+    pub turns: u64,
+    /// Coups joués par le jar.
+    pub moves: u64,
+    /// Temps pris par l'échantillonnage, compté dans la réflexion du jar.
+    pub overhead_ms: u64,
+    pub tree: crate::profile::Tree,
+    /// Ses lignes `ARENA`, s'il en imprime.
+    pub arena: Vec<isolation_core::record::Measure>,
+}
+
+/// Une paire complète du ladder : deux parties, même ouverture, couleurs inversées.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DuelPair {
+    /// Les ids des deux parties, dans l'ordre de jeu.
+    pub games: [String; 2],
+    /// L'équipe gagnante de chaque partie, dans le même ordre.
+    pub winners: [String; 2],
+    pub opening: Vec<String>,
 }
 
 /// Une ouverture imposée par le ladder et les victoires du rouge.
@@ -160,6 +191,18 @@ pub struct MoveTimes {
     pub near_limit: u64,
 }
 
+/// Cartes de chaleur d'un build : par case (`F4`), combien de fois le pion de l'équipe y est arrivé
+/// et combien de fois elle l'a détruite. Une case jamais touchée n'y figure pas.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Heatmap {
+    /// `null` pour les bots du ladder.
+    pub build: Option<String>,
+    pub games: u64,
+    pub moves: BTreeMap<String, u64>,
+    pub blocks: BTreeMap<String, u64>,
+}
+
 /// Une soumission de jar et son verdict.
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -187,6 +230,7 @@ pub fn check(stat: crate::db::Stat, json: &str) {
         Stat::Builds => parse::<Vec<BuildRecord>>(json),
         Stat::Ratings => parse::<Vec<RatingPoint>>(json),
         Stat::MoveTimes => parse::<Vec<MoveTimes>>(json),
+        Stat::Heatmap => parse::<Vec<Heatmap>>(json),
         Stat::Submissions => parse::<Vec<SubmissionRecord>>(json),
     }
 }

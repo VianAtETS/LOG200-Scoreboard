@@ -5,6 +5,8 @@
 set -uo pipefail
 if [ -z "${1:-}" ]; then
     ids=$(docker ps -aq --filter label=isolation-ladder)
+    # Une id par mot : la separation est voulue
+    # shellcheck disable=SC2086
     [ -n "$ids" ] && docker rm -f $ids >/dev/null
     rm -rf "${SANDBOX_RUNDIR:?}"/*
 else

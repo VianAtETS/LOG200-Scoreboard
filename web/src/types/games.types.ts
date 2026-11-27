@@ -59,7 +59,12 @@ export type TGame = Omit<TGameRow, 'moves' | 'node'> & {
   opening?: string[];
   moves: string[];
   move_ms?: number[];
+  // Mesures publiques des bots du ladder, une par coup de leur couleur.
+  measures?: Partial<Record<TColor, TMeasure[]>>;
 };
+
+// Ligne ARENA d'un coup : profondeur terminée (absente sans recherche) et positions visitées.
+export type TMeasure = { depth?: number; nodes: number };
 
 // Partie en cours dans live.json.
 export type TRunningGame = {
@@ -67,4 +72,23 @@ export type TRunningGame = {
   red: string;
   black: string;
   tournament?: TTournamentRef;
+};
+
+// Un côté d'un duel : l'équipe et son build, absent pour toutes ses versions.
+export type TDuelSide = { team: string; build?: string };
+
+// Une paire complète du ladder (GET /api/stats/pairs) : deux parties, même ouverture, couleurs inversées.
+export type TDuelPair = {
+  games: [string, string];
+  winners: [string, string];
+  opening: string[];
+};
+
+// Cartes de chaleur d'un build (GET /api/stats/heatmap) : par case (`F4`), arrivées du pion et cases
+// détruites. Une case jamais touchée n'y figure pas ; `build` vaut null pour les bots du ladder.
+export type THeatmap = {
+  build: string | null;
+  games: number;
+  moves: Record<string, number>;
+  blocks: Record<string, number>;
 };

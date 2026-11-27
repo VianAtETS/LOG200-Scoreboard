@@ -1,24 +1,39 @@
 //! Base SQLite du ladder, source de vérité des parties et des soumissions. Les requêtes sont dans
 //! `sql/`, le schéma dans `sql/schema.sql` (décrit dans docs/formats.md).
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use rusqlite::{Connection, OpenFlags, named_params};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior, named_params};
 
 use isolation_core::board::Color;
 use isolation_core::record::{GameRecord, Jsonl};
 
-const SCHEMA_VERSION: i64 = 1;
+use crate::profile::{Profile, TemplateShare};
+
+const SCHEMA_VERSION: i64 = 2;
 
 mod sql {
     pub const SCHEMA: &str = include_str!("sql/schema.sql");
+    pub const MIGRATE_V2: &str = include_str!("sql/migrate_v2.sql");
+    pub const UNPAIRED: &str = include_str!("sql/unpaired.sql");
+    pub const SET_PAIR: &str = include_str!("sql/set_pair.sql");
+    pub const PAIR_GAME: &str = include_str!("sql/pair_game.sql");
+    pub const DUEL_PAIRS: &str = include_str!("sql/duel_pairs.sql");
+    pub const PROFILING: &str = include_str!("sql/profiling.sql");
+    pub const SET_PROFILING: &str = include_str!("sql/set_profiling.sql");
+    pub const PROFILED_BUILDS: &str = include_str!("sql/profiled_builds.sql");
     pub const IS_EMPTY: &str = include_str!("sql/is_empty.sql");
     pub const GAMES: &str = include_str!("sql/games.sql");
     pub const GAME: &str = include_str!("sql/game.sql");
     pub const GAMES_FILTER: &str = include_str!("sql/games_filter.sql");
     pub const INSERT_GAME: &str = include_str!("sql/insert_game.sql");
+    pub const INSERT_PROFILE: &str = include_str!("sql/insert_profile.sql");
+    pub const PROFILE: &str = include_str!("sql/profile.sql");
+    pub const DELETE_PROFILES: &str = include_str!("sql/delete_profiles.sql");
+    pub const TEMPLATE_SHARES: &str = include_str!("sql/template_shares.sql");
     pub const INSERT_MOVE: &str = include_str!("sql/insert_move.sql");
     pub const INSERT_RATING: &str = include_str!("sql/insert_rating.sql");
     pub const CLEAR_RATINGS: &str = include_str!("sql/clear_ratings.sql");
@@ -35,6 +50,7 @@ pub enum Stat {
     Builds,
     Ratings,
     MoveTimes,
+    Heatmap,
     Submissions,
 }
 
@@ -47,6 +63,7 @@ impl Stat {
             Self::Builds => include_str!("sql/stats_builds.sql"),
             Self::Ratings => include_str!("sql/stats_ratings.sql"),
             Self::MoveTimes => include_str!("sql/stats_move_times.sql"),
+            Self::Heatmap => include_str!("sql/stats_heatmap.sql"),
             Self::Submissions => include_str!("sql/stats_submissions.sql"),
         }
     }
@@ -69,6 +86,29 @@ pub struct GameFilter {
     /// L'id d'une partie : seules celles jouées avant elle, pour remonter page par page en passant
     /// l'id de la première ligne reçue. Un id inconnu donne une réponse vide.
     pub before: Option<String>,
+}
+
+/// Le duel de `/api/stats/pairs` : deux équipes et, facultatifs, leurs builds.
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PairFilter {
+    /// Une équipe (`eq07`).
+    pub a: String,
+    /// L'autre équipe (`eq12`).
+    pub b: String,
+    /// Le build de `a` (`3f9c2a1b`) ; absent : toutes ses versions.
+    pub build_a: Option<String>,
+    /// Le build de `b` ; absent : toutes ses versions.
+    pub build_b: Option<String>,
+}
+
+/// Choix d'une équipe pour un build : `private` profile son jar, `public` publie en plus la part du
+/// gabarit (et demande `private`). Les deux désactivés par défaut, pour chaque nouveau build.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema, Clone, Copy, Default, PartialEq, Eq, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Profiling {
+    pub private: bool,
+    pub public: bool,
 }
 
 /// Rating d'une équipe après une partie : `[rating, variation]`, toutes sessions puis dans la session.
@@ -102,13 +142,30 @@ fn to_json<T: serde::Serialize>(value: &T) -> rusqlite::Result<String> {
 }
 
 impl Db {
-    pub fn open(path: &Path) -> rusqlite::Result<Self> {
-        let conn = Connection::open(path)?;
+    /// Refuse une base écrite par un binaire plus récent : la réécrire en version courante la
+    /// corromprait sans bruit. Un retour arrière passe par une restauration `.backup`. Une base v1
+    /// passe en v2 d'un bloc ; la transaction immédiate la réserve au premier des processus qui
+    /// l'ouvrent (le ladder, le formulaire de soumission).
+    pub fn open(path: &Path) -> anyhow::Result<Self> {
+        let mut conn = Connection::open(path)?;
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
-        conn.execute_batch(sql::SCHEMA)?;
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let found: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        anyhow::ensure!(
+            found <= SCHEMA_VERSION,
+            "base v{found}, binaire v{SCHEMA_VERSION} : ce binaire est plus ancien que la base"
+        );
+        if found == 1 {
+            tx.execute_batch(sql::MIGRATE_V2)?;
+        }
+        tx.execute_batch(sql::SCHEMA)?;
+        if found == 1 {
+            pair_history(&tx)?;
+        }
+        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        tx.commit()?;
         Ok(Self { conn })
     }
 
@@ -129,10 +186,56 @@ impl Db {
         self.conn.query_row(sql::IS_EMPTY, [], |r| r.get(0))
     }
 
-    pub fn insert_game(&self, game: &GameRecord) -> rusqlite::Result<()> {
+    /// `after` : l'id de la première partie de sa paire, si elle a été enregistrée.
+    pub fn insert_game(&self, game: &GameRecord, after: Option<&str>, profiles: &[Profile]) -> rusqlite::Result<()> {
         let tx = self.conn.unchecked_transaction()?;
-        insert(&tx, game)?;
+        let seq = insert(&tx, game)?;
+        tx.prepare_cached(sql::PAIR_GAME)?
+            .execute(named_params! { ":seq": seq, ":after": after })?;
+        let mut stmt = tx.prepare_cached(sql::INSERT_PROFILE)?;
+        for p in profiles {
+            stmt.execute(named_params! {
+                ":game": seq,
+                ":color": name(&p.color),
+                ":team": p.team,
+                ":build": p.build,
+                ":turns": p.segments,
+                ":moves": p.moves,
+                ":overhead_ms": p.overhead_ms,
+                ":tree": to_json(&p.tree)?,
+                ":arena": to_json(&p.arena)?,
+                ":template": p.template.as_ref().map(to_json).transpose()?,
+            })?;
+        }
+        drop(stmt);
         tx.commit()
+    }
+
+    /// Le profil de `team` dans la partie `id`, en JSON ; `None` si elle n'y en a pas.
+    pub fn profile_json(&self, id: &str, team: &str) -> rusqlite::Result<Option<String>> {
+        let mut stmt = self.conn.prepare_cached(sql::PROFILE)?;
+        let mut rows = stmt.query(named_params! { ":id": id, ":team": team })?;
+        rows.next()?.map(|r| r.get(0)).transpose()
+    }
+
+    /// Supprime tous les profils de `team` ; rend leur nombre.
+    pub fn delete_profiles(&self, team: &str) -> rusqlite::Result<usize> {
+        self.conn
+            .prepare_cached(sql::DELETE_PROFILES)?
+            .execute(named_params! { ":team": team })
+    }
+
+    /// Les parts du gabarit de ce build, si l'équipe le publie ; aucune sinon.
+    pub fn template_shares(&self, team: &str, build: &str) -> rusqlite::Result<Vec<TemplateShare>> {
+        let mut stmt = self.conn.prepare_cached(sql::TEMPLATE_SHARES)?;
+        let rows = stmt.query_map(named_params! { ":team": team, ":build": build }, |r| {
+            r.get::<_, String>(0)
+        })?;
+        rows.map(|text| {
+            serde_json::from_str(&text?)
+                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
+        })
+        .collect()
     }
 
     /// Toutes les parties, dans l'ordre où elles ont été jouées.
@@ -171,6 +274,46 @@ impl Db {
         Ok(out)
     }
 
+    /// Les paires complètes du duel, en un tableau JSON.
+    pub fn duel_pairs(&self, filter: &PairFilter) -> rusqlite::Result<String> {
+        self.conn.prepare_cached(sql::DUEL_PAIRS)?.query_row(
+            named_params! {
+                ":a": filter.a,
+                ":b": filter.b,
+                ":build_a": filter.build_a,
+                ":build_b": filter.build_b,
+            },
+            |r| r.get(0),
+        )
+    }
+
+    pub fn profiling(&self, team: &str, build: &str) -> rusqlite::Result<Profiling> {
+        let mut stmt = self.conn.prepare_cached(sql::PROFILING)?;
+        let mut rows = stmt.query(named_params! { ":team": team, ":build": build })?;
+        rows.next()?.map_or(Ok(Profiling::default()), |r| {
+            Ok(Profiling {
+                private: r.get(0)?,
+                public: r.get(1)?,
+            })
+        })
+    }
+
+    pub fn set_profiling(&self, team: &str, build: &str, choice: Profiling) -> rusqlite::Result<()> {
+        self.conn.prepare_cached(sql::SET_PROFILING)?.execute(named_params! {
+            ":team": team,
+            ":build": build,
+            ":private": choice.private,
+            ":public": choice.public,
+        })?;
+        Ok(())
+    }
+
+    /// Les builds profilés, `(équipe, build)` : ils ne jouent pas sur les nœuds.
+    pub fn profiled_builds(&self) -> rusqlite::Result<HashSet<(String, String)>> {
+        let mut stmt = self.conn.prepare_cached(sql::PROFILED_BUILDS)?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()
+    }
+
     /// `session` absente : toutes les sessions hors tournois. `team` ne sert qu'aux statistiques d'une équipe.
     pub fn stats(&self, which: Stat, session: Option<&str>, team: Option<&str>) -> rusqlite::Result<String> {
         let mut stmt = self.conn.prepare_cached(which.sql())?;
@@ -194,6 +337,7 @@ impl Db {
         for game in &jsonl.games {
             insert(&tx, game)?;
         }
+        pair_history(&tx)?;
         tx.commit()?;
         Ok(jsonl.games.len())
     }
@@ -252,7 +396,8 @@ impl Db {
     }
 }
 
-fn insert(conn: &Connection, game: &GameRecord) -> rusqlite::Result<()> {
+/// Insère la partie et ses coups, sans paire ; rend son `seq`.
+fn insert(conn: &Connection, game: &GameRecord) -> rusqlite::Result<i64> {
     let result = &game.result;
     let tournament = game.tournament.as_ref();
     conn.prepare_cached(sql::INSERT_GAME)?.execute(named_params! {
@@ -291,7 +436,59 @@ fn insert(conn: &Connection, game: &GameRecord) -> rusqlite::Result<()> {
             ":ms": result.move_ms.get(ply),
         })?;
     }
+    Ok(seq)
+}
+
+/// Une partie du ladder sans paire, telle que `pair_history` la lit.
+struct Unpaired {
+    seq: i64,
+    red: String,
+    black: String,
+    opening: String,
+}
+
+/// Apparie les parties du ladder qui n'ont pas de paire : l'historique d'une base v1 et les parties
+/// importées de `games.jsonl`. Le ladder écrit la paire en direct depuis la v2.
+fn pair_history(conn: &Connection) -> rusqlite::Result<()> {
+    let games = conn
+        .prepare(sql::UNPAIRED)?
+        .query_map([], |r| {
+            Ok(Unpaired {
+                seq: r.get(0)?,
+                red: r.get(1)?,
+                black: r.get(2)?,
+                opening: r.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut set = conn.prepare(sql::SET_PAIR)?;
+    for (seq, pair) in pairing(&games) {
+        set.execute(named_params! { ":seq": seq, ":pair": pair })?;
+    }
     Ok(())
+}
+
+/// `(seq, pair)` de chaque partie, `pair` étant le `seq` de la première de sa paire. Une partie et
+/// la suivante des deux mêmes équipes (le `seq` est entrelacé par les slots) forment une paire si
+/// elles ont la même ouverture et les couleurs inversées ; sinon la partie reste seule.
+fn pairing(games: &[Unpaired]) -> Vec<(i64, i64)> {
+    let mut waiting: HashMap<[&str; 2], &Unpaired> = HashMap::new();
+    let mut pairs = Vec::with_capacity(games.len());
+    for game in games {
+        let mut teams = [game.red.as_str(), game.black.as_str()];
+        teams.sort_unstable();
+        match waiting.remove(&teams) {
+            Some(first) if first.opening == game.opening && first.red == game.black => {
+                pairs.extend([(first.seq, first.seq), (game.seq, first.seq)]);
+            }
+            previous => {
+                pairs.extend(previous.map(|alone| (alone.seq, alone.seq)));
+                waiting.insert(teams, game);
+            }
+        }
+    }
+    pairs.extend(waiting.into_values().map(|alone| (alone.seq, alone.seq)));
+    pairs
 }
 
 fn insert_rating(conn: &Connection, r: &Rating) -> rusqlite::Result<()> {
@@ -326,6 +523,7 @@ pub(crate) mod tests {
             black: player(black),
             tournament: None,
             node: None,
+            measures: None,
             result: GameResult {
                 v: RECORD_VERSION,
                 time_ms: 500,
@@ -345,6 +543,268 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_newer_database_is_refused_and_left_untouched() {
+        let path = std::env::temp_dir().join(format!("isolation-db-newer-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        Connection::open(&path)
+            .unwrap()
+            .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
+        let error = Db::open(&path)
+            .err()
+            .expect("a newer database must be refused")
+            .to_string();
+        assert!(error.contains(&format!("v{}", SCHEMA_VERSION + 1)), "{error}");
+        let version: i64 = Connection::open(&path)
+            .unwrap()
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION + 1);
+        Db::open(Path::new(":memory:")).unwrap();
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn profiling_is_chosen_per_build_and_public_needs_private() {
+        let db = memory();
+        assert_eq!(
+            db.profiling("eq07", "h1").unwrap(),
+            Profiling::default(),
+            "désactivé par défaut"
+        );
+        let private = Profiling {
+            private: true,
+            public: false,
+        };
+        db.set_profiling("eq07", "h1", private).unwrap();
+        assert_eq!(db.profiling("eq07", "h1").unwrap(), private);
+        assert_eq!(
+            db.profiling("eq07", "h2").unwrap(),
+            Profiling::default(),
+            "un nouveau build repart désactivé"
+        );
+        let both = Profiling {
+            private: true,
+            public: true,
+        };
+        db.set_profiling("eq07", "h1", both).unwrap();
+        assert_eq!(db.profiling("eq07", "h1").unwrap(), both);
+        assert!(
+            db.set_profiling(
+                "eq12",
+                "h9",
+                Profiling {
+                    private: false,
+                    public: true
+                }
+            )
+            .is_err()
+        );
+        db.set_profiling("eq12", "h9", Profiling::default()).unwrap();
+        let profiled = db.profiled_builds().unwrap();
+        assert_eq!(profiled, HashSet::from([("eq07".to_string(), "h1".to_string())]));
+    }
+
+    #[test]
+    fn profiles_are_written_with_their_game_or_not_at_all() {
+        use crate::profile::{Profile, TemplateShare, Tree};
+        let db = memory();
+        let profile = |color| Profile {
+            color,
+            team: "a".into(),
+            build: "h1".into(),
+            segments: 3,
+            moves: 4,
+            overhead_ms: 2,
+            tree: Tree {
+                samples: 40,
+                ..Tree::default()
+            },
+            arena: vec![isolation_core::record::Measure {
+                depth: Some(6),
+                nodes: 9,
+            }],
+            template: (color == Color::Black).then(|| TemplateShare {
+                samples: 40,
+                methods: [("Client.main".to_owned(), 1)].into(),
+            }),
+        };
+        let red = profile(Color::Red);
+        db.insert_game(&game("g1", "a", "b", Color::Red), None, &[red, profile(Color::Black)])
+            .unwrap();
+        let rows: Vec<(String, String, String, Option<String>)> = db
+            .conn()
+            .prepare(
+                "SELECT p.color || ' ' || g.id || ' ' || p.team || ' ' || p.build || ' '
+                        || p.turns || ' ' || p.moves || ' ' || p.overhead_ms, p.tree, p.arena, p.template
+                 FROM profiles p JOIN games g ON g.seq = p.game ORDER BY p.color DESC",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        let [(red, tree, arena, template), (black, _, _, published)] = &rows[..] else {
+            panic!("{rows:?}")
+        };
+        assert_eq!(
+            (red.as_str(), black.as_str()),
+            ("red g1 a h1 3 4 2", "black g1 a h1 3 4 2")
+        );
+        assert!(tree.starts_with(r#"{"samples":40,"#), "{tree}");
+        assert_eq!(arena, r#"[{"depth":6,"nodes":9}]"#);
+        assert_eq!(template, &None);
+        assert_eq!(
+            published.as_deref(),
+            Some(r#"{"samples":40,"methods":{"Client.main":1}}"#)
+        );
+
+        let served: crate::openapi::GameProfile =
+            serde_json::from_str(&db.profile_json("g1", "a").unwrap().unwrap()).unwrap();
+        assert_eq!(
+            (served.game.as_str(), served.color.as_str(), served.tree.samples),
+            ("g1", "black", 40)
+        );
+        assert_eq!(db.profile_json("g1", "b").unwrap(), None, "b n'a pas de profil");
+        assert!(db.template_shares("a", "h1").unwrap().is_empty(), "pas publié");
+        db.set_profiling(
+            "a",
+            "h1",
+            Profiling {
+                private: true,
+                public: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            db.template_shares("a", "h1").unwrap().len(),
+            1,
+            "le profil noir seulement"
+        );
+
+        let twice = [profile(Color::Red), profile(Color::Red)];
+        assert!(db.insert_game(&game("g2", "a", "b", Color::Red), None, &twice).is_err());
+        assert!(db.game_json("g2").unwrap().is_none(), "ni la partie sans ses profils");
+    }
+
+    /// Chaque partie et l'id de la première partie de sa paire, dans l'ordre de jeu.
+    fn pairs(db: &Db) -> Vec<(String, Option<String>)> {
+        db.conn()
+            .prepare("SELECT g.id, f.id FROM games g LEFT JOIN games f ON f.seq = g.pair ORDER BY g.seq")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    fn expected(pairs: &[(&str, Option<&str>)]) -> Vec<(String, Option<String>)> {
+        pairs.iter().map(|(g, f)| ((*g).into(), f.map(Into::into))).collect()
+    }
+
+    fn tournament_game(id: &str, red: &str, black: &str) -> GameRecord {
+        let mut g = game(id, red, black, Color::Red);
+        g.tournament = Some(TournamentGame {
+            id: "t".into(),
+            match_id: "W1".into(),
+            game: 1,
+        });
+        g
+    }
+
+    #[test]
+    fn a_ladder_game_joins_the_first_game_of_its_pair() {
+        let db = memory();
+        db.insert_game(&game("g1", "a", "b", Color::Red), None, &[]).unwrap();
+        db.insert_game(&game("g2", "b", "a", Color::Red), Some("g1"), &[])
+            .unwrap();
+        db.insert_game(&game("g3", "a", "b", Color::Red), None, &[]).unwrap();
+        db.insert_game(&tournament_game("t1", "a", "b"), None, &[]).unwrap();
+        db.insert_game(&tournament_game("t2", "b", "a"), Some("t1"), &[])
+            .unwrap();
+        assert_eq!(
+            pairs(&db),
+            expected(&[
+                ("g1", Some("g1")),
+                ("g2", Some("g1")),
+                ("g3", Some("g3")),
+                ("t1", None),
+                ("t2", None),
+            ])
+        );
+    }
+
+    /// Ramène la base au schéma v1 : v2 n'y ajoute que la colonne `pair` et deux tables.
+    fn downgrade_to_v1(path: &Path) {
+        Connection::open(path)
+            .unwrap()
+            .execute_batch(
+                "DROP INDEX games_pair; ALTER TABLE games DROP COLUMN pair;
+                 DROP TABLE profiles; DROP TABLE profiling; PRAGMA user_version = 1;",
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn a_v1_history_is_paired_once() {
+        let path = std::env::temp_dir().join(format!("isolation-db-v1-{}.db", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let other = |g: &mut GameRecord| g.result.opening = vec!["A1-B2-C3".into(), "D4-E5-F6".into()];
+        let mut alone = game("alone", "a", "c", Color::Red);
+        other(&mut alone);
+        let same_colours = game("same-colours", "a", "b", Color::Red);
+        let mut other_opening = game("other-opening", "b", "a", Color::Red);
+        other(&mut other_opening);
+        {
+            let db = Db::open(&path).unwrap();
+            for g in [
+                game("p1", "a", "b", Color::Red),
+                game("q1", "c", "d", Color::Red),
+                tournament_game("t", "b", "a"),
+                game("p2", "b", "a", Color::Red),
+                game("q2", "d", "c", Color::Red),
+                alone,
+                game("r1", "a", "b", Color::Red),
+                game("r2", "b", "a", Color::Red),
+                game("lone", "a", "b", Color::Red),
+                same_colours,
+                other_opening,
+            ] {
+                db.insert_game(&g, None, &[]).unwrap();
+            }
+        }
+        downgrade_to_v1(&path);
+        let paired = expected(&[
+            ("p1", Some("p1")),
+            ("q1", Some("q1")),
+            ("t", None),
+            ("p2", Some("p1")),
+            ("q2", Some("q1")),
+            ("alone", Some("alone")),
+            ("r1", Some("r1")),
+            ("r2", Some("r1")),
+            ("lone", Some("lone")),
+            ("same-colours", Some("same-colours")),
+            ("other-opening", Some("other-opening")),
+        ]);
+        let db = Db::open(&path).unwrap();
+        assert_eq!(pairs(&db), paired);
+        let version: i64 = db
+            .conn()
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        pair_history(db.conn()).unwrap();
+        drop(db);
+        assert_eq!(
+            pairs(&Db::open(&path).unwrap()),
+            paired,
+            "une seconde exécution ne change rien"
+        );
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
     fn games_come_back_identical_and_in_order() {
         let db = memory();
         assert!(db.is_empty().unwrap());
@@ -357,8 +817,8 @@ pub(crate) mod tests {
             game: 2,
         });
         let second = game("g1", "b", "a", Color::Black);
-        db.insert_game(&first).unwrap();
-        db.insert_game(&second).unwrap();
+        db.insert_game(&first, None, &[]).unwrap();
+        db.insert_game(&second, None, &[]).unwrap();
         assert!(!db.is_empty().unwrap());
         assert_eq!(db.games().unwrap(), vec![first.clone(), second]);
         let json: GameRecord = serde_json::from_str(&db.game_json("g2").unwrap().unwrap()).unwrap();
@@ -371,7 +831,7 @@ pub(crate) mod tests {
         let db = memory();
         assert_eq!(db.games_jsonl(&GameFilter::default(), 2).unwrap(), "");
         for id in ["g1", "g2", "g3"] {
-            db.insert_game(&game(id, "a", "b", Color::Red)).unwrap();
+            db.insert_game(&game(id, "a", "b", Color::Red), None, &[]).unwrap();
         }
         let ids: Vec<String> = db
             .games_jsonl(&GameFilter::default(), 2)
@@ -385,7 +845,7 @@ pub(crate) mod tests {
     #[test]
     fn columns_and_moves_are_queryable() {
         let db = memory();
-        db.insert_game(&game("g1", "a", "b", Color::Black)).unwrap();
+        db.insert_game(&game("g1", "a", "b", Color::Black), None, &[]).unwrap();
         let (winner, reason, plies, invalid): (String, String, i64, i64) = db
             .conn()
             .query_row(
@@ -414,8 +874,8 @@ pub(crate) mod tests {
     #[test]
     fn duplicate_ids_are_refused() {
         let db = memory();
-        db.insert_game(&game("g1", "a", "b", Color::Red)).unwrap();
-        assert!(db.insert_game(&game("g1", "a", "b", Color::Red)).is_err());
+        db.insert_game(&game("g1", "a", "b", Color::Red), None, &[]).unwrap();
+        assert!(db.insert_game(&game("g1", "a", "b", Color::Red), None, &[]).is_err());
         assert_eq!(db.games().unwrap().len(), 1);
     }
 
@@ -429,6 +889,7 @@ pub(crate) mod tests {
         let db = memory();
         assert_eq!(db.import_jsonl(&path).unwrap(), 2);
         assert_eq!(db.games().unwrap(), games);
+        assert_eq!(pairs(&db), expected(&[("g1", Some("g1")), ("g2", Some("g1"))]));
         let _ = fs::remove_file(&path);
     }
 
@@ -477,9 +938,81 @@ pub(crate) mod tests {
             game: 1,
         });
         for g in [g1, g2, g3, g4] {
-            db.insert_game(&g).unwrap();
+            db.insert_game(&g, None, &[]).unwrap();
         }
         db
+    }
+
+    /// Les paires de `duel_pairs`, chacune par ses deux ids de partie.
+    fn duel(db: &Db, a: &str, b: &str, build_a: Option<&str>, build_b: Option<&str>) -> Vec<[String; 2]> {
+        let filter = PairFilter {
+            a: a.into(),
+            b: b.into(),
+            build_a: build_a.map(Into::into),
+            build_b: build_b.map(Into::into),
+        };
+        let json = db.duel_pairs(&filter).unwrap();
+        let pairs: Vec<crate::openapi::DuelPair> = serde_json::from_str(&json).unwrap();
+        pairs.into_iter().map(|p| p.games).collect()
+    }
+
+    #[test]
+    fn duel_pairs_are_the_complete_ladder_pairs_of_the_chosen_builds() {
+        let db = memory();
+        // `a` joue avec `build`, `b` avec `x` dans la paire p seulement.
+        let play = |id: &str, red: &str, black: &str, winner: Color, build: &str, after: Option<&str>| {
+            let mut g = game(id, red, black, winner);
+            for player in [&mut g.red, &mut g.black] {
+                player.build = Some(if player.team == "a" { build } else { "y" }.into());
+            }
+            if id.starts_with('p') {
+                let b = if red == "b" { &mut g.red } else { &mut g.black };
+                b.build = Some("x".into());
+            }
+            db.insert_game(&g, after, &[]).unwrap();
+        };
+        play("p1", "a", "b", Color::Red, "h1", None);
+        play("p2", "b", "a", Color::Black, "h1", Some("p1"));
+        play("m1", "a", "b", Color::Red, "h1", None);
+        play("m2", "b", "a", Color::Red, "h2", Some("m1"));
+        play("q1", "a", "b", Color::Black, "h2", None);
+        play("q2", "b", "a", Color::Red, "h2", Some("q1"));
+        play("alone", "a", "b", Color::Red, "h1", None);
+        play("c1", "a", "c", Color::Red, "h1", None);
+        play("c2", "c", "a", Color::Red, "h1", Some("c1"));
+        db.insert_game(&tournament_game("t1", "a", "b"), None, &[]).unwrap();
+        db.insert_game(&tournament_game("t2", "b", "a"), Some("t1"), &[])
+            .unwrap();
+
+        let ids = |pairs: &[[&str; 2]]| -> Vec<[String; 2]> { pairs.iter().map(|p| p.map(Into::into)).collect() };
+        assert_eq!(
+            duel(&db, "a", "b", None, None),
+            ids(&[["q1", "q2"], ["m1", "m2"], ["p1", "p2"]]),
+            "toutes les versions, la plus récente d'abord"
+        );
+        assert_eq!(duel(&db, "a", "b", Some("h1"), None), ids(&[["p1", "p2"]]));
+        assert_eq!(duel(&db, "a", "b", Some("h2"), Some("y")), ids(&[["q1", "q2"]]));
+        assert_eq!(duel(&db, "b", "a", Some("x"), Some("h1")), ids(&[["p1", "p2"]]));
+        assert_eq!(duel(&db, "a", "d", None, None), ids(&[]));
+
+        let json: serde_json::Value = serde_json::from_str(
+            &db.duel_pairs(&PairFilter {
+                a: "b".into(),
+                b: "a".into(),
+                build_a: Some("x".into()),
+                build_b: None,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!([{
+                "games": ["p1", "p2"],
+                "winners": ["a", "a"],
+                "opening": ["G1-I1-C12", "F12-D10-F1"],
+            }])
+        );
     }
 
     fn stat(db: &Db, stat: Stat, session: Option<&str>, team: Option<&str>) -> serde_json::Value {
@@ -629,7 +1162,7 @@ pub(crate) mod tests {
         slow.red.build = Some("h1".into());
         slow.node = Some("node-a".into());
         slow.result.move_ms = vec![900, 20, 900];
-        db.insert_game(&slow).unwrap();
+        db.insert_game(&slow, None, &[]).unwrap();
         assert_eq!(
             stat(&db, Stat::MoveTimes, None, Some("a")),
             serde_json::json!([
@@ -637,6 +1170,24 @@ pub(crate) mod tests {
                 {"build": "h2", "moves": 2, "avg_ms": 20, "max_ms": 30, "near_limit": 0},
             ])
         );
+    }
+
+    #[test]
+    fn heatmap_counts_where_each_build_moved_and_destroyed() {
+        let db = league();
+        // g1 en rouge et g2 en noir pour h1, g3 pour h2 ; le tournoi g4 n'est pas compté.
+        assert_eq!(
+            stat(&db, Stat::Heatmap, None, Some("a")),
+            serde_json::json!([
+                {"build": "h1", "games": 2, "moves": {"F4": 2, "F6": 1}, "blocks": {"A7": 2, "F10": 1}},
+                {"build": "h2", "games": 1, "moves": {"F4": 1, "F6": 1}, "blocks": {"A7": 1, "F10": 1}},
+            ])
+        );
+        assert_eq!(
+            stat(&db, Stat::Heatmap, None, Some("c")),
+            serde_json::json!([{"build": null, "games": 1, "moves": {"C10": 1}, "blocks": {"I7": 1}}])
+        );
+        assert_eq!(stat(&db, Stat::Heatmap, None, Some("z")), serde_json::json!([]));
     }
 
     #[test]

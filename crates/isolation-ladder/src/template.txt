@@ -1,0 +1,20 @@
+# Méthodes du code de départ du cours (Client.java, GameConnection.java), telles que le profileur
+# les nomme : classe sans son paquetage, classe imbriquée après `$`, constructeur `<init>`. Les
+# surcharges portent le même nom. Seules ces méthodes ont une part publique (spec-analyse-isola.md).
+Client.main
+Client.readBoard
+GameConnection.<init>
+GameConnection.readGameInfo
+GameConnection.parseGameInfo
+GameConnection.readMessage
+GameConnection.sendMove
+GameConnection.close
+GameConnection$Message.<init>
+GameConnection$Message.getCommand
+GameConnection$Message.getData
+GameConnection$GameInfo.<init>
+GameConnection$GameInfo.getProtocolVersion
+GameConnection$GameInfo.getRows
+GameConnection$GameInfo.getCols
+GameConnection$GameInfo.getMaxMoveTime
+GameConnection$GameInfo.getSide

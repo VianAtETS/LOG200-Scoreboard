@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use isolation_core::board::{Color, Move};
 use isolation_core::record::{GameRecord, Player, Reason, TournamentGame, rfc3339_at};
 
-use crate::arena::{Arena, Fixture, GameError};
+use crate::arena::{Arena, Finished, Fixture, GameError};
 use crate::config::Config;
 use crate::hub::Hub;
 use crate::placement::{Lease, PairClass, SlotKind};
@@ -41,8 +41,10 @@ pub enum Report {
     Played {
         red: String,
         black: String,
-        outcome: Result<GameRecord, GameError>,
+        outcome: Result<Finished, GameError>,
         game: Option<TournamentGame>,
+        /// L'id de la première partie de sa paire du ladder, si elle a été enregistrée.
+        after: Option<String>,
     },
     /// Ce build a dépassé son temps sur un nœud : il n'y retourne plus.
     NodeTimeout {
@@ -92,15 +94,17 @@ pub fn live_hub(reports: &Sender<Report>) -> Arc<Hub> {
 pub fn spawn_pair(arena: Arc<Arena>, lease: Lease, a: Team, b: Team, opening: Vec<Move>, reports: Sender<Report>) {
     thread::spawn(move || {
         let mut slot = Some(&lease);
+        let mut first: Option<String> = None;
         for (red, black) in [(&a, &b), (&b, &a)] {
-            let (retry, timed_out) = play_and_report(&arena, slot, &reports, red, black, &opening, None);
-            if timed_out {
+            let played = play_and_report(&arena, slot, &reports, [red, black], &opening, None, first.take());
+            first = played.id;
+            if played.timed_out {
                 slot = None;
             }
             if arena.draining() {
                 break;
             }
-            if let Some(delay) = retry {
+            if let Some(delay) = played.retry {
                 thread::sleep(delay);
             }
         }
@@ -124,16 +128,16 @@ pub fn spawn_game(arena: Arc<Arena>, lease: Lease, p: Pending, reports: Sender<R
             time_ms: p.time_ms,
             forfeit_counts: p.forfeit_counts,
         };
-        let (retry, _) = play_and_report(
+        let played = play_and_report(
             &arena,
             Some(&lease),
             &reports,
-            &p.red,
-            &p.black,
+            [&p.red, &p.black],
             &p.opening,
             Some(&fixture),
+            None,
         );
-        if let Some(delay) = retry {
+        if let Some(delay) = played.retry {
             thread::sleep(delay);
         }
         report_done(&reports, p.red, p.black, lease);
@@ -170,17 +174,27 @@ fn node_timeout(record: &GameRecord) -> Option<&Player> {
     (record.result.reason == Reason::Timeout).then_some(loser)
 }
 
-/// Joue une partie, sur `lease` ou, sans bail, sur un slot du serveur principal. Rend l'attente
-/// avant la suivante si elle a échoué, et vrai si un joueur a dépassé son temps sur un nœud.
+/// Issue d'une partie pour le thread qui l'a jouée.
+struct Played {
+    /// L'attente avant la suivante, si elle a échoué.
+    retry: Option<Duration>,
+    /// Un joueur a dépassé son temps sur un nœud.
+    timed_out: bool,
+    /// Son id, si elle est enregistrée.
+    id: Option<String>,
+}
+
+/// Joue une partie, sur `lease` ou, sans bail, sur un slot du serveur principal. `after` : l'id de
+/// la première partie de sa paire.
 fn play_and_report(
     arena: &Arena,
     lease: Option<&Lease>,
     reports: &Sender<Report>,
-    red: &Team,
-    black: &Team,
+    [red, black]: [&Team; 2],
     opening: &[Move],
     fixture: Option<&Fixture>,
-) -> (Option<Duration>, bool) {
+    after: Option<String>,
+) -> Played {
     let game = fixture.map(|f| f.game.clone());
     let _ = reports.send(Report::Started {
         red: red.id.clone(),
@@ -197,7 +211,7 @@ fn play_and_report(
         let other = elsewhere(arena)?;
         Some(arena.play(Some(&other), red, black, opening, fixture, live))
     });
-    let late = outcome.as_ref().ok().and_then(node_timeout).cloned();
+    let late = outcome.as_ref().ok().and_then(|f| node_timeout(&f.record)).cloned();
     let outcome = match &late {
         Some(player) => {
             eprintln!(
@@ -217,13 +231,19 @@ fn play_and_report(
         Err(GameError::NoShow(_)) => Some(NO_SHOW_RETRY_DELAY),
         Err(_) => Some(RETRY_DELAY),
     };
+    let id = outcome.as_ref().ok().map(|f| f.record.id.clone());
     let _ = reports.send(Report::Played {
         red: red.id.clone(),
         black: black.id.clone(),
         outcome,
         game,
+        after,
     });
-    (retry, late.is_some())
+    Played {
+        retry,
+        timed_out: late.is_some(),
+        id,
+    }
 }
 
 fn report_done(reports: &Sender<Report>, a: Team, b: Team, lease: Lease) {

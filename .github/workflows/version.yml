@@ -1,0 +1,39 @@
+# After a green CI on main: bumps the workspace version if the commits call for it, then tags any
+# untagged version and starts release.yml on it (.github/release.sh). Adapted from
+# github.com/Vianpyro/pals. A push made with GITHUB_TOKEN, like the bump commit, triggers no other
+# workflow: no loop with CI, and release.yml is started by a dispatch.
+name: Version
+
+# Runs only for a push to main (if: below), never for a pull request's CI, and checks out the commit
+# that CI tested.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: version
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      # The credentials stay: release.sh pushes the bump commit and the tag
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      # If main moved since this CI run, the bump push fails; the next run takes over
+      - run: bash .github/release.sh
+        env:
+          GH_TOKEN: ${{ github.token }}

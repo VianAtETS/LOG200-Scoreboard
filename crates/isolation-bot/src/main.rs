@@ -272,6 +272,15 @@ impl Game {
     }
 }
 
+/// La mesure d'un coup, au format de l'arène isola : le ladder la publie avec la partie. Une par
+/// coup joué, `depth` absent sans recherche ; aucune pour une sonde, que l'arbitre refuse.
+fn arena_line(depth: Option<u8>, nodes: u64) -> String {
+    match depth {
+        Some(depth) => format!("ARENA depth={depth} nodes={nodes}"),
+        None => format!("ARENA nodes={nodes}"),
+    }
+}
+
 #[expect(clippy::struct_excessive_bools, reason = "options de la ligne de commande")]
 struct Player {
     conn: LineConn,
@@ -302,6 +311,7 @@ impl Player {
             game.search.fallbacks += u32::from(depth == 0);
             game.search.deepest = game.search.deepest.max(depth);
         }
+        eprintln!("{}", arena_line(choice.depth, choice.nodes));
         self.send(game, Pending::Move(choice.mv))
     }
 

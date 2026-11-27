@@ -640,6 +640,7 @@ mod tests {
                 red: &red,
                 black: &black,
                 timeout,
+                profile: ByColor::default(),
             };
             tx.send(executor.run(&run, seen as Arc<dyn GameOutput>)).unwrap();
         });

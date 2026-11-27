@@ -2,6 +2,7 @@ import { NodeBadge, RemoteBadge } from '@/components/badge/badge';
 import { Board } from '@/components/board/board';
 import { FirstIcon, LastIcon, NextIcon, PauseIcon, PlayIcon, PrevIcon } from '@/components/icons/icons';
 import { squareName } from '@/lib/replay';
+import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import type { TColor, TGame } from '@/types/games.types';
 import type { TLiveGame } from '@/types/live.types';
@@ -81,6 +82,11 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
               'Choisissez une partie pour la rejouer.'
             ))}
         </p>
+        {game && (
+          <a className="share analyse-link" href={pageUrl('analyse.html', { game: game.id })}>
+            Analyser
+          </a>
+        )}
         <button id="share" className="share" type="button" aria-live="polite" onClick={share}>
           {shareLabel}
         </button>
@@ -180,4 +186,4 @@ const LiveInfo: FC<{ game: TLiveGame }> = ({ game: g }) => {
   );
 };
 
-export { ReplaySection };
+export { GameInfo, ReplaySection };

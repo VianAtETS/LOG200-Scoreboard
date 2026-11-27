@@ -4,7 +4,7 @@
 //! parties à un [`Executor`] et ne voit que le résultat, le direct et les journaux.
 
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
@@ -31,6 +31,8 @@ pub struct GameRun<'a> {
     pub red: &'a Team,
     pub black: &'a Team,
     pub timeout: Duration,
+    /// Couleurs dont le jar tourne avec le profileur, et une marge chez l'arbitre. Jamais sur un nœud.
+    pub profile: ByColor<bool>,
 }
 
 /// Ce que la partie produit en chemin, en plus de son résultat.
@@ -71,6 +73,7 @@ impl Executor for Local {
             opening: String::new(),
             game,
             time_ms: 0,
+            profile: ByColor::default(),
         };
         drop(CleanupGuard::new(&vars));
     }
@@ -83,6 +86,7 @@ impl Executor for Local {
             opening: notation::join(run.opening),
             game: run.id,
             time_ms: run.time_ms,
+            profile: run.profile,
         };
         let _cleanup = CleanupGuard::new(&vars);
         let referee = RefereeProcess::spawn(&vars, Arc::clone(&out))?;
@@ -135,6 +139,15 @@ impl Executor for Local {
 
 /// Au-delà, le journal d'un joueur est tronqué : un jar ne doit pas pouvoir remplir le disque.
 pub const LOG_CAP: usize = 1 << 20;
+const TRUNCATED: &str = "\n[journal tronqué]\n";
+/// Lignes de mesure, du profileur et `ARENA` : hors du plafond du journal, avec le leur, pour qu'un
+/// jar bavard ne les en chasse pas.
+const MEASURE_PREFIXES: [&[u8]; 2] = [b"prof ", b"ARENA "];
+const MEASURE_CAP: usize = 1 << 20;
+/// Taille maximale du fichier d'un joueur : journal, marque de troncature et mesures.
+pub const LOG_FILE_CAP: usize = LOG_CAP + TRUNCATED.len() + MEASURE_CAP;
+/// Au-delà, une ligne est découpée : une sortie sans fin de ligne ne remplit pas la mémoire.
+const MAX_LINE: u64 = 1 << 16;
 const MARKER_TIMEOUT: Duration = Duration::from_secs(60);
 const LOG_FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 /// Le client `docker run` d'un joueur absent a eu le temps de rendre son code de sortie.
@@ -339,6 +352,33 @@ impl Drop for LoggedPlayer {
     }
 }
 
+/// Copie la sortie d'erreur d'un joueur dans son journal, ligne par ligne : le journal plafonné à
+/// `LOG_CAP`, les lignes de mesure à `MEASURE_CAP`.
+fn copy_log(stderr: impl Read, log: &mut impl Write) {
+    let mut reader = BufReader::new(stderr);
+    let mut line = Vec::new();
+    let (mut kept, mut measured) = (0, 0);
+    loop {
+        line.clear();
+        if !matches!((&mut reader).take(MAX_LINE).read_until(b'\n', &mut line), Ok(1..)) {
+            break;
+        }
+        if MEASURE_PREFIXES.iter().any(|prefix| line.starts_with(prefix)) {
+            if measured + line.len() <= MEASURE_CAP {
+                let _ = log.write_all(&line);
+                measured += line.len();
+            }
+        } else if kept < LOG_CAP {
+            let take = line.len().min(LOG_CAP - kept);
+            let _ = log.write_all(&line[..take]);
+            kept += take;
+            if kept == LOG_CAP {
+                let _ = log.write_all(TRUNCATED.as_bytes());
+            }
+        }
+    }
+}
+
 fn spawn_logged(mut command: Command, log: &Path) -> io::Result<LoggedPlayer> {
     let mut file = File::create(log)?;
     let mut child = command.stdout(Stdio::null()).stderr(Stdio::piped()).spawn()?;
@@ -348,18 +388,9 @@ fn spawn_logged(mut command: Command, log: &Path) -> io::Result<LoggedPlayer> {
     let (done, written) = mpsc::channel();
     thread::spawn(move || {
         let _done = done;
-        let mut kept = 0;
-        let mut buf = [0u8; 8192];
-        while let Ok(n @ 1..) = stderr.read(&mut buf) {
-            if kept < LOG_CAP {
-                let take = n.min(LOG_CAP - kept);
-                let _ = file.write_all(&buf[..take]);
-                kept += take;
-                if kept == LOG_CAP {
-                    let _ = file.write_all("\n[journal tronqué]\n".as_bytes());
-                }
-            }
-        }
+        let mut log = BufWriter::new(&mut file);
+        copy_log(&mut stderr, &mut log);
+        let _ = log.flush();
     });
     Ok(LoggedPlayer {
         process: Some(Reaper(child)),
@@ -434,6 +465,7 @@ pub mod tests {
             red: &red,
             black: &black,
             timeout: Duration::from_secs(10),
+            profile: ByColor::default(),
         };
         let out = Arc::clone(&seen) as Arc<dyn GameOutput>;
         let game = Local::new(cfg).run(&run, out).unwrap();
@@ -498,6 +530,30 @@ pub mod tests {
     fn without_a_result_the_last_line_is_kept_for_the_error() {
         assert_eq!(result_of("{\"event\":\"ready\"}\nplantage\n").0, "plantage");
         assert_eq!(result_of("").0, "");
+    }
+
+    #[test]
+    fn measure_lines_escape_the_cap_of_a_chatty_log() {
+        let mut stderr = b"ARENA depth=1 nodes=10\n".to_vec();
+        for _ in 0..(2 * LOG_CAP / 100) {
+            stderr.extend_from_slice(&[b'x'; 99]);
+            stderr.push(b'\n');
+        }
+        stderr.extend_from_slice(b"ARENA depth=2 nodes=20\nprof n=3 t=30\nla fin\n");
+        let mut log = Vec::new();
+        copy_log(&stderr[..], &mut log);
+        let text = String::from_utf8(log).unwrap();
+        assert!(text.len() <= LOG_FILE_CAP, "{}", text.len());
+        assert_eq!(text.matches("[journal tronqué]").count(), 1);
+        let measures: Vec<&str> = text
+            .lines()
+            .filter(|l| l.starts_with("ARENA ") || l.starts_with("prof "))
+            .collect();
+        assert_eq!(
+            measures,
+            ["ARENA depth=1 nodes=10", "ARENA depth=2 nodes=20", "prof n=3 t=30"]
+        );
+        assert!(!text.contains("la fin"), "le reste du journal reste plafonné");
     }
 
     #[test]

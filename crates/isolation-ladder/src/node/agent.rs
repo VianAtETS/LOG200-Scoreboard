@@ -29,7 +29,7 @@ use isolation_core::record::RefereeEvent;
 use super::config::NodeConfig;
 use super::jars::JarCache;
 use super::protocol::{FromNode, Outcome, PROTOCOL, ToNode, WireGame, WirePlayer, is_sha256};
-use crate::exec::{Executor, GameOutput, GameRun, LOG_CAP, Local};
+use crate::exec::{Executor, GameOutput, GameRun, LOG_FILE_CAP, Local};
 use crate::roster::Team;
 use crate::sync::lock;
 use crate::thermal::Thermal;
@@ -506,6 +506,7 @@ impl Session<'_> {
                 red: &game.red,
                 black: &game.black,
                 timeout: game.timeout,
+                profile: ByColor::default(),
             };
             let outcome = match exec.run(&run, Arc::clone(&out) as Arc<dyn GameOutput>) {
                 Ok(result) => Outcome::Ok { result },
@@ -556,6 +557,7 @@ impl Session<'_> {
                         red: &game.red,
                         black: &game.black,
                         timeout: game.timeout,
+                        profile: ByColor::default(),
                     };
                     let played = exec.run(&run, Arc::clone(&out) as Arc<dyn GameOutput>);
                     out.take_logs();
@@ -613,7 +615,7 @@ impl NodeOutput {
         let take = |path: &Path| {
             let mut bytes = Vec::new();
             if let Ok(file) = fs::File::open(path) {
-                let _ = file.take(LOG_CAP as u64).read_to_end(&mut bytes);
+                let _ = file.take(LOG_FILE_CAP as u64).read_to_end(&mut bytes);
             }
             let _ = fs::remove_file(path);
             String::from_utf8_lossy(&bytes).into_owned()

@@ -5,8 +5,9 @@
 //   PORT=8899 node dev/golden-server.mjs  # port du serveur de données
 //
 // Sert /data (avec Range, comme Caddy), /api/games/<id>, /api/version, /api/health, /api/openapi.json
-// (vide), une fausse soumission de jar (PUT /api/submit) et un faux direct /api/live qui rejoue les
-// parties golden en boucle, coup par coup. S'y ajoutent un petit
+// (vide), une fausse soumission de jar (PUT /api/submit), un faux profileur (profil, /api/profiling,
+// /api/profiles, template-share), /api/stats/heatmap calculé sur les parties golden et un faux direct /api/live qui rejoue les parties golden en boucle,
+// coup par coup. S'y ajoutent un petit
 // tournoi, une file d'attente et live.json, absents des fixtures.
 
 import { spawn } from 'node:child_process';
@@ -150,7 +151,71 @@ function verdict(req, res, id) {
   text(res, `accepté : version ${job.hash}, en jeu dès la prochaine partie`);
 }
 
+// --- Faux profileur : tout token non vide est l'équipe rouge de la partie demandée ---------------
+// Token « aucun » : pas de profil (404). `public` publie une part du gabarit pour tous les builds.
+
+const profiling = { build: 'golden0000000000', private: false, public: false };
+let profiles = true;
+
+function bearer(req) {
+  return /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1]?.trim();
+}
+
+function profile(req, res, id) {
+  const token = bearer(req);
+  if (!token) return text(res, "token d'équipe absent ou inconnu", 401);
+  const g = games.get(id);
+  if (!g || !profiles || token === 'aucun') return text(res, 'aucun profil', 404);
+  const moves = Math.ceil(JSON.parse(g).moves.length / 2);
+  json(res, {
+    game: id, color: 'red', build: JSON.parse(g).red.build ?? 'golden', turns: moves - 1, moves, overhead_ms: 38,
+    tree: {
+      samples: 2480, sampled_ms: 24790, think_ms: token === 'douteux' ? 61200 : 25310, doubtful: token === 'douteux', rec: 9,
+      methods: { 'Client.main': [4, 2480], 'Ia.search': [1210, 2310], 'Ia.eval': [820, 820], 'Board.moves': [280, 280], 'GameConnection.readMessage': [12, 12], 'java.util.ArrayList.add': [154, 154] },
+      paths: {
+        'Client.main': 4, 'Client.main>GameConnection.readMessage': 12, 'Client.main>Ia.search': 1210, 'Client.main>Ia.search>Ia.eval': 820,
+        'Client.main>Ia.search>Board.moves': 280, 'Client.main>Ia.search>java.util.ArrayList.add': 140, 'Client.main>Board.moves>java.util.ArrayList.add': 14,
+      },
+    },
+    arena: Array.from({ length: moves }, (_, i) => ({ depth: 4 + (i % 5), nodes: 20000 + 1500 * i })),
+  });
+}
+
+function setProfiling(req, res) {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    const choice = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+    if (choice.public && !choice.private) return text(res, 'public demande private', 400);
+    Object.assign(profiling, { private: Boolean(choice.private), public: Boolean(choice.public) });
+    json(res, profiling);
+  });
+}
+
 // --- HTTP ----------------------------------------------------------------------------------------
+
+// Comme stats_heatmap.sql : par build de `team`, hors tournois, arrivées et cases détruites de ses coups.
+function heatmaps(team) {
+  const builds = new Map();
+  for (const g of lines.map((l) => JSON.parse(l))) {
+    if (g.tournament) continue;
+    for (const color of ['red', 'black']) {
+      if (g[color].team !== team) continue;
+      const build = g[color].build ?? null;
+      if (!builds.has(build)) builds.set(build, { build, games: 0, moves: {}, blocks: {} });
+      const h = builds.get(build);
+      h.games++;
+      // L'ouverture a un nombre pair de demi-coups : le rouge joue les coups pairs.
+      g.moves.forEach((m, i) => {
+        if ((i % 2 === 0) !== (color === 'red')) return;
+        const [, to, block] = m.split('-');
+        h.moves[to] = (h.moves[to] ?? 0) + 1;
+        h.blocks[block] = (h.blocks[block] ?? 0) + 1;
+      });
+    }
+  }
+  return [...builds.values()];
+}
 
 const types = { '.json': 'application/json', '.jsonl': 'application/x-ndjson' };
 
@@ -195,6 +260,21 @@ const server = createServer((req, res) => {
   if (p === '/api/submit' && req.method === 'PUT') return submit(req, res);
   if (p.startsWith('/api/submit/')) return verdict(req, res, p.slice('/api/submit/'.length));
   if (p === '/api/openapi.json') return json(res, { openapi: '3.1.0', info: { title: 'Ladder (golden)', version: '0' }, paths: {} });
+  if (/^\/api\/games\/[^/]+\/profile$/.test(p)) return profile(req, res, p.split('/')[3]);
+  if (p === '/api/profiling' || p === '/api/profiles') {
+    if (!bearer(req)) return text(res, "token d'équipe absent ou inconnu", 401);
+    if (req.method === 'PUT') return setProfiling(req, res);
+    if (req.method !== 'DELETE') return json(res, profiling);
+    const deleted = profiles ? 12 : 0;
+    profiles = false;
+    return json(res, { deleted });
+  }
+  if (p === '/api/stats/template-share') {
+    const q = new URL(req.url, 'http://x').searchParams;
+    if (!profiling.public) return text(res, 'aucune part publiée', 404);
+    return json(res, { team: q.get('team'), build: q.get('build'), games: 12, samples: 29760, methods: { 'Client.main': 0.2, 'GameConnection.readMessage': 0.5 }, others: 99.3 });
+  }
+  if (p === '/api/stats/heatmap') return json(res, heatmaps(new URL(req.url, 'http://x').searchParams.get('team')));
   if (p.startsWith('/api/games/')) {
     const g = games.get(p.slice('/api/games/'.length));
     return g ? json(res, g) : json(res, 'absent', 404);

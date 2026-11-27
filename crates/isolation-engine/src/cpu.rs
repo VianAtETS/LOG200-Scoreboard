@@ -39,6 +39,8 @@ pub struct Choice {
     /// Dernière profondeur terminée. `None` sans recherche, `Some(0)` si le temps a manqué : le coup
     /// est alors tiré au hasard.
     pub depth: Option<u8>,
+    /// Positions visitées par la recherche, tous fils confondus ; 0 sans recherche.
+    pub nodes: u64,
 }
 
 pub fn choose(board: &Board, color: Color, level: Level, deadline: Instant, rng: &mut impl Rng) -> Option<Choice> {
@@ -46,24 +48,29 @@ pub fn choose(board: &Board, color: Color, level: Level, deadline: Instant, rng:
     moves.shuffle(rng);
     let &first = moves.first()?;
     if moves.len() == 1 {
-        return Some(Choice { mv: first, depth: None });
+        return Some(Choice {
+            mv: first,
+            depth: None,
+            nodes: 0,
+        });
     }
     let mut board = board.clone();
     let mut search = Search::new(&board, color, level, Some(deadline));
-    let mut best = Choice {
-        mv: first,
-        depth: Some(0),
-    };
+    let (mut mv, mut found) = (first, 0);
     for depth in 2..=level.max_depth() {
-        let Some((mv, value)) = search.root(&mut board, &moves, depth) else {
+        let Some((best, value)) = search.root(&mut board, &moves, depth) else {
             break;
         };
-        best = Choice { mv, depth: Some(depth) };
+        (mv, found) = (best, depth);
         if value > WIN_FOUND {
             break;
         }
     }
-    Some(best)
+    Some(Choice {
+        mv,
+        depth: Some(found),
+        nodes: search.nodes,
+    })
 }
 
 /// Coups que le niveau 1 peut jouer : il s'arrête au premier coup gagnant de son mélange, sinon il
@@ -547,14 +554,7 @@ mod tests {
             let choice = choose(&board, Color::Red, level, Instant::now(), &mut StdRng::seed_from_u64(5)).unwrap();
             let mut moves = rules::legal_moves(&board, Color::Red);
             moves.shuffle(&mut StdRng::seed_from_u64(5));
-            assert_eq!(
-                choice,
-                Choice {
-                    mv: moves[0],
-                    depth: Some(0)
-                },
-                "{level:?}"
-            );
+            assert_eq!((choice.mv, choice.depth), (moves[0], Some(0)), "{level:?}");
         }
     }
 
@@ -570,7 +570,7 @@ mod tests {
                 deadline,
                 &mut StdRng::seed_from_u64(2),
             );
-            assert!(choice.is_some());
+            assert!(choice.is_some_and(|c| c.nodes > 0), "{level:?} : nœuds comptés");
             assert!(
                 start.elapsed() < Duration::from_millis(400),
                 "{level:?} : {:?}",
@@ -604,7 +604,8 @@ mod tests {
             choice,
             Some(Choice {
                 mv: moves[0],
-                depth: None
+                depth: None,
+                nodes: 0,
             })
         );
     }

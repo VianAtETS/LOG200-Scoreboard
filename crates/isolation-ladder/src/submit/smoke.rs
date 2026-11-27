@@ -8,7 +8,7 @@ use isolation_core::board::Color;
 use isolation_core::record::{GameResult, Reason};
 use isolation_core::rules::random_opening;
 
-use crate::arena::{Arena, GameError};
+use crate::arena::{Arena, Finished, GameError};
 use crate::config::SubmitConfig;
 use crate::roster::Team;
 use crate::team_id::TeamId;
@@ -109,7 +109,7 @@ pub fn smoke_test(arena: &Arena, submit: &SubmitConfig, id: &TeamId, jar: &Path,
         let opening = random_opening(cfg.opening_plies, &mut rand::rng());
         match arena.play(None, red, black, &opening, None, false) {
             Err(e) => return Verdict::Error(e),
-            Ok(record) => {
+            Ok(Finished { record, .. }) => {
                 if let Some(forfeit) = Forfeit::of(&record.result, side) {
                     let log = cfg.player_log(&record.id, &candidate.id);
                     return Verdict::Rejected(forfeit.with_stderr_of(&log));

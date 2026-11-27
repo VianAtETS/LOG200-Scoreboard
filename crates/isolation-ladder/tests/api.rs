@@ -207,6 +207,152 @@ fn submit_answers_with_the_status_and_reason_the_teams_ci_reads() {
 }
 
 #[test]
+fn profiling_is_chosen_with_the_team_token_for_its_active_build() {
+    let ladder = Ladder::start("profiling");
+    let token = ladder.add_team("eq01", REGISTRY);
+    let without_jar = ladder.add_team("eq02", REGISTRY);
+    let jar = jar();
+    install(&ladder.dir, "eq01", &jar);
+    let build = isolation_core::digest::short_hash(&jar);
+    let state = |private: bool, public: bool| format!(r#"{{"build":"{build}","private":{private},"public":{public}}}"#);
+
+    assert_eq!(ladder.request("GET", "/api/profiling", None, b"").0, 401);
+    assert_eq!(ladder.request("GET", "/api/profiling", Some(&without_jar), b"").0, 404);
+    assert_eq!(
+        ladder.request("GET", "/api/profiling", Some(&token), b""),
+        (200, state(false, false)),
+        "désactivé par défaut"
+    );
+    for refused in [
+        &br#"{"private":false,"public":true}"#[..],
+        br#"{"private":true}"#,
+        b"oui",
+    ] {
+        assert_eq!(ladder.request("PUT", "/api/profiling", Some(&token), refused).0, 400);
+    }
+    let on = br#"{"private":true,"public":false}"#;
+    assert_eq!(ladder.request("PUT", "/api/profiling", None, on).0, 401);
+    assert_eq!(
+        ladder.request("PUT", "/api/profiling", Some(&token), on),
+        (200, state(true, false))
+    );
+    assert_eq!(
+        ladder.request("GET", "/api/profiling", Some(&token), b""),
+        (200, state(true, false))
+    );
+
+    // Ni un cache partagé ni le navigateur ne gardent la réponse d'une équipe, refus compris.
+    for authorization in [format!("Authorization: Bearer {token}\r\n"), String::new()] {
+        let mut stream = TcpStream::connect(&ladder.submit).unwrap();
+        write!(
+            stream,
+            "GET /api/profiling HTTP/1.1\r\nHost: x\r\n{authorization}Connection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        let head = response.split_once("\r\n\r\n").unwrap().0.to_ascii_lowercase();
+        assert!(head.contains("cache-control: private, no-store"), "{head}");
+        assert!(head.contains("vary: authorization"), "{head}");
+    }
+}
+
+/// Status code, private-cache headers and whole body of a request.
+fn private_response(ladder: &Ladder, method: &str, path: &str, token: Option<&str>) -> (u16, bool, String) {
+    let mut stream = TcpStream::connect(&ladder.submit).unwrap();
+    let authorization = token.map_or_else(String::new, |t| format!("Authorization: Bearer {t}\r\n"));
+    write!(
+        stream,
+        "{method} {path} HTTP/1.1\r\nHost: x\r\n{authorization}Content-Length: 0\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let (head, body) = response.split_once("\r\n\r\n").unwrap();
+    let status = head.split(' ').nth(1).unwrap().parse().unwrap();
+    let head = head.to_ascii_lowercase();
+    let private = head.contains("cache-control: private, no-store") && head.contains("vary: authorization");
+    (status, private, body.to_owned())
+}
+
+#[test]
+fn a_team_reads_and_deletes_only_its_own_profiles() {
+    let ladder = Ladder::start("profiles");
+    let token = ladder.add_team("a", REGISTRY);
+    let other = ladder.add_team("b", REGISTRY);
+    let db = rusqlite::Connection::open(ladder.dir.join("state/ladder.db")).unwrap();
+    db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+    db.execute(
+        r#"INSERT INTO profiles (game, color, team, build, turns, moves, overhead_ms, tree, arena, template)
+           SELECT seq, 'red', 'a', 'h1', 2, 3, 1,
+                  '{"samples":40,"sampled_ms":400,"think_ms":500,"doubtful":false,"rec":2,"methods":{},"paths":{}}',
+                  '[{"depth":4,"nodes":10}]', '{"samples":40,"methods":{"Client.main":10}}'
+           FROM games WHERE id = 'g1'"#,
+        [],
+    )
+    .unwrap();
+    let profile = "/api/games/g1/profile";
+
+    // Même 404 pour une partie que l'équipe n'a pas jouée, sans profil, ou inconnue.
+    assert_eq!(private_response(&ladder, "GET", profile, None).0, 401);
+    assert_eq!(
+        private_response(&ladder, "GET", profile, Some(&other)),
+        (404, true, "aucun profil\n".into())
+    );
+    assert_eq!(
+        private_response(&ladder, "GET", "/api/games/absent/profile", Some(&token)).0,
+        404
+    );
+    let (status, private, body) = private_response(&ladder, "GET", profile, Some(&token));
+    assert_eq!((status, private), (200, true), "{body}");
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        (&json["game"], &json["color"], &json["build"]),
+        (&"g1".into(), &"red".into(), &"h1".into())
+    );
+    assert_eq!(json["tree"]["sampled_ms"], 400);
+    assert_eq!(json["arena"][0]["depth"], 4);
+    assert!(json.get("template").is_none(), "{json}");
+
+    // La part du gabarit n'est servie que si l'équipe publie ce build.
+    let share = "/api/stats/template-share?team=a&build=h1";
+    assert_eq!(ladder.request("GET", share, None, b"").0, 404);
+    db.execute(
+        "INSERT INTO profiling (team, build, private, public) VALUES ('a', 'h1', 1, 1)",
+        [],
+    )
+    .unwrap();
+    let (status, body) = ladder.request("GET", share, None, b"");
+    assert_eq!(status, 200, "{body}");
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!((&json["games"], &json["samples"]), (&1.into(), &40.into()));
+    assert_eq!(
+        (&json["methods"]["Client.main"], &json["others"]),
+        (&25.0.into(), &75.0.into())
+    );
+    assert_eq!(
+        ladder.request("GET", "/api/stats/template-share?team=a", None, b"").0,
+        400
+    );
+
+    assert_eq!(private_response(&ladder, "DELETE", "/api/profiles", None).0, 401);
+    assert_eq!(
+        private_response(&ladder, "DELETE", "/api/profiles", Some(&other)),
+        (200, true, r#"{"deleted":0}"#.into())
+    );
+    assert_eq!(
+        private_response(&ladder, "DELETE", "/api/profiles", Some(&token)),
+        (200, true, r#"{"deleted":1}"#.into())
+    );
+    assert_eq!(private_response(&ladder, "GET", profile, Some(&token)).0, 404);
+    assert_eq!(
+        ladder.request("GET", share, None, b"").0,
+        404,
+        "supprimée avec le profil"
+    );
+}
+
+#[test]
 fn live_sends_a_snapshot_first() {
     let ladder = Ladder::start("live");
     let (mut socket, response) = tungstenite::connect(format!("ws://{}/api/live", ladder.live)).unwrap();
@@ -302,9 +448,14 @@ fn stats_answer_in_json_for_fifteen_seconds() {
 
     assert_eq!(ladder.request("GET", "/api/stats/head-to-head", None, b"").0, 200);
     assert_eq!(ladder.request("GET", "/api/stats/openings", None, b"").0, 200);
+    assert_eq!(
+        ladder.request("GET", "/api/stats/pairs?a=a&b=b", None, b""),
+        (200, "[]".into())
+    );
+    assert_eq!(ladder.request("GET", "/api/stats/pairs?a=a", None, b"").0, 400);
     assert_eq!(ladder.request("GET", "/api/stats/builds?team=a", None, b"").0, 200);
     assert_eq!(ladder.request("GET", "/api/stats/builds", None, b"").0, 400);
-    for name in ["ratings", "move-times", "submissions"] {
+    for name in ["ratings", "move-times", "heatmap", "submissions"] {
         assert_eq!(
             ladder.request("GET", &format!("/api/stats/{name}?team=a"), None, b"").0,
             200
@@ -327,14 +478,20 @@ fn openapi_spec_lists_every_http_route() {
         [
             "/api/games",
             "/api/games/{id}",
+            "/api/games/{id}/profile",
             "/api/health",
+            "/api/profiles",
+            "/api/profiling",
             "/api/stats/builds",
             "/api/stats/head-to-head",
+            "/api/stats/heatmap",
             "/api/stats/move-times",
             "/api/stats/openings",
+            "/api/stats/pairs",
             "/api/stats/ratings",
             "/api/stats/submissions",
             "/api/stats/teams",
+            "/api/stats/template-share",
             "/api/submit",
             "/api/submit/{id}",
             "/api/version",

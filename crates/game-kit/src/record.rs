@@ -93,8 +93,33 @@ pub struct GameRecord {
     /// Nœud qui a joué la partie ; absent : le serveur principal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node: Option<String>,
+    /// Mesures publiques des bots du ladder ; absent sans bot mesuré.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measures: Option<Measures>,
     #[serde(flatten)]
     pub result: GameResult,
+}
+
+/// Mesures d'une partie, une par coup de la couleur, dans l'ordre de ses coups : seulement pour un
+/// bot du ladder, dont le code est public.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Measures {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub red: Vec<Measure>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub black: Vec<Measure>,
+}
+
+/// La ligne `ARENA` d'un coup.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Measure {
+    /// Dernière profondeur terminée ; absente sans recherche (coup forcé, sonde, bot sans recherche).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
+    /// Positions visitées pendant la recherche du coup.
+    pub nodes: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -270,6 +295,7 @@ mod tests {
             },
             tournament: None,
             node: None,
+            measures: None,
             result: GameResult {
                 v: RECORD_VERSION,
                 time_ms: 500,
@@ -319,6 +345,30 @@ mod tests {
         let line = serde_json::to_string(&on_node).unwrap();
         assert!(line.contains(r#""node":"node-a""#));
         assert_eq!(serde_json::from_str::<GameRecord>(&line).unwrap(), on_node);
+    }
+
+    #[test]
+    fn measures_are_absent_unless_a_bot_was_measured() {
+        assert!(!serde_json::to_string(&sample()).unwrap().contains("measures"));
+        let measured = GameRecord {
+            measures: Some(Measures {
+                red: vec![
+                    Measure {
+                        depth: Some(6),
+                        nodes: 1234,
+                    },
+                    Measure { depth: None, nodes: 0 },
+                ],
+                black: Vec::new(),
+            }),
+            ..sample()
+        };
+        let line = serde_json::to_string(&measured).unwrap();
+        assert!(
+            line.contains(r#""measures":{"red":[{"depth":6,"nodes":1234},{"nodes":0}]}"#),
+            "{line}"
+        );
+        assert_eq!(serde_json::from_str::<GameRecord>(&line).unwrap(), measured);
     }
 
     #[test]

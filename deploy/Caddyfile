@@ -21,7 +21,7 @@
 		path /api/* /data/*
 	}
 	handle @preflight {
-		header Access-Control-Allow-Methods "GET, PUT"
+		header Access-Control-Allow-Methods "GET, PUT, DELETE"
 		header Access-Control-Allow-Headers "Authorization, Content-Type, Range"
 		header Access-Control-Max-Age 86400
 		respond 204

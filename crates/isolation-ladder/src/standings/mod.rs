@@ -513,6 +513,7 @@ mod tests {
             black: player(black),
             tournament: None,
             node: None,
+            measures: None,
             result: GameResult {
                 v: RECORD_VERSION,
                 time_ms: 500,

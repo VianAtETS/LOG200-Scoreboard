@@ -3614,3 +3614,454 @@ details[open]>summary~* {
 .archived-row {
     color: var(--color-text-muted);
 }
+
+/* --- Page analyse ------------------------------------------------------------------------- */
+
+.analyse-link+.share {
+    margin-left: 0;
+}
+
+/* Plus précis que les grilles de .layout des media queries ; la page défile dans le gabarit. */
+.layout.analyse-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: none;
+    align-content: start;
+    overflow-y: auto;
+}
+
+@media (min-width: 960px) {
+    .layout.analyse-layout {
+        grid-template-columns: minmax(20rem, 5fr) minmax(0, 7fr);
+        grid-template-areas:
+            'head head'
+            'board charts'
+            'moves charts'
+            'stats stats'
+            'heat heat'
+            'profile profile';
+    }
+
+    .analyse-head {
+        grid-area: head;
+    }
+
+    .analyse-board {
+        grid-area: board;
+    }
+
+    .analyse-moves {
+        grid-area: moves;
+    }
+
+    .analyse-charts {
+        grid-area: charts;
+    }
+
+    .analyse-stats {
+        grid-area: stats;
+    }
+
+    .analyse-heat {
+        grid-area: heat;
+    }
+
+    .analyse-profile {
+        grid-area: profile;
+    }
+}
+
+/* Cartes de chaleur : deux plateaux par équipe, côte à côte tant que la place le permet. */
+.heat-sides,
+.heat-maps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+}
+
+.heat-side {
+    flex: 1 1 22rem;
+}
+
+.heat-side h3 {
+    margin: var(--space-3) 0 var(--space-2);
+    font-size: var(--font-size-base);
+}
+
+.heatmap {
+    flex: 1 1 10rem;
+    max-width: 280px;
+    margin: 0;
+}
+
+/* Pas la taille plein écran de .board, qui suit le conteneur du replay. */
+.heatmap .board {
+    width: 100%;
+}
+
+.heatmap figcaption {
+    margin-top: var(--space-1);
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.analyse-layout th {
+    position: static;
+}
+
+.analyse-layout td {
+    font-variant-numeric: tabular-nums;
+}
+
+.analyse-board {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+/* Profil : arbre d'appels d'isola, une grille par ligne pour que les colonnes s'alignent. */
+.analyse-profile h3 {
+    margin: var(--space-3) 0 var(--space-1);
+    font-size: var(--font-size-base);
+}
+
+.profile-facts {
+    margin: var(--space-2) 0;
+    padding-left: var(--space-5);
+}
+
+.profile-doubtful {
+    color: var(--color-warning);
+}
+
+.profile-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    align-items: end;
+    max-width: 40rem;
+}
+
+.profile-settings {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin-top: var(--space-3);
+}
+
+.profile-settings fieldset {
+    display: grid;
+    gap: var(--space-1);
+    flex-basis: 100%;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+button.link {
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--color-accent-text);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.ptree {
+    margin: var(--space-2) 0;
+    overflow-x: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+.prow {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) 6ch minmax(4rem, 10rem) 5ch 7ch;
+    gap: var(--space-2);
+    align-items: center;
+    padding: 1px var(--space-1);
+    text-align: right;
+}
+
+.prow.head {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.prow.leaf,
+.prow.more {
+    padding-left: calc(var(--space-1) + 0.45em + var(--space-2));
+}
+
+.prow.more {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+details>summary.prow {
+    cursor: pointer;
+}
+
+/* Le triangle des <details> ouvre la ligne sans décaler ses colonnes. */
+details>summary.prow::before {
+    position: absolute;
+    left: calc(var(--space-1) + var(--d, 0) * 1rem);
+}
+
+summary.prow {
+    position: relative;
+    padding-left: calc(var(--space-1) + 0.45em + var(--space-2));
+}
+
+summary.prow:hover {
+    background: var(--color-surface-hover);
+}
+
+.prow .fn {
+    padding-left: calc(var(--d, 0) * 1rem);
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.prow .fn small {
+    color: var(--color-text-muted);
+}
+
+.pbar i {
+    display: block;
+    height: 0.6em;
+    border-radius: 2px;
+}
+
+.pbar b {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+}
+
+/* Hors du plein écran du classement : la page défile, le plateau garde sa propre taille. */
+.analyse-board .board-wrap {
+    align-self: stretch;
+    container-type: normal;
+}
+
+.analyse-board .board {
+    width: min(100%, 440px);
+}
+
+.analyse-keys,
+.analyse-note,
+.analyse-legend,
+.analysis-chart figcaption {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.analyse-measures caption {
+    text-align: left;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.analyse-layout em {
+    font-style: normal;
+}
+
+.analyse-layout .up,
+.crit-fine {
+    color: var(--color-success);
+}
+
+.analyse-layout .down,
+.crit-bad {
+    color: var(--color-accent-text);
+}
+
+.crit-tip {
+    color: var(--color-warning);
+}
+
+.analyse-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    margin-bottom: var(--space-2);
+}
+
+.legend-line::before,
+.legend-mark::before {
+    content: '';
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: var(--space-1);
+}
+
+.legend-line::before {
+    width: 1.25em;
+    height: 3px;
+    background: currentColor;
+}
+
+.legend-line>span {
+    color: var(--color-text-muted);
+}
+
+.legend-mark::before {
+    height: 1em;
+    border-left: 2px solid var(--color-text);
+}
+
+.legend-mark.chart-crit::before {
+    border-left: 2px dotted var(--color-text-muted);
+}
+
+.legend-mark.chart-tip::before {
+    border-left: 2px dashed var(--color-accent);
+}
+
+.move-list {
+    display: grid;
+    gap: 1px;
+    max-height: 24rem;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.move-list button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-1) var(--space-2);
+    background: none;
+    border: 0;
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+    cursor: pointer;
+}
+
+.move-list button:hover {
+    background: var(--color-surface-hover);
+}
+
+.move-list button.current {
+    background: var(--color-tile);
+    font-weight: var(--font-weight-semibold);
+}
+
+.move-list button.opening {
+    color: var(--color-text-muted);
+}
+
+.move-number {
+    min-width: 2.5ch;
+    color: var(--color-text-muted);
+    text-align: right;
+}
+
+.move-list .pawn {
+    flex: none;
+    width: 0.9em;
+}
+
+.analysis-chart {
+    margin: 0 0 var(--space-3);
+}
+
+.analysis-chart figcaption {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
+}
+
+.analysis-chart svg {
+    display: block;
+    width: 100%;
+    height: 7.5rem;
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: crosshair;
+}
+
+.analysis-chart polyline {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.analysis-chart line {
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+}
+
+.analysis-chart .chart-cursor {
+    stroke: var(--color-text);
+    stroke-width: 2;
+}
+
+.analysis-chart .chart-crit {
+    stroke: var(--color-text-muted);
+    stroke-dasharray: 2 3;
+}
+
+.analysis-chart .chart-tip,
+.analysis-chart .chart-reference {
+    stroke: var(--color-accent);
+    stroke-dasharray: 6 4;
+    stroke-width: 2;
+}
+
+.analyse-scroll {
+    overflow-x: auto;
+}
+
+/* --- Page duel ---------------------------------------------------------------------------- */
+
+/* Une colonne, comme .analyse-layout : la page défile dans le gabarit. */
+.layout.duel-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas: none;
+    align-content: start;
+    overflow-y: auto;
+}
+
+.duel-builds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+}
+.duel-builds label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.duel-verdict {
+    font-size: 1.15rem;
+    font-weight: 600;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+.duel-detail {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.duel-pairs a,
+#duel a {
+    color: var(--color-text);
+}

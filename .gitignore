@@ -22,3 +22,6 @@ data/
 state/
 jars/
 ladder.toml
+
+# Compile par sandbox/build.sh, monte par run-player.sh
+sandbox/profiler.jar

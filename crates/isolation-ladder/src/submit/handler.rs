@@ -142,6 +142,15 @@ impl Submissions {
         Self { arena, submit, limiter }
     }
 
+    /// Le build actif de l'équipe, le hash de son `current.jar` ; `None` sans jar.
+    pub fn current_build(&self, team: &TeamId) -> Option<String> {
+        fs::read(self.submit.current_jar(team)).ok().map(|jar| short_hash(&jar))
+    }
+
+    pub fn db(&self) -> &Path {
+        &self.arena.config().db
+    }
+
     /// One byte over the limit tells an oversized body apart from a full one.
     pub fn max_body(&self) -> usize {
         usize::try_from(max_bytes(self.submit.max_jar_mb) + 1).unwrap_or(usize::MAX)
@@ -228,7 +237,7 @@ impl Submissions {
             detail,
         };
         let path = &self.arena.config().db;
-        if let Err(e) = Db::open(path).and_then(|db| db.insert_submission(&row)) {
+        if let Err(e) = Db::open(path).and_then(|db| Ok(db.insert_submission(&row)?)) {
             eprintln!("soumission non journalisée dans {} : {e}", path.display());
         }
     }

@@ -87,15 +87,17 @@ jobs:
 
       - name: Package
         shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
-          name="isolation-${{ matrix.target }}"
+          name="isolation-$TARGET"
           ext=""
-          [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
+          [[ "$TARGET" == *windows* ]] && ext=".exe"
           mkdir "$name"
           for bin in isolation-referee isolation-check isolation-remote; do
-            cp "target/${{ matrix.target }}/release/$bin$ext" "$name/"
+            cp "target/$TARGET/release/$bin$ext" "$name/"
           done
-          cp "target/${{ matrix.target }}/bot/isolation-bot$ext" "$name/"
+          cp "target/$TARGET/bot/isolation-bot$ext" "$name/"
           cp README.md "$name/"
           if [[ -n "$ext" ]]; then
             7z a "$name.zip" "$name" > /dev/null

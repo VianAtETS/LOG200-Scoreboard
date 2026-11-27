@@ -21,9 +21,12 @@ CREATE TABLE IF NOT EXISTS games (
     tournament_id TEXT,
     tournament_match TEXT,
     tournament_game INTEGER,
-    record TEXT NOT NULL
+    record TEXT NOT NULL,
+    -- seq de la première partie de la paire du ladder ; NULL pour un tournoi (voir pair_game.sql).
+    pair INTEGER
 );
 CREATE INDEX IF NOT EXISTS games_session ON games(session);
+CREATE INDEX IF NOT EXISTS games_pair ON games(pair);
 CREATE INDEX IF NOT EXISTS games_red ON games(red_team);
 CREATE INDEX IF NOT EXISTS games_black ON games(black_team);
 CREATE TABLE IF NOT EXISTS moves (
@@ -50,3 +53,26 @@ CREATE TABLE IF NOT EXISTS submissions (
     verdict TEXT NOT NULL,
     detail TEXT NOT NULL
 );
+-- Profil d'un jar dans une partie, privé à son équipe (docs/spec-analyse-isola.md).
+CREATE TABLE IF NOT EXISTS profiles (
+    game INTEGER NOT NULL REFERENCES games(seq),
+    color TEXT NOT NULL,
+    team TEXT NOT NULL,
+    build TEXT NOT NULL,
+    turns INTEGER NOT NULL,
+    moves INTEGER NOT NULL,
+    overhead_ms INTEGER NOT NULL,
+    tree TEXT NOT NULL,
+    arena TEXT NOT NULL,
+    template TEXT,
+    PRIMARY KEY (game, color)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS profiles_team ON profiles(team);
+-- Choix d'une équipe pour un build : public implique private.
+CREATE TABLE IF NOT EXISTS profiling (
+    team TEXT NOT NULL,
+    build TEXT NOT NULL,
+    private INTEGER NOT NULL,
+    public INTEGER NOT NULL CHECK (private OR NOT public),
+    PRIMARY KEY (team, build)
+) WITHOUT ROWID;

@@ -15,7 +15,7 @@ use rand::rngs::ThreadRng;
 use isolation_core::record::GameRecord;
 
 use crate::api;
-use crate::arena::{Arena, GameError, Sigterm};
+use crate::arena::{Arena, Finished, GameError, Sigterm};
 use crate::config::Config;
 use crate::db::Db;
 use crate::live::Live;
@@ -148,6 +148,17 @@ impl Ladder {
         !self.arena.draining() && self.rounds.is_none_or(|n| self.pairs.round < n)
     }
 
+    /// Builds tenus loin des nœuds : leur temps y a été dépassé, ou leur équipe les profile (le
+    /// profileur ne tourne qu'au serveur principal).
+    fn off_nodes(&self) -> NodeBans {
+        let profiled = self.db.profiled_builds().unwrap_or_else(|e| {
+            eprintln!("   builds profilés illisibles : {e}");
+            HashSet::new()
+        });
+        let profiled = profiled.into_iter().map(|(team, build)| (team, Some(build)));
+        self.node_bans.iter().cloned().chain(profiled).collect()
+    }
+
     /// Plus rien ne tourne : la boucle peut s'arrêter.
     fn finished(&self) -> bool {
         self.pairs.idle() && self.arena.smoke_tests() == 0
@@ -165,7 +176,8 @@ impl Ladder {
                 .launch_tournament(&self.arena, &mut self.tournaments, &self.reports);
         }
         let teams = roster(cfg, self.remote.as_ref(), &mut self.warned);
-        let portable = portable_teams(cfg, &teams, &mut self.builds, &self.node_bans);
+        let off_nodes = self.off_nodes();
+        let portable = portable_teams(cfg, &teams, &mut self.builds, &off_nodes);
         self.pairs.set_portable(portable, &teams);
         let waiting = self.tournaments.waiting();
         self.pairs.cancel_stale(cfg, &teams, &waiting);
@@ -207,9 +219,17 @@ impl Ladder {
                 black,
                 outcome,
                 game,
+                after,
             } => {
                 published(self.live.end(&red, &black));
-                let saved = save(cfg, &self.db, &mut self.standings, outcome, &red, &black)?;
+                let saved = save(
+                    cfg,
+                    &self.db,
+                    &mut self.standings,
+                    outcome,
+                    after.as_deref(),
+                    [&red, &black],
+                )?;
                 self.tournaments.publish_preview(cfg, &self.standings);
                 if let Some(game) = game {
                     self.tournaments.record(cfg, &game, saved.as_ref());
@@ -219,7 +239,8 @@ impl Ladder {
                 if !self.arena.draining() && self.pairs.open(self.rounds) {
                     let teams = roster(cfg, self.remote.as_ref(), &mut self.warned);
                     let standings = &self.standings;
-                    let portable = portable_teams(cfg, &teams, &mut self.builds, &self.node_bans);
+                    let off_nodes = self.off_nodes();
+                    let portable = portable_teams(cfg, &teams, &mut self.builds, &off_nodes);
                     self.pairs.set_portable(portable, &teams);
                     let waiting = self.tournaments.waiting();
                     let rating = |id: &str| standings.rating(id);
@@ -249,18 +270,19 @@ fn save(
     cfg: &Config,
     db: &Db,
     standings: &mut Standings,
-    outcome: Result<GameRecord, GameError>,
-    red: &str,
-    black: &str,
+    outcome: Result<Finished, GameError>,
+    after: Option<&str>,
+    [red, black]: [&str; 2],
 ) -> anyhow::Result<Option<GameRecord>> {
-    let record = match outcome {
-        Ok(record) => record,
+    let Finished { record, profiles } = match outcome {
+        Ok(finished) => finished,
         Err(e) => {
             eprintln!("   partie {red} contre {black} annulée : {e}");
             return Ok(None);
         }
     };
-    db.insert_game(&record).with_context(|| cfg.db.display().to_string())?;
+    db.insert_game(&record, after, &profiles)
+        .with_context(|| cfg.db.display().to_string())?;
     if let Err(e) = standings.record(&record, db) {
         eprintln!("   classement non publié : {e}");
     }
