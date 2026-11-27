@@ -6,7 +6,7 @@
 import type { TChange, TDescriptor } from '../types/game.types';
 import { ISOLATION } from './game.ts';
 
-// Isolation : plateau, codes des cases et notation (crates/isolation-core).
+// Isolation : plateau, codes des cases et notation (crates/isolation).
 export const SIZE = 12;
 export const EMPTY = 0;
 export const DESTROYED = 1;
@@ -52,7 +52,7 @@ export function initialCells() {
   return ISOLATION.initial.slice();
 }
 
-// Les effets d'un coup d'Isolation, comme les rend crates/isolation-core/src/game.rs.
+// Les effets d'un coup d'Isolation, comme les rend crates/isolation/src/game.rs.
 function isolationChanges(move: TMove, cells: number[]): TChange[] {
   return [
     { cell: move.from, code: EMPTY, role: 'from' },

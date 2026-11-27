@@ -21,7 +21,7 @@ Le ladder et sa page tournent avec un `docker compose up -d`. Chaque jar joue da
 Les équipes soumettent elles-mêmes leur jar (formulaire de la page, `curl` ou CI ; voir "Soumission des jars" dans `docs/formats.md`). Pour chaque équipe :
 
 ```sh
-docker compose exec ladder isolation-ladder add-team eq07
+docker compose exec ladder ladder add-team eq07
 ```
 
 La commande affiche le token de l'équipe, une seule fois : le lui transmettre en privé. Une équipe entre au classement dès que son premier jar a passé le smoke test ; inutile de redémarrer.
@@ -54,8 +54,8 @@ La section `[tournament]` de `ladder.toml` tire un tournoi à chaque créneau de
 
 | Pour… | Faire |
 | --- | --- |
-| Lancer un tournoi maintenant | `docker compose exec ladder isolation-ladder tournament start /srv/ladder.toml` |
-| Débloquer un match suspendu (3 relances en échec) | `docker compose exec ladder isolation-ladder tournament resume /srv/ladder.toml tournoi-2026-11-08 W3` |
+| Lancer un tournoi maintenant | `docker compose exec ladder ladder tournament start /srv/ladder.toml` |
+| Débloquer un match suspendu (3 relances en échec) | `docker compose exec ladder ladder tournament resume /srv/ladder.toml tournoi-2026-11-08 W3` |
 | Désactiver | retirer `weekly` de `[tournament]`, puis `docker compose restart ladder` |
 
 La commande dépose une requête dans `jars/admin/`, que le ladder lit en moins de 10 s.
@@ -86,11 +86,11 @@ La page Direct (`direct.html`) montre chaque partie en cours coup par coup, et l
 
 ## Équipes distantes (optionnel)
 
-Une équipe peut jouer sans téléverser son jar : il tourne sur sa machine, et `isolation-remote` relaie ses coups par une WebSocket sur `/api/remote` (voir "Jouer à distance" dans `docs/formats.md`). Pour l'ouvrir, décommenter la section `[remote]` de `ladder.toml`, puis `docker compose restart ladder`. Le `Caddyfile` relaie déjà `/api/remote` ; rien n'est exposé de plus que le port 8080.
+Une équipe peut jouer sans téléverser son jar : il tourne sur sa machine, et `ladder-remote` relaie ses coups par une WebSocket sur `/api/remote` (voir "Jouer à distance" dans `docs/formats.md`). Pour l'ouvrir, décommenter la section `[remote]` de `ladder.toml`, puis `docker compose restart ladder`. Le `Caddyfile` relaie déjà `/api/remote` ; rien n'est exposé de plus que le port 8080.
 
-L'équipe utilise son token habituel et l'adresse de la page : `isolation-remote --url https://ladder.example.com -- java -jar Client-eq07.jar`. Ses parties portent le badge "distant", et la case "Vérifiées seulement" de la page les retire du classement.
+L'équipe utilise son token habituel et l'adresse de la page : `ladder-remote --url https://ladder.example.com -- java -jar Client-eq07.jar`. Ses parties portent le badge "distant", et la case "Vérifiées seulement" de la page les retire du classement.
 
-- Le mode distant demande HTTPS (section précédente) : le token passe dans l'en-tête de la WebSocket. `isolation-remote` avertit l'équipe si l'adresse est en `http://`.
+- Le mode distant demande HTTPS (section précédente) : le token passe dans l'en-tête de la WebSocket. `ladder-remote` avertit l'équipe si l'adresse est en `http://`.
 - Avec Nginx Proxy Manager, cocher "Websockets Support" sur l'hôte proxy du ladder : sans elle, l'upgrade de `/api/remote` n'est pas relayé et le client voit une erreur 400 ou 502.
 - Cloudflare relaie les WebSockets, mais coupe une connexion inactive après 100 s. Le ladder envoie un ping toutes les 10 s : la connexion reste ouverte.
 - La latence compte dans le temps par coup de l'équipe. Comme pour `LADDER_URL`, un nom d'hôte non proxifié évite le détour par Cloudflare.
@@ -100,7 +100,7 @@ L'équipe utilise son token habituel et l'adresse de la page : `isolation-remote
 
 D'autres machines du LAN peuvent jouer des parties pour le ladder : un nœud prend les paires portables (bots `portable = true`, équipes dont le build actif n'y a jamais dépassé son temps), qui comptent exactement comme les autres. Un timeout sur un nœud ne compte pas : la partie est rejouée ici et le build ne retourne plus sur les nœuds. Détails et protocole : "Nœuds" dans `docs/formats.md`.
 
-1. Sur le ladder, décommenter `[nodes]` dans `ladder.toml`, puis inscrire le nœud : `docker compose exec ladder isolation-ladder add-node node-a --nodes jars/nodes.toml`. Le token s'affiche une fois ; seul son sha256 est gardé.
+1. Sur le ladder, décommenter `[nodes]` dans `ladder.toml`, puis inscrire le nœud : `docker compose exec ladder ladder add-node node-a --nodes jars/nodes.toml`. Le token s'affiche une fois ; seul son sha256 est gardé.
 2. Publier `[nodes].listen` (8093 par défaut) **sur l'adresse LAN seulement** et limiter la source aux nœuds dans le pare-feu. Ce port ne passe jamais par Caddy ni par un proxy public.
 3. Sur le nœud, la même image que le ladder, en conteneur privilégié (Docker interne + gVisor), avec la commande `node`, `node.toml` (voir `node.example.toml`) et le token dans `token_file`.
 4. `docker compose restart ladder`. Le nœud joue d'abord une partie bot contre bot (la sonde), puis apporte ses slots ; `state/nodes.json` (privé : la page ne le publie pas) montre les nœuds connectés, prêts ou en quarantaine.

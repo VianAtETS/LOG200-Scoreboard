@@ -1,7 +1,7 @@
 # Changes to the rules, the referee, the rating, the submissions, the sandbox and the deployment need a maintainer's review.
-/crates/isolation-core/      @Vianpyro
+/crates/isolation/      @Vianpyro
 /crates/isolation-referee/   @Vianpyro
-/crates/isolation-ladder/    @Vianpyro
+/crates/ladder/    @Vianpyro
 /sandbox/                    @Vianpyro
 /deploy/                     @Vianpyro
 /.github/                    @Vianpyro

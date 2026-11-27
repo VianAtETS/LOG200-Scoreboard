@@ -1,12 +1,12 @@
 [package]
-name = "isolation-ladder"
+name = "ladder"
 description = "Ladder, rating and weekly tournament of the LOG200 game labs"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "isolation-ladder"
+name = "ladder"
 path = "src/main.rs"
 doc = false
 
@@ -31,7 +31,7 @@ rusqlite = { version = "0.41.1", features = ["bundled", "fallible_uint"] }
 
 [dev-dependencies]
 # Les règles d'Isolation des tests (`rules::Isolation`) : le ladder lui-même ne connaît aucun jeu.
-isolation-core.workspace = true
+isolation.workspace = true
 tokio = { workspace = true, features = ["macros"] }
 
 [target.'cfg(unix)'.dependencies]

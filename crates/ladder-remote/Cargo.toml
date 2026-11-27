@@ -1,5 +1,5 @@
 [package]
-name = "isolation-remote"
+name = "ladder-remote"
 description = "Relay for a team that plays the ladder from its own machine"
 version.workspace = true
 edition.workspace = true

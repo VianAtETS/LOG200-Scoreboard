@@ -4,7 +4,7 @@ Le ladder dépend de deux interfaces. La première permet de remplacer notre arb
 
 ```mermaid
 flowchart LR
-    ladder[isolation-ladder]
+    ladder[ladder]
     referee["arbitre<br/>(isolation-referee ou autre)"]
     red[client rouge]
     black[client noir]
@@ -159,7 +159,7 @@ Le ladder enregistre chaque partie terminée dans une base SQLite, `db` dans `la
 - `node` (absent par défaut) : id du nœud de calcul qui a joué la partie (voir « Nœuds ») ; absent, le serveur principal. Une partie de nœud compte comme les autres.
 - `measures` (absent par défaut) : les mesures publiques des bots du ladder, `{"red": [{"depth": 6, "nodes": 123456}, {"nodes": 0}]}`, une par coup de la couleur dans l'ordre de ses coups ; `depth` (dernière profondeur terminée) absent sans recherche. Le ladder les lit à la fin de la partie dans le journal du bot, qui écrit après chaque coup la ligne `ARENA depth=6 nodes=123456` de l'arène isola sur sa sortie d'erreur. Rien n'est publié si leur nombre diffère de celui des coups, ni pour un jar d'équipe, dont les lignes restent privées.
 - `tournament` (absent par défaut) : `{"id": "tournoi-2026-11-08", "match": "W3", "game": 2}`, partie d'un tournoi hebdomadaire (voir [spec-tournoi-hebdo.md](spec-tournoi-hebdo.md)) : id du tournoi, match du tableau et numéro de la manche.
-Le schéma est dans [`crates/isolation-ladder/src/sql/schema.sql`](../crates/isolation-ladder/src/sql/schema.sql) ; sa version est dans `PRAGMA user_version` (2). Un binaire refuse une base de version supérieure à la sienne ; une base v1 passe en v2 à l'ouverture. Les tables :
+Le schéma est dans [`crates/ladder/src/sql/schema.sql`](../crates/ladder/src/sql/schema.sql) ; sa version est dans `PRAGMA user_version` (2). Un binaire refuse une base de version supérieure à la sienne ; une base v1 passe en v2 à l'ouverture. Les tables :
 
 | Table | Une ligne par | Contenu |
 | --- | --- | --- |
@@ -322,7 +322,7 @@ Authorization: Bearer <token de l'équipe>
 curl -T Client-eq07.jar -H "Authorization: Bearer $TOKEN" https://<ladder>/api/submit
 ```
 
-Le formulaire de la page fait la même chose. Le token identifie l'équipe : `isolation-ladder add-team eq07` l'inscrit et affiche son token une seule fois ; seul son sha256 est conservé (`jars/teams.toml`).
+Le formulaire de la page fait la même chose. Le token identifie l'équipe : `ladder add-team eq07` l'inscrit et affiche son token une seule fois ; seul son sha256 est conservé (`jars/teams.toml`).
 
 À la réception :
 
@@ -370,16 +370,16 @@ act workflow_dispatch -P ubuntu-latest=catthehacker/ubuntu:act-latest --network 
 
 ## Jouer à distance
 
-Une équipe peut jouer au ladder sans téléverser son jar : il tourne sur sa machine, et `isolation-remote` (dans l'archive de la release) relaie ses lignes au ladder par une WebSocket. Le ladder garde l'arbitre, l'Elo et la page ; il ne voit jamais le jar.
+Une équipe peut jouer au ladder sans téléverser son jar : il tourne sur sa machine, et `ladder-remote` (dans l'archive de la release) relaie ses lignes au ladder par une WebSocket. Le ladder garde l'arbitre, l'Elo et la page ; il ne voit jamais le jar.
 
 ```sh
-LADDER_TOKEN=<token> isolation-remote --url https://<ladder> -- java -jar Client-eq07.jar
+LADDER_TOKEN=<token> ladder-remote --url https://<ladder> -- java -jar Client-eq07.jar
 ```
 
 ```mermaid
 flowchart LR
     subgraph eleve["machine de l'équipe"]
-        jar["jar"] -- "localhost:8888" --> relais["isolation-remote"]
+        jar["jar"] -- "localhost:8888" --> relais["ladder-remote"]
     end
     subgraph serveur["ladder"]
         api["/api/remote"] --> arbitre["arbitre (bac à sable)"]
@@ -419,7 +419,7 @@ Section `[remote]` de `ladder.toml` (demande `[submit]`, qui tient les tokens) :
 
 ## Nœuds
 
-D'autres machines du LAN peuvent jouer des parties pour le ladder : ce sont des nœuds. Un nœud lance `isolation-ladder node node.toml`, se connecte au ladder (`[nodes].listen`, route `/api/node`) avec `Authorization: Bearer <token>` (`isolation-ladder add-node ID` crée le token ; seul son sha256 est gardé), puis annonce ses slots. Il ne reçoit jamais de commande : seulement un nom de bot de sa liste blanche ou le sha256 d'un jar, et il construit lui-même les commandes depuis sa configuration. Une partie jouée sur un nœud compte exactement comme les autres : même arbitre, même image, même bac à sable ; seul le champ `node` de la base la distingue.
+D'autres machines du LAN peuvent jouer des parties pour le ladder : ce sont des nœuds. Un nœud lance `ladder node node.toml`, se connecte au ladder (`[nodes].listen`, route `/api/node`) avec `Authorization: Bearer <token>` (`ladder add-node ID` crée le token ; seul son sha256 est gardé), puis annonce ses slots. Il ne reçoit jamais de commande : seulement un nom de bot de sa liste blanche ou le sha256 d'un jar, et il construit lui-même les commandes depuis sa configuration. Une partie jouée sur un nœud compte exactement comme les autres : même arbitre, même image, même bac à sable ; seul le champ `node` de la base la distingue.
 
 Les deux joueurs d'une partie sont toujours sur la même machine : un nœud plus lent les ralentit tous les deux, au même temps par coup. Seules les paires portables y vont. Un bot l'est par `portable = true` dans `[[team]]` (les bots de la liste des nœuds) ; une équipe l'est tant que son build actif n'a jamais dépassé son temps sur un nœud. Un timeout sur un nœud ne compte pas : la partie est rejouée au serveur principal, avec la même ouverture, et ce build ne retourne plus sur les nœuds (un nouveau build y retente sa chance). Une équipe multithread ou distante n'est jamais portable. Un match de tournoi suit la même règle. Une paire portable prend un slot de nœud d'abord, sinon un slot ordinaire du serveur principal ; une paire non portable ne quitte jamais le serveur principal. Une équipe qui a plus de 4 parties d'avance sur l'équipe médiane perd la portabilité jusqu'à ce que les autres la rattrapent : seule portable, elle jouerait sinon en boucle sur les nœuds.
 
@@ -444,11 +444,11 @@ Si la connexion tombe en pleine partie, le nœud arrête tout et nettoie ; le la
 
 
 ```sh
-cargo build --release --bin isolation-referee --bin isolation-ladder --bin isolation-check
+cargo build --release --bin isolation-referee --bin ladder --bin isolation-check
 cargo build --profile bot --bin isolation-bot
 sandbox/build.sh                            # images des bacs a sable
 cp ladder.example.toml ladder.toml          # equipes, temps, session
-target/release/isolation-ladder ladder.toml # Ctrl+C pour arreter, relancer reprend la session
+target/release/ladder ladder.toml # Ctrl+C pour arreter, relancer reprend la session
 sqlite3 state/ladder.db "SELECT record FROM games ORDER BY seq" > parties.jsonl
 target/release/isolation-check parties.jsonl  # rejoue et valide toutes les parties
 npx http-server . -p 8000                   # sert data/ a la page
@@ -456,6 +456,6 @@ npx http-server . -p 8000                   # sert data/ a la page
 # puis ouvrir http://localhost:3000
 ```
 
-La page lit le dossier `../data` par défaut (un autre dossier se passe avec `?data=URL`) et se rafraîchit toutes les 15 secondes. Les fichiers qu'elle lit sont écrits par le ladder : pour regarder un ancien `games.jsonl` sans lancer de parties, `isolation-ladder ladder.toml --rounds 0` l'importe (avec `out` qui pointe vers ce fichier) et les génère. Le replay et les statistiques passent par l'API du ladder (voir [api.md](api.md)) : sans ladder lancé, la page affiche le classement mais n'ouvre pas les parties.
+La page lit le dossier `../data` par défaut (un autre dossier se passe avec `?data=URL`) et se rafraîchit toutes les 15 secondes. Les fichiers qu'elle lit sont écrits par le ladder : pour regarder un ancien `games.jsonl` sans lancer de parties, `ladder ladder.toml --rounds 0` l'importe (avec `out` qui pointe vers ce fichier) et les génère. Le replay et les statistiques passent par l'API du ladder (voir [api.md](api.md)) : sans ladder lancé, la page affiche le classement mais n'ouvre pas les parties.
 
 Elle lit les fichiers d'équipe par morceaux (en-tête `Range`). Un serveur qui ignore `Range`, comme `python3 -m http.server`, renvoie le fichier entier : ça fonctionne, mais sans le gain.

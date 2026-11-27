@@ -1,7 +1,7 @@
 # Envoie le jar de l'equipe au ladder a chaque push sur main qui modifie src/.
 # A copier dans .github/workflows/ du depot de l'equipe, puis dans Settings > Secrets and variables > Actions :
 #   variable LADDER_URL   : adresse de la page du ladder, par exemple http://ladder.example.org:8080
-#   secret   LADDER_TOKEN : token de l'equipe (isolation-ladder add-team)
+#   secret   LADDER_TOKEN : token de l'equipe (ladder add-team)
 # Sans LADDER_URL, le workflow ne fait rien. Le verdict du ladder s'affiche dans le resume du run.
 name: Ladder
 

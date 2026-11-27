@@ -1,4 +1,4 @@
-//! The HTTP and WebSocket contract the teams' CI, `isolation-remote` and the page rely on, whatever
+//! The HTTP and WebSocket contract the teams' CI, `ladder-remote` and the page rely on, whatever
 //! serves it.
 
 #![allow(clippy::unwrap_used)]
@@ -16,7 +16,7 @@ use zip::write::SimpleFileOptions;
 
 mod support;
 
-const LADDER: &str = env!("CARGO_BIN_EXE_isolation-ladder");
+const LADDER: &str = env!("CARGO_BIN_EXE_ladder");
 const MAX_JAR_MB: u64 = 1;
 const REGISTRY: &str = "jars/teams.toml";
 /// Imported from the old `games.jsonl` at startup, served back by the replay.

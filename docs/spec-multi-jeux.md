@@ -146,7 +146,7 @@ Une instance du ladder par compétition (un jeu, une session) : son `ladder.toml
 Chaque étape est une PR qui garde Isolation identique (tests golden).
 
 1. `game-kit` : trait, descripteur, effets, cadre de l'arbitre ; Isolation l'implémente, `isolation-referee` devient `referee::run(Isolation)` et gagne `describe`, `opening` et `check`.
-2. Ladder sans règles : coups opaques, ouverture et validation par l'arbitre (`rules` dans `ladder.toml`), plus de rejeu dans le hub. Le ladder ne dépend plus d'`isolation-core`.
+2. Ladder sans règles : coups opaques, ouverture et validation par l'arbitre (`rules` dans `ladder.toml`), plus de rejeu dans le hub. Le ladder ne dépend plus d'`isolation`.
 3. Format v2 et base : effets, descripteurs, nulles (Elo, modèle, tournoi).
 4. Page : descripteur, plateau générique, effets dans l'API et le direct.
 5. Instances multiples : configuration, déploiement, page d'accueil.
@@ -156,4 +156,4 @@ Chaque étape est une PR qui garde Isolation identique (tests golden).
 
 - ~~Variante d'Hnefatafl~~ : tranchée par l'énoncé et le code du serveur officiel, et confirmée par sept parties contre lui, sans divergence (`docs/rules-hnefatafl.md`, « Conformance »).
 - ~~Nulle en tournoi~~ : rejouée, la 3e donne la manche à la meilleure tête de série (D22 de `docs/spec-tournoi-hebdo.md`).
-- Renommage des crates `isolation-*` (le mot désigne aussi le bac à sable) : en fin de migration, dans une PR à part.
+- ~~Renommage des crates~~ : `isolation` (le jeu), `ladder` (la plateforme, crate et binaire) et `ladder-remote` (le relais) ; `isolation-referee`, `-bot`, `-check` et `-engine` restent, ce sont les outils du jeu. L'étiquette Docker `isolation-ladder`, le dossier `/tmp/isolation-ladder` et les variables `ISOLATION_EXTRA_*_MS` gardent leur nom, pour les serveurs déjà déployés.

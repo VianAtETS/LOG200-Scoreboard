@@ -1,6 +1,6 @@
 // Le descripteur du jeu de l'instance et ce que la page en tire. Sans data/game.json (ladder d'avant la
 // plateforme multi-jeux, serveur golden de dev), c'est Isolation : le même descripteur que
-// crates/isolation-core/src/game.rs.
+// crates/isolation/src/game.rs.
 
 import type { TColor } from '../types/games.types';
 import type { TDescriptor, TPiece } from '../types/game.types';

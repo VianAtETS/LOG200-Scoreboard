@@ -13,9 +13,9 @@ use clap::Parser;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-use isolation_core::board::{Board, Color, Move, SIZE};
-use isolation_core::protocol::{LineConn, Outcome, RecvError, ServerMsg};
-use isolation_core::rules;
+use isolation::board::{Board, Color, Move, SIZE};
+use isolation::protocol::{LineConn, Outcome, RecvError, ServerMsg};
+use isolation::rules;
 use isolation_engine::cpu;
 use isolation_engine::strategy::{Bot, Strategy};
 

@@ -1,4 +1,4 @@
-//! Équipes distantes : `isolation-remote` ouvre une WebSocket sur `/api/remote` (docs/formats.md) et
+//! Équipes distantes : `ladder-remote` ouvre une WebSocket sur `/api/remote` (docs/formats.md) et
 //! relaie le jar de l'équipe, qui tourne sur sa machine. Tant que la session est ouverte, l'équipe
 //! est disponible ; le temps d'une partie, le ladder la relie à l'arbitre à la place d'un jar.
 

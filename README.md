@@ -55,10 +55,10 @@ The referee checks every move and prints the result at the end (`winner`, and `r
 
 ## Play remotely
 
-A team can play on the ladder without uploading its jar: the jar runs on its own machine, and `isolation-remote` (in the same archive) relays its moves to the ladder over HTTPS. Run it with the team token and the command that starts the jar:
+A team can play on the ladder without uploading its jar: the jar runs on its own machine, and `ladder-remote` (in the same archive) relays its moves to the ladder over HTTPS. Run it with the team token and the command that starts the jar:
 
 ```sh
-LADDER_TOKEN=<token> ./isolation-remote --url https://<ladder> -- java -jar Client-eqXX.jar
+LADDER_TOKEN=<token> ./ladder-remote --url https://<ladder> -- java -jar Client-eqXX.jar
 ```
 
 The relay starts the jar for every game and keeps reconnecting until stopped. The jar connects to `localhost:8888` as usual. Network latency counts against its time per move, and the page marks these games "distant": the server checks neither the code nor the hardware. See "Jouer à distance" in `docs/formats.md`.
@@ -79,14 +79,14 @@ The relay starts the jar for every game and keeps reconnecting until stopped. Th
 | Path | Role |
 | --- | --- |
 | `crates/game-kit` | What every game shares: the `Game` trait, the game descriptor, the official protocol framing, the record formats and the generic referee (`game_kit::referee`). See `docs/spec-multi-jeux.md` |
-| `crates/isolation-core` | Isolation: board, game rules as applied by the official server (see `docs/rules.md`) and protocol messages, implemented as a `game_kit::Game` |
+| `crates/isolation` | Isolation: board, game rules as applied by the official server (see `docs/rules.md`) and protocol messages, implemented as a `game_kit::Game` |
 | `crates/hnefatafl` | Hnefatafl 13×13 of the LOG320 lab, rules and protocol of its official server (see `docs/rules-hnefatafl.md`): `hnefatafl-referee` and `hnefatafl-bot` (random moves), both from `game_kit` |
 | `isolation-referee` | Headless referee for one game, `game_kit::referee` with the Isolation rules; speaks the official protocol, prints one JSON result (plus one line per move for the ladder's live view when its output is not a terminal) |
 | `isolation-bot` | Protocol client used for tests and conformance checks; its strategies `aleatoire` and `niveau-1` to `niveau-3` replicate the official server's CPU levels (`crates/isolation-engine/src/cpu.rs`); `niveau-4` and `niveau-5` are our own stronger engines (`crates/isolation-engine/src/engine.rs`) |
-| `isolation-ladder` | Schedules games between teams, records them in SQLite (`state/ladder.db`, served back by `/api/games` and `/api/stats`, see `docs/api.md`), publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`), streams the games in progress (`/api/live`, `[live]` in `ladder.toml`) and runs the weekly tournament (`[tournament]` in `ladder.toml`, `data/tournaments/`, see `docs/spec-tournoi-hebdo.md`) |
+| `ladder` | Schedules games between teams, records them in SQLite (`state/ladder.db`, served back by `/api/games` and `/api/stats`, see `docs/api.md`), publishes the Elo ranking the pages read (`data/summary.json`, `data/teams/`, `data/timeline.jsonl`), receives the teams' jars (`PUT /api/submit`, see `docs/formats.md`), streams the games in progress (`/api/live`, `[live]` in `ladder.toml`) and runs the weekly tournament (`[tournament]` in `ladder.toml`, `data/tournaments/`, see `docs/spec-tournoi-hebdo.md`) |
 | `isolation-check` | Replays and validates a JSONL file or an official save (`BOARDGAME 1`) |
-| `isolation-remote` | Relay for a team that plays from its own machine: starts the jar for each game and forwards its lines to the ladder (`/api/remote`, see `docs/formats.md`) |
-| `isolation-ladder node` | Compute node: another LAN machine that joins the ladder (`/api/node`, `[nodes]` in `ladder.toml`, `node.example.toml`) and plays its portable pairs with the same referee and sandbox; those games count like any other (see "Nœuds" in `docs/formats.md`) |
+| `ladder-remote` | Relay for a team that plays from its own machine: starts the jar for each game and forwards its lines to the ladder (`/api/remote`, see `docs/formats.md`) |
+| `ladder node` | Compute node: another LAN machine that joins the ladder (`/api/node`, `[nodes]` in `ladder.toml`, `node.example.toml`) and plays its portable pairs with the same referee and sandbox; those games count like any other (see "Nœuds" in `docs/formats.md`) |
 
 | `sandbox/` | gVisor sandboxes for the referee and each player (see `docs/formats.md`) |
 | `web/` | Static pages (Astro + React, built to `web/dist`): Elo ranking, recent games, replay; rank and Elo charts of the chosen teams (`graphe.html`); weekly tournament bracket (`tournoi.html`); games in progress, move by move (`direct.html`) |
@@ -99,12 +99,12 @@ The referee contract and the JSONL format are described in `docs/formats.md`. An
 Only the bot uses full LTO and one codegen unit, giving the compiler more optimization opportunities. Other tools use normal release settings to avoid extra build time. The bot is built in `target/bot/`, the other binaries in `target/release/`.
 
 ```sh
-cargo build --release --bin isolation-referee --bin isolation-ladder --bin isolation-check
+cargo build --release --bin isolation-referee --bin ladder --bin isolation-check
 cargo build --profile bot --bin isolation-bot
 sandbox/build.sh                     # sandbox images (needs Docker with gVisor)
 cp ladder.example.toml ladder.toml   # teams, time per move, session
-target/release/isolation-ladder ladder.toml
-target/release/isolation-ladder tournament start ladder.toml  # from another terminal: a tournament right away
+target/release/ladder ladder.toml
+target/release/ladder tournament start ladder.toml  # from another terminal: a tournament right away
 npx http-server . -p 8000            # serves data/ to the page
 (cd web && npm ci && SCOREBOARD_DEV_SERVER=http://localhost:8000 npm run dev)  # then open http://localhost:3000
 ```
@@ -137,7 +137,7 @@ Against a CPU set to Niveau 1, with a generous timer, add `--expect niveau-1`: a
 
 ## Versions archivées du classement (facultatif)
 
-`isolation-ladder ladder.toml --archives` active le filtre de versions archivées sur
+`ladder ladder.toml --archives` active le filtre de versions archivées sur
 le classement. Sans cet argument, l'affichage habituel est conservé. Redémarrer avec
 ou sans ce flag ; aucune modification de base n'est nécessaire.
 Les graphes gardent leur comportement habituel.

@@ -7,8 +7,8 @@ use std::process::ExitCode;
 use clap::Parser;
 use thiserror::Error;
 
-use isolation_core::record::Jsonl;
-use isolation_core::rules::{Replay, ReplayError};
+use isolation::record::Jsonl;
+use isolation::rules::{Replay, ReplayError};
 
 #[derive(Parser)]
 #[command(
@@ -55,7 +55,7 @@ fn check_jsonl(text: &str) -> Vec<String> {
         .map(|s| format!("ligne {} ignorée : {}", s.line, s.reason));
     let invalid = jsonl.games.iter().filter_map(|g| {
         g.result
-            .validate(&isolation_core::Isolation)
+            .validate(&isolation::Isolation)
             .err()
             .map(|e| format!("partie {} : {e}", g.id))
     });

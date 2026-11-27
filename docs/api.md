@@ -22,7 +22,7 @@ Une route inconnue répond 404. Si la base est illisible, les routes de lecture 
 
 ## Documentation interactive : `GET /api/openapi.json`
 
-Le ladder génère au démarrage un spec OpenAPI 3.1 de ses routes HTTP (paramètres, codes de retour, schémas des réponses), à partir des annotations `#[utoipa::path]` de `crates/isolation-ladder/src/api.rs` et des types de `crates/isolation-ladder/src/openapi.rs`. Les tests de `db.rs` vérifient que chaque statistique SQL correspond à son schéma : le spec ne peut pas dériver du code sans casser la CI.
+Le ladder génère au démarrage un spec OpenAPI 3.1 de ses routes HTTP (paramètres, codes de retour, schémas des réponses), à partir des annotations `#[utoipa::path]` de `crates/ladder/src/api.rs` et des types de `crates/ladder/src/openapi.rs`. Les tests de `db.rs` vérifient que chaque statistique SQL correspond à son schéma : le spec ne peut pas dériver du code sans casser la CI.
 
 La page `api.html` du site (lien « API » dans la barre de navigation, GitHub Pages compris) l'affiche avec Swagger UI, chargé depuis jsDelivr, et permet d'essayer les routes contre le serveur (`GET`, et `PUT /api/submit` avec le token d'équipe ; `POST` n'est pas permis par le préflight CORS de Caddy). Elle suit toujours la version déployée du ladder.
 
@@ -111,7 +111,7 @@ Toutes les réponses portent `Cache-Control: private, no-store` et `Vary: Author
 
 ## Statistiques : `GET /api/stats/{nom}`
 
-Chaque statistique est une requête SQL de `crates/isolation-ladder/src/sql/stats_*.sql`, calculée à chaque appel. Les réponses portent `Cache-Control: public, max-age=15`, le rythme de rafraîchissement de la page. Derrière un CDN, chaque statistique n'est donc recalculée qu'une fois toutes les 15 s (voir la Cache Rule de [deploy/README.md](../deploy/README.md#nom-de-domaine-et-https), à étendre à `/api/stats/*`).
+Chaque statistique est une requête SQL de `crates/ladder/src/sql/stats_*.sql`, calculée à chaque appel. Les réponses portent `Cache-Control: public, max-age=15`, le rythme de rafraîchissement de la page. Derrière un CDN, chaque statistique n'est donc recalculée qu'une fois toutes les 15 s (voir la Cache Rule de [deploy/README.md](../deploy/README.md#nom-de-domaine-et-https), à étendre à `/api/stats/*`).
 
 Paramètre commun, facultatif :
 
@@ -216,7 +216,7 @@ Les jars soumis par l'équipe, du plus ancien au plus récent, avec leur verdict
 | --- | --- |
 ### `template-share?team=<équipe>&build=<build>` : part du gabarit
 
-Sur les parties profilées d'un build, la part des échantillons où une méthode du code de départ du cours (`crates/isolation-ladder/src/template.txt`) est en haut de la pile, en pour cent au dixième ; `others` est le reste. Servie seulement tant que l'équipe publie ce build (`"public": true` dans `PUT /api/profiling`), sinon 404 : ni arbre ni profondeur, qui trahiraient la force de sa recherche. Les chiffres viennent du jar, qui pourrait les fausser : c'est une part déclarée. `session` n'a pas d'effet ici.
+Sur les parties profilées d'un build, la part des échantillons où une méthode du code de départ du cours (`crates/ladder/src/template.txt`) est en haut de la pile, en pour cent au dixième ; `others` est le reste. Servie seulement tant que l'équipe publie ce build (`"public": true` dans `PUT /api/profiling`), sinon 404 : ni arbre ni profondeur, qui trahiraient la force de sa recherche. Les chiffres viennent du jar, qui pourrait les fausser : c'est une part déclarée. `session` n'a pas d'effet ici.
 
 ```json
 { "team": "eq07", "build": "3f9c2a1b5d7e9f01", "games": 12, "samples": 29760,
@@ -238,4 +238,4 @@ sqlite3 -readonly state/ladder.db \
   "SELECT reason, count(*) FROM games WHERE session = 'automne-2026' GROUP BY reason"
 ```
 
-Le schéma est dans `crates/isolation-ladder/src/sql/schema.sql` et décrit dans [formats.md, Base des parties](formats.md#base-des-parties-stateladderdb).
+Le schéma est dans `crates/ladder/src/sql/schema.sql` et décrit dans [formats.md, Base des parties](formats.md#base-des-parties-stateladderdb).

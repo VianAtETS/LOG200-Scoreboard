@@ -62,7 +62,7 @@ jobs:
         run: cargo test --workspace --release --locked --target ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-referee --bin isolation-check --bin isolation-remote --bin hnefatafl-referee
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-referee --bin isolation-check --bin ladder-remote --bin hnefatafl-referee
 
       - name: Build bot
         run: cargo build --profile bot --locked --target ${{ matrix.target }} --bin isolation-bot --bin hnefatafl-bot
@@ -70,9 +70,9 @@ jobs:
       - name: Build ladder
         if: ${{ matrix.docker }}
         run: |
-          cargo build --release --locked --target ${{ matrix.target }} --bin isolation-ladder
+          cargo build --release --locked --target ${{ matrix.target }} --bin ladder
           mkdir -p "prebuilt/${{ matrix.docker }}"
-          for bin in isolation-ladder isolation-referee isolation-check hnefatafl-referee; do
+          for bin in ladder isolation-referee isolation-check hnefatafl-referee; do
             cp "target/${{ matrix.target }}/release/$bin" "prebuilt/${{ matrix.docker }}/"
           done
           cp "target/${{ matrix.target }}/bot/isolation-bot" "target/${{ matrix.target }}/bot/hnefatafl-bot" "prebuilt/${{ matrix.docker }}/"
@@ -94,7 +94,7 @@ jobs:
           ext=""
           [[ "$TARGET" == *windows* ]] && ext=".exe"
           mkdir "$name"
-          for bin in isolation-referee isolation-check isolation-remote hnefatafl-referee; do
+          for bin in isolation-referee isolation-check ladder-remote hnefatafl-referee; do
             cp "target/$TARGET/release/$bin$ext" "$name/"
           done
           cp "target/$TARGET/bot/isolation-bot$ext" "target/$TARGET/bot/hnefatafl-bot$ext" "$name/"

@@ -1,4 +1,4 @@
-// Le classement Elo est calcule par le ladder (crates/isolation-ladder/src/standings/).
+// Le classement Elo est calcule par le ladder (crates/ladder/src/standings/).
 
 import type { TGameRow, TRatingChange, TRatingKey, TSide } from '../types/games.types';
 

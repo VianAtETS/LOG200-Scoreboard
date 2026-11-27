@@ -330,7 +330,7 @@ impl Default for ThermalConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct SubmitConfig {
     pub listen: String,
-    /// Équipes inscrites et sha256 de leur token (`isolation-ladder add-team`).
+    /// Équipes inscrites et sha256 de leur token (`ladder add-team`).
     pub teams: PathBuf,
     /// Un dossier par équipe : `current.jar` seulement. Doit rester privé.
     pub jars: PathBuf,

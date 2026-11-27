@@ -37,10 +37,10 @@ const RTT_SAMPLES: usize = 5;
 
 #[derive(Parser)]
 #[command(
-    name = "isolation-remote",
+    name = "ladder-remote",
     version,
-    about = "Joue au ladder Isolation depuis sa machine, sans téléverser son jar",
-    after_help = "Exemple : LADDER_TOKEN=<token> isolation-remote --url https://ladder.example.org -- java -jar Client-eq07.jar"
+    about = "Joue au ladder depuis sa machine, sans téléverser son jar",
+    after_help = "Exemple : LADDER_TOKEN=<token> ladder-remote --url https://ladder.example.org -- java -jar Client-eq07.jar"
 )]
 struct Cli {
     /// Adresse de la page du ladder, par exemple `https://ladder.example.org`
@@ -187,7 +187,7 @@ fn session(cli: &Cli, url: &str, build: &str) -> Ended {
     let hello = Message::Hello {
         v: PROTOCOL_VERSION,
         build: build.to_string(),
-        client: format!("isolation-remote {}", env!("CARGO_PKG_VERSION")),
+        client: format!("ladder-remote {}", env!("CARGO_PKG_VERSION")),
     };
     if let Err(end) = link.send(&hello) {
         return end.into_ended(false);

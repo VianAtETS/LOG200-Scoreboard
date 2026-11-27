@@ -1,4 +1,4 @@
-//! Une connexion `isolation-remote` : poignée de main, `hello`, puis attente des parties. Le thread
+//! Une connexion `ladder-remote` : poignée de main, `hello`, puis attente des parties. Le thread
 //! de la session est le seul à lire et écrire sa WebSocket ; l'arène lui confie chaque partie.
 
 use std::fs::File;
@@ -194,7 +194,7 @@ fn hello(socket: &Socket) -> Result<String, String> {
         };
         return match Message::from_json(text.as_str()) {
             Ok(Message::Hello { v, .. }) if v != PROTOCOL_VERSION => Err(format!(
-                "protocole v{v} non géré, v{PROTOCOL_VERSION} attendu : mettre à jour isolation-remote"
+                "protocole v{v} non géré, v{PROTOCOL_VERSION} attendu : mettre à jour ladder-remote"
             )),
             Ok(Message::Hello { build, .. }) if is_build(&build) => Ok(build),
             Ok(Message::Hello { .. }) => Err("build invalide : 16 caractères hexadécimaux attendus".into()),

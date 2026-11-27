@@ -10,7 +10,7 @@ use crate::tournament::admin::{self, Request};
 
 #[derive(Parser)]
 #[command(
-    name = "isolation-ladder",
+    name = "ladder",
     version,
     about = "Ladder Isolation : parties en continu et soumission des jars"
 )]
@@ -114,18 +114,14 @@ mod tests {
 
     #[test]
     fn archives_are_opt_in() {
+        assert!(!Cli::try_parse_from(["ladder", "ladder.toml"]).unwrap().archives);
         assert!(
-            !Cli::try_parse_from(["isolation-ladder", "ladder.toml"])
+            Cli::try_parse_from(["ladder", "ladder.toml", "--archives"])
                 .unwrap()
                 .archives
         );
         assert!(
-            Cli::try_parse_from(["isolation-ladder", "ladder.toml", "--archives"])
-                .unwrap()
-                .archives
-        );
-        assert!(
-            Cli::try_parse_from(["isolation-ladder", "--archives", "ladder.toml"])
+            Cli::try_parse_from(["ladder", "--archives", "ladder.toml"])
                 .unwrap()
                 .archives
         );

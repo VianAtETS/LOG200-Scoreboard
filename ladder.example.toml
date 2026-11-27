@@ -1,6 +1,6 @@
 # Configuration du ladder. Copier en ladder.toml (ignore par git) et adapter.
 # Prerequis : Docker avec gVisor (runtime runsc-host-uds, voir docs/formats.md) et l'image construite
-# par sandbox/build.sh. Lancement : isolation-ladder ladder.toml [--rounds N]
+# par sandbox/build.sh. Lancement : ladder ladder.toml [--rounds N]
 #
 # Pour developper sans Docker, lancer l'arbitre et les joueurs directement :
 #   referee = ["target/release/isolation-referee", "--port", "{port}", "--time-ms", "{time_ms}", "--opening", "{opening}"]
@@ -92,7 +92,7 @@ cpuset_black = "3"
 # cpuset_black = "8,9"
 
 # Soumission des jars par HTTP (PUT /api/submit). Une equipe s'inscrit avec
-#   isolation-ladder add-team eq01        (dans le compose : docker compose exec ladder isolation-ladder add-team eq01)
+#   ladder add-team eq01        (dans le compose : docker compose exec ladder ladder add-team eq01)
 # qui affiche son token. Elle joue des que son premier jar a passe le smoke test.
 [submit]
 listen = "0.0.0.0:8090"
@@ -102,7 +102,7 @@ max_jar_mb = 20
 # Delai minimal entre deux soumissions d'une meme equipe.
 min_interval_s = 300
 
-# Equipes distantes : elles jouent depuis leur machine avec isolation-remote, sans televerser leur
+# Equipes distantes : elles jouent depuis leur machine avec ladder-remote, sans televerser leur
 # jar (docs/formats.md, "Jouer a distance"), avec le meme token que les soumissions. La page relaie
 # /api/remote vers listen. connect : ou relier le joueur distant, la socket de sa couleur chez
 # l'arbitre (meme dossier que rundir) ; sans Docker, "tcp:127.0.0.1:{port}".
@@ -111,10 +111,10 @@ min_interval_s = 300
 # connect = "unix:/tmp/isolation-ladder/{game}/{side}/sock"
 
 # Noeuds de calcul (docs/formats.md, "Noeuds") : d'autres machines du LAN s'y connectent
-# (isolation-ladder node node.toml) et jouent les paires portables, qui comptent comme les autres.
+# (ladder node node.toml) et jouent les paires portables, qui comptent comme les autres.
 # Une paire est portable si ses deux joueurs le sont : bot `portable = true` (de la liste des noeuds),
 # ou equipe dont le build actif n'a jamais depasse son temps sur un noeud. tokens : registre
-# des noeuds (isolation-ladder add-node ID). Ecouter sur le LAN seulement, jamais derriere la page.
+# des noeuds (ladder add-node ID). Ecouter sur le LAN seulement, jamais derriere la page.
 # [nodes]
 # listen = "0.0.0.0:8093"
 # tokens = "jars/nodes.toml"
@@ -125,7 +125,7 @@ min_interval_s = 300
 listen = "0.0.0.0:8092"
 
 # Tournoi hebdomadaire en double elimination (docs/spec-tournoi-hebdo.md), entre les equipes qui ont
-# un jar accepte. Sans weekly, il ne part qu'a la main (isolation-ladder tournament start).
+# un jar accepte. Sans weekly, il ne part qu'a la main (ladder tournament start).
 [tournament]
 weekly = "wed 07:00, sun 19:00"  # heure de Montreal, creneaux separes par des virgules
 time_ms = 5000

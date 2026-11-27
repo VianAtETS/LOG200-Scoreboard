@@ -13,8 +13,8 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 
-use isolation_core::board::{Board, CELLS, Cell, Color, DIRS, Move, SIZE, Square};
-use isolation_core::rules;
+use isolation::board::{Board, CELLS, Cell, Color, DIRS, Move, SIZE, Square};
+use isolation::rules;
 
 use crate::cpu::{self, Choice, Level};
 
@@ -1303,9 +1303,9 @@ mod tests {
     use rand::seq::IndexedRandom;
 
     use super::*;
-    use isolation_core::board::DIRS;
-    use isolation_core::board::test_support::diagram;
-    use isolation_core::rules::test_support::positions;
+    use isolation::board::DIRS;
+    use isolation::board::test_support::diagram;
+    use isolation::rules::test_support::positions;
 
     fn far() -> Instant {
         Instant::now() + Duration::from_secs(60)

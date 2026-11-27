@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     game_kit::referee::main(
-        &isolation_core::Isolation,
+        &isolation::Isolation,
         "isolation-referee",
         "Arbitre une partie d'Isolation entre deux clients TCP",
     )

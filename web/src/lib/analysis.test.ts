@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { analyse, describe } from './analysis.ts'
 import { positions } from './replay.ts'
 
-// Première partie de crates/isolation-ladder/tests/fixtures/golden/games.jsonl. Valeurs attendues calculées
+// Première partie de crates/ladder/tests/fixtures/golden/games.jsonl. Valeurs attendues calculées
 // par measure() de l'arène isola (arena/web/core.js), l'implémentation de référence.
 const game = {
     winner: 'red' as const,

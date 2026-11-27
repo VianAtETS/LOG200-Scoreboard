@@ -1,4 +1,4 @@
-//! `GOLDEN_UPDATE=1 cargo test -p isolation-ladder --test golden` rewrites the expected files.
+//! `GOLDEN_UPDATE=1 cargo test -p ladder --test golden` rewrites the expected files.
 
 #![allow(clippy::unwrap_used)]
 
@@ -46,7 +46,7 @@ fn replaying_history_publishes_the_same_files() {
     let rules = support::binary("isolation-referee").display().to_string();
     fs::write(dir.join("ladder.toml"), format!("rules = [{rules:?}]\n{CONFIG}")).unwrap();
 
-    let status = Command::new(env!("CARGO_BIN_EXE_isolation-ladder"))
+    let status = Command::new(env!("CARGO_BIN_EXE_ladder"))
         .args(["ladder.toml", "--rounds", "0"])
         .current_dir(&dir)
         .status()

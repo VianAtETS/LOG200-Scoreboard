@@ -1,4 +1,4 @@
-// Serveur local sur les données « golden » du ladder (crates/isolation-ladder/tests/fixtures/golden),
+// Serveur local sur les données « golden » du ladder (crates/ladder/tests/fixtures/golden),
 // pour voir la page sans ladder ni Docker. Lance aussi `astro dev`, branché dessus.
 //
 //   node dev/golden-server.mjs            # page sur http://localhost:3000
@@ -24,7 +24,7 @@ const SMOKE_MS = 8000;
 const PAUSE_MS = 4000;
 
 const here = dirname(fileURLToPath(import.meta.url));
-const golden = join(here, '../../crates/isolation-ladder/tests/fixtures/golden');
+const golden = join(here, '../../crates/ladder/tests/fixtures/golden');
 const expected = join(golden, 'expected');
 const lines = readFileSync(join(golden, 'games.jsonl'), 'utf8').split('\n').filter(Boolean);
 const games = new Map(lines.map((l) => [JSON.parse(l).id, l]));

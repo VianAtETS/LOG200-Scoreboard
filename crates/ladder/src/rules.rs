@@ -282,14 +282,14 @@ pub struct Isolation;
 impl Rules for Isolation {
     fn describe(&self) -> Result<Descriptor, RulesError> {
         use game_kit::Game;
-        Ok(isolation_core::Isolation.descriptor())
+        Ok(isolation::Isolation.descriptor())
     }
 
     fn opening(&self, opening: Opening) -> Result<Vec<String>, RulesError> {
         use game_kit::Game;
         use rand::SeedableRng;
         let mut rng = rand::rngs::StdRng::seed_from_u64(opening.seed);
-        let moves = isolation_core::Isolation.random_opening(opening.plies, &mut rng);
+        let moves = isolation::Isolation.random_opening(opening.plies, &mut rng);
         Ok(moves.iter().map(ToString::to_string).collect())
     }
 
@@ -298,7 +298,7 @@ impl Rules for Isolation {
             .iter()
             .map(|result| {
                 result
-                    .replay(&isolation_core::Isolation)
+                    .replay(&isolation::Isolation)
                     .map(|replay| replay.changes)
                     .map_err(|e| e.to_string())
             })

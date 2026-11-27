@@ -9,7 +9,7 @@ publish = false
 
 [workspace.dependencies]
 game-kit = { path = "crates/game-kit" }
-isolation-core = { path = "crates/isolation-core" }
+isolation = { path = "crates/isolation" }
 isolation-engine = { path = "crates/isolation-engine" }
 hnefatafl = { path = "crates/hnefatafl" }
 anyhow = "1"

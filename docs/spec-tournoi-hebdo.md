@@ -68,8 +68,8 @@ retries = 3
 ### Commandes admin
 
 ```sh
-docker compose exec ladder isolation-ladder tournament start  ladder.toml
-docker compose exec ladder isolation-ladder tournament resume ladder.toml tournoi-2026-11-08 W3
+docker compose exec ladder ladder tournament start  ladder.toml
+docker compose exec ladder ladder tournament resume ladder.toml tournoi-2026-11-08 W3
 ```
 
 - La commande dépose un fichier de requête dans `jars/admin/` (non publié). La boucle le lit et le supprime à chaque tour : au plus `IDLE_DELAY` (10 s) d'attente.

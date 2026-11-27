@@ -10,11 +10,11 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN cargo build --release --locked \
-    --bin isolation-ladder --bin isolation-referee --bin isolation-check --bin hnefatafl-referee
+    --bin ladder --bin isolation-referee --bin isolation-check --bin hnefatafl-referee
 RUN cargo build --profile bot --locked --bin isolation-bot --bin hnefatafl-bot
 
 FROM scratch AS build
-COPY --from=compile /src/target/release/isolation-ladder \
+COPY --from=compile /src/target/release/ladder \
     /src/target/release/isolation-referee \
     /src/target/release/isolation-check /src/target/release/hnefatafl-referee /artifacts/
 COPY --from=compile /src/target/bot/isolation-bot /src/target/bot/hnefatafl-bot /artifacts/
@@ -51,7 +51,7 @@ RUN mkdir -p /etc/docker \
     > /etc/docker/daemon.json
 
 # isolation-referee aussi ici, hors bac a sable : ses sous-commandes sont les regles du jeu (`rules`).
-COPY --from=binaries /artifacts/isolation-ladder /artifacts/isolation-check /artifacts/isolation-referee \
+COPY --from=binaries /artifacts/ladder /artifacts/isolation-check /artifacts/isolation-referee \
     /artifacts/hnefatafl-referee /usr/local/bin/
 # Contexte de l'image des bacs a sable, construite par le Docker interne au demarrage.
 COPY sandbox/Dockerfile sandbox/referee-entry.sh sandbox/player-entry.sh /opt/sandbox-image/

@@ -12,7 +12,7 @@ use crate::config::{ThermalConfig, default_team_cmd};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodeConfig {
-    /// Nom du nœud, celui de `isolation-ladder add-node` au ladder.
+    /// Nom du nœud, celui de `ladder add-node` au ladder.
     pub id: String,
     /// `ws://<ladder>:<port>/api/node`, sur le LAN.
     pub ladder: String,

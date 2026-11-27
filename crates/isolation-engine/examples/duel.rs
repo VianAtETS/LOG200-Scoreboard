@@ -11,8 +11,8 @@ use clap::Parser;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-use isolation_core::board::{ByColor, Color, Move};
-use isolation_core::rules::{self, Replay};
+use isolation::board::{ByColor, Color, Move};
+use isolation::rules::{self, Replay};
 use isolation_engine::strategy::{Bot, Strategy};
 
 #[derive(Parser)]

@@ -2,8 +2,8 @@
 
 use std::fmt;
 
-use isolation_core::board::{Board, Color, DIRS, Move, Square};
-use isolation_core::rules::{destinations, legal_moves};
+use isolation::board::{Board, Color, DIRS, Move, Square};
+use isolation::rules::{destinations, legal_moves};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ProbeKind {

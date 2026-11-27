@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 mod support;
 
-const LADDER: &str = env!("CARGO_BIN_EXE_isolation-ladder");
+const LADDER: &str = env!("CARGO_BIN_EXE_ladder");
 
 fn read(path: &Path) -> Option<serde_json::Value> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()

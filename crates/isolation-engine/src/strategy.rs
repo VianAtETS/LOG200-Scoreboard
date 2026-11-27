@@ -6,8 +6,8 @@ use std::time::Instant;
 use rand::Rng;
 use rand::seq::IndexedRandom;
 
-use isolation_core::board::{Board, Color, Move};
-use isolation_core::rules::{self, mobility};
+use isolation::board::{Board, Color, Move};
+use isolation::rules::{self, mobility};
 
 use crate::cpu::{self, Choice, Level};
 use crate::engine::{self, Engine, Eval};
@@ -125,7 +125,7 @@ fn greedy(board: &Board, color: Color, moves: &[Move], rng: &mut impl Rng) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
-    use isolation_core::board::test_support::diagram;
+    use isolation::board::test_support::diagram;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 

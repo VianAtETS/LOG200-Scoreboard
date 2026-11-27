@@ -1,5 +1,5 @@
 [package]
-name = "isolation-core"
+name = "isolation"
 description = "Board, rules and protocol of the Isolation lab, as a game-kit Game"
 version.workspace = true
 edition.workspace = true

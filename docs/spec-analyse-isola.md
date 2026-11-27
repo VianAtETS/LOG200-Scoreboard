@@ -95,7 +95,7 @@ Une **paire** est formée par les deux parties de `spawn_pair` (`play.rs`) : mê
 | Reste de stderr | `data/logs/` | Personne | 60 jours, inchangé |
 
 - `GET /api/games/{id}/profile` ne renvoie que le côté de l'appelant. Même 404 si l'équipe n'a pas joué la partie ou n'a pas de profil : la route ne révèle pas l'existence d'un profil.
-- **Gabarit** : liste versionnée des `Classe.méthode` du code de départ du cours (`Client`, `GameConnection` et ses classes `Message` et `GameInfo`), tenue par l'opérateur dans `crates/isolation-ladder/src/template.txt`. Une pile ne porte pas les types des paramètres : la correspondance se fait sur la classe et le nom, les surcharges sont fusionnées. La part publique donne le pourcentage d'échantillons par méthode du gabarit et un total « autres » ; ni arbre ni profondeur, qui trahiraient la force de la recherche.
+- **Gabarit** : liste versionnée des `Classe.méthode` du code de départ du cours (`Client`, `GameConnection` et ses classes `Message` et `GameInfo`), tenue par l'opérateur dans `crates/ladder/src/template.txt`. Une pile ne porte pas les types des paramètres : la correspondance se fait sur la classe et le nom, les surcharges sont fusionnées. La part publique donne le pourcentage d'échantillons par méthode du gabarit et un total « autres » ; ni arbre ni profondeur, qui trahiraient la force de la recherche.
 - **Page Analyse** : une section Profil demande le jeton, gardé en `sessionStorage` (même clé que le formulaire de soumission), et affiche l'arbre d'appels d'isola, la profondeur et le coût de l'échantillonnage, ou « détection douteuse ».
 
 ## Sécurité

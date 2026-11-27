@@ -32,7 +32,7 @@ docker build -q -t isolation-sandbox /opt/sandbox-image > /dev/null
 docker build -q -t isolation-sandbox-jar --target jar /opt/sandbox-image > /dev/null
 
 if [ "${1:-}" = node ]; then
-    exec isolation-ladder node /srv/node.toml
+    exec ladder node /srv/node.toml
 fi
-exec isolation-ladder /srv/ladder.toml "$@"
+exec ladder /srv/ladder.toml "$@"
 

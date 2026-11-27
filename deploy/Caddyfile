@@ -3,7 +3,7 @@
 	redir / /web/
 	# Page : service web du profil compose "web" ; sans lui, 502 (page sur GitHub Pages).
 	reverse_proxy /web/* web:80
-	# Equipes distantes (isolation-remote) : WebSocket, relayee telle quelle. Plus precis que /api/*,
+	# Equipes distantes (ladder-remote) : WebSocket, relayee telle quelle. Plus precis que /api/*,
 	# donc essaye avant.
 	reverse_proxy /api/remote ladder:8091
 	# Direct des parties (page Direct, replay en cours) : WebSocket, comme /api/remote.

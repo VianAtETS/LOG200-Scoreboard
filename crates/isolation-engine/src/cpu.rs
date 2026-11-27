@@ -8,8 +8,8 @@ use std::time::Instant;
 use rand::Rng;
 use rand::seq::SliceRandom;
 
-use isolation_core::board::{Board, CELLS, Cell, Color, DIRS, Move, SIZE, Square};
-use isolation_core::rules;
+use isolation::board::{Board, CELLS, Cell, Color, DIRS, Move, SIZE, Square};
+use isolation::rules;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Level {
@@ -383,8 +383,8 @@ mod tests {
     use rand::rngs::StdRng;
 
     use super::*;
-    use isolation_core::board::test_support::diagram;
-    use isolation_core::rules::test_support::positions;
+    use isolation::board::test_support::diagram;
+    use isolation::rules::test_support::positions;
 
     fn brute(board: &mut Board, own: Color, own_turn: bool, depth: u8, level: Level) -> i32 {
         let stuck = |board: &Board, color| rules::legal_moves(board, color).is_empty();

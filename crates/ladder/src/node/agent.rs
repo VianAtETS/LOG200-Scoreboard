@@ -1,4 +1,4 @@
-//! L'agent d'un nœud (`isolation-ladder node node.toml`) : il se connecte au ladder, prouve qu'il sait
+//! L'agent d'un nœud (`ladder node node.toml`) : il se connecte au ladder, prouve qu'il sait
 //! jouer (sonde bot contre bot), annonce ses slots puis joue les parties qu'on lui confie avec
 //! l'exécuteur local, le même qu'au serveur principal. S'il perd le ladder, il arrête tout,
 //! nettoie, et revient avec un délai croissant.

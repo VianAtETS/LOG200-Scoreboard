@@ -104,7 +104,7 @@ pub fn run(path: &Path, rounds: Option<u64>, archives: bool) -> anyhow::Result<(
 fn warn_if_init() {
     if std::process::id() == 1 {
         eprintln!(
-            "ATTENTION : isolation-ladder est le PID 1, sans init pour ramasser les orphelins. Les \
+            "ATTENTION : le ladder est le PID 1, sans init pour ramasser les orphelins. Les \
              zombies vont s'accumuler jusqu'à bloquer les parties : lancer le conteneur avec \
              `init: true` (compose) ou `docker run --init`."
         );

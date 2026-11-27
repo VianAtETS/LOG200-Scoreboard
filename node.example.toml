@@ -1,8 +1,8 @@
 # Configuration d'un noeud de calcul (docs/formats.md, "Noeuds"). Copier en node.toml et adapter.
-# Lancement : isolation-ladder node node.toml, ou l'image du ladder avec la commande `node`.
+# Lancement : ladder node node.toml, ou l'image du ladder avec la commande `node`.
 # Le noeud se connecte au ladder ; il n'ouvre aucun port.
 
-# Nom du noeud, celui donne a `isolation-ladder add-node` sur le ladder.
+# Nom du noeud, celui donne a `ladder add-node` sur le ladder.
 id = "node-a"
 # Le ladder, sur le LAN ([nodes].listen de ladder.toml).
 ladder = "ws://ladder.lan:8093/api/node"

@@ -5,8 +5,8 @@
 use std::process::{Command, Stdio};
 
 use game_kit::record::{GameResult, RefereeEvent};
-use isolation_core::board::{Board, Color};
-use isolation_core::rules::legal_moves;
+use isolation::board::{Board, Color};
+use isolation::rules::legal_moves;
 
 mod support;
 
@@ -77,7 +77,7 @@ fn searching_bots_print_one_arena_line_per_move() {
 #[test]
 fn bots_play_a_full_valid_game() {
     let (result, _) = play(&["--strategy", "greedy"], "");
-    assert!(result.validate(&isolation_core::Isolation).is_ok());
+    assert!(result.validate(&isolation::Isolation).is_ok());
     assert!(result.opening.is_empty());
     assert!(!result.moves.is_empty());
     assert_eq!(result.move_ms.len(), result.moves.len());
@@ -92,7 +92,7 @@ fn opening_is_canonicalised_and_probes_find_no_divergence() {
     let loose = format!("{} , {second}", first.to_string().replace('-', " ").to_lowercase());
 
     let (result, _) = play(&["--strategy", "random", "--probe-illegal"], &loose);
-    assert!(result.validate(&isolation_core::Isolation).is_ok());
+    assert!(result.validate(&isolation::Isolation).is_ok());
     assert_eq!(result.opening, [first.to_string(), second.to_string()]);
     assert!(
         result.invalid.red > 0 && result.invalid.black > 0,

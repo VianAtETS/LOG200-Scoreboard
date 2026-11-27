@@ -101,10 +101,10 @@ La déclaration suit le jar : si la version suivante est construite avec `MULTIT
 Votre jar peut aussi jouer depuis votre ordinateur : il n'est jamais envoyé au serveur, seuls ses coups le sont. Téléchargez l'archive de votre système depuis la [dernière release](https://github.com/VianAtETS/LOG200-Scoreboard/releases/latest), puis :
 
 ```sh
-LADDER_TOKEN=<token> ./isolation-remote --url <adresse de la page> -- java -jar Client-eqXX.jar
+LADDER_TOKEN=<token> ./ladder-remote --url <adresse de la page> -- java -jar Client-eqXX.jar
 ```
 
-Sous Windows (PowerShell) : `$env:LADDER_TOKEN="<token>"`, puis `.\isolation-remote.exe --url ... -- java -jar Client-eqXX.jar`.
+Sous Windows (PowerShell) : `$env:LADDER_TOKEN="<token>"`, puis `.\ladder-remote.exe --url ... -- java -jar Client-eqXX.jar`.
 
 Tant que la commande tourne, votre équipe est au tirage : le relais lance votre jar pour chaque partie, et il se connecte à `localhost:8888` comme d'habitude. Fermez-la (Ctrl+C) pour arrêter ; si vous avez aussi soumis un jar, c'est lui qui reprend.
 
