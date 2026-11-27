@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use game_kit::digest::short_hash;
 use game_kit::record::{GameRecord, GameResult, Measures, Player, Reason, RefereeEvent, TournamentGame, now_rfc3339};
-use game_kit::{ByColor, Color};
+use game_kit::{ByColor, Change, Color};
 
 use crate::config::Config;
 use crate::db::{Db, Profiling};
@@ -130,6 +130,10 @@ impl Arena {
             smoke_tests: AtomicUsize::new(0),
             hub,
         }
+    }
+
+    pub fn rules(&self) -> &dyn Rules {
+        self.rules.as_ref()
     }
 
     pub const fn config(&self) -> &Config {
@@ -285,7 +289,7 @@ impl Arena {
             .executor(slot.slot())
             .run(&run, Arc::clone(&out) as Arc<dyn GameOutput>)?;
         // Le résultat d'un arbitre d'ici comme celui d'un nœud : un nœud ne peut pas inventer une fin.
-        self.rules.check(&result)?;
+        let changes = self.rules.check(&result)?;
         if let Some(absent) = annulled_no_show(&result, fixture, red, black) {
             return Err(GameError::NoShow(absent.id.clone()));
         }
@@ -311,7 +315,11 @@ impl Arena {
             measures: bot_measures([red, black], &out.logs, result.moves.len()),
             result,
         };
-        Ok(Finished { record, profiles })
+        Ok(Finished {
+            record,
+            profiles,
+            changes,
+        })
     }
 }
 
@@ -319,6 +327,8 @@ impl Arena {
 pub struct Finished {
     pub record: GameRecord,
     pub profiles: Vec<Profile>,
+    /// Effets de chaque demi-coup, rendus par les règles qui ont validé la partie.
+    pub changes: Vec<Vec<Change>>,
 }
 
 /// Les profils des côtés profilés, lus dans leurs journaux ; `public(team, build)` : l'équipe

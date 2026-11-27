@@ -8,16 +8,22 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior, named_params};
 
-use game_kit::Color;
 use game_kit::record::{GameRecord, Jsonl};
+use game_kit::{Change, Color, Descriptor};
 
 use crate::profile::{Profile, TemplateShare};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 mod sql {
     pub const SCHEMA: &str = include_str!("sql/schema.sql");
     pub const MIGRATE_V2: &str = include_str!("sql/migrate_v2.sql");
+    pub const MIGRATE_V3: &str = include_str!("sql/migrate_v3.sql");
+    pub const SET_CHANGES: &str = include_str!("sql/set_changes.sql");
+    pub const MISSING_CHANGES: &str = include_str!("sql/missing_changes.sql");
+    pub const CHANGES: &str = include_str!("sql/changes.sql");
+    pub const INSERT_DESCRIPTOR: &str = include_str!("sql/insert_descriptor.sql");
+    pub const DESCRIPTOR: &str = include_str!("sql/descriptor.sql");
     pub const UNPAIRED: &str = include_str!("sql/unpaired.sql");
     pub const SET_PAIR: &str = include_str!("sql/set_pair.sql");
     pub const PAIR_GAME: &str = include_str!("sql/pair_game.sql");
@@ -145,7 +151,8 @@ impl Db {
     /// Refuse une base écrite par un binaire plus récent : la réécrire en version courante la
     /// corromprait sans bruit. Un retour arrière passe par une restauration `.backup`. Une base v1
     /// passe en v2 d'un bloc ; la transaction immédiate la réserve au premier des processus qui
-    /// l'ouvrent (le ladder, le formulaire de soumission).
+    /// l'ouvrent (le ladder, le formulaire de soumission). Une base v2 gagne la colonne des effets, que
+    /// le ladder remplit au démarrage (`backfill_changes`).
     pub fn open(path: &Path) -> anyhow::Result<Self> {
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(Duration::from_secs(5))?;
@@ -159,6 +166,9 @@ impl Db {
         );
         if found == 1 {
             tx.execute_batch(sql::MIGRATE_V2)?;
+        }
+        if (1..=2).contains(&found) {
+            tx.execute_batch(sql::MIGRATE_V3)?;
         }
         tx.execute_batch(sql::SCHEMA)?;
         if found == 1 {
@@ -186,8 +196,8 @@ impl Db {
         self.conn.query_row(sql::IS_EMPTY, [], |r| r.get(0))
     }
 
-    /// `after` : l'id de la première partie de sa paire, si elle a été enregistrée.
-    pub fn insert_game(&self, game: &GameRecord, after: Option<&str>, profiles: &[Profile]) -> rusqlite::Result<()> {
+    /// `after` : l'id de la première partie de sa paire, si elle a été enregistrée. Rend son `seq`.
+    pub fn insert_game(&self, game: &GameRecord, after: Option<&str>, profiles: &[Profile]) -> rusqlite::Result<i64> {
         let tx = self.conn.unchecked_transaction()?;
         let seq = insert(&tx, game)?;
         tx.prepare_cached(sql::PAIR_GAME)?
@@ -208,7 +218,8 @@ impl Db {
             })?;
         }
         drop(stmt);
-        tx.commit()
+        tx.commit()?;
+        Ok(seq)
     }
 
     /// Le profil de `team` dans la partie `id`, en JSON ; `None` si elle n'y en a pas.
@@ -247,6 +258,61 @@ impl Db {
                 .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
         })
         .collect()
+    }
+
+    /// Les effets de la partie `seq`, demi-coup par demi-coup (ouverture comprise).
+    pub fn set_changes(&self, seq: i64, changes: &[Vec<Change>]) -> rusqlite::Result<()> {
+        self.conn
+            .prepare_cached(sql::SET_CHANGES)?
+            .execute(named_params! { ":seq": seq, ":changes": to_json(&changes)? })?;
+        Ok(())
+    }
+
+    /// Les effets de la partie `id`, en JSON ; `None` si elle n'existe pas ou n'en a pas encore.
+    pub fn changes_json(&self, id: &str) -> rusqlite::Result<Option<String>> {
+        let mut stmt = self.conn.prepare_cached(sql::CHANGES)?;
+        let mut rows = stmt.query(named_params! { ":id": id })?;
+        Ok(rows.next()?.and_then(|r| r.get(0).ok()))
+    }
+
+    /// Jusqu'à `limit` parties sans effets après la partie `after` (un `seq`), dans l'ordre de jeu.
+    pub fn missing_changes(&self, after: i64, limit: usize) -> rusqlite::Result<Vec<(i64, GameRecord)>> {
+        let mut stmt = self.conn.prepare_cached(sql::MISSING_CHANGES)?;
+        let rows = stmt.query_map(named_params! { ":after": after, ":limit": limit }, |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
+        rows.map(|row| {
+            let (seq, text) = row?;
+            serde_json::from_str(&text)
+                .map(|game| (seq, game))
+                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))
+        })
+        .collect()
+    }
+
+    /// Enregistre le descripteur d'un jeu s'il est nouveau ; vrai s'il l'était. Un descripteur déjà
+    /// connu n'est jamais remplacé, même différent : `false`, et l'appelant compare.
+    pub fn put_descriptor(&self, descriptor: &Descriptor) -> rusqlite::Result<bool> {
+        let inserted = self
+            .conn
+            .prepare_cached(sql::INSERT_DESCRIPTOR)?
+            .execute(named_params! {
+                ":game": descriptor.game,
+                ":version": descriptor.version,
+                ":descriptor": to_json(descriptor)?,
+            })?;
+        Ok(inserted == 1)
+    }
+
+    pub fn descriptor(&self, game: &str, version: u32) -> rusqlite::Result<Option<Descriptor>> {
+        let mut stmt = self.conn.prepare_cached(sql::DESCRIPTOR)?;
+        let mut rows = stmt.query(named_params! { ":game": game, ":version": version })?;
+        let Some(text) = rows.next()?.map(|r| r.get::<_, String>(0)).transpose()? else {
+            return Ok(None);
+        };
+        serde_json::from_str(&text)
+            .map(Some)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
     }
 
     /// La ligne JSON d'une partie, telle qu'enregistrée.
@@ -737,12 +803,14 @@ pub(crate) mod tests {
         );
     }
 
-    /// Ramène la base au schéma v1 : v2 n'y ajoute que la colonne `pair` et deux tables.
+    /// Ramène la base au schéma v1 : v2 n'y ajoute que la colonne `pair` et deux tables, v3 la colonne
+    /// `changes` et une table.
     fn downgrade_to_v1(path: &Path) {
         Connection::open(path)
             .unwrap()
             .execute_batch(
-                "DROP INDEX games_pair; ALTER TABLE games DROP COLUMN pair;
+                "DROP INDEX games_pair; ALTER TABLE games DROP COLUMN pair; ALTER TABLE games DROP COLUMN changes;
+                 DROP TABLE descriptors;
                  DROP TABLE profiles; DROP TABLE profiling; PRAGMA user_version = 1;",
             )
             .unwrap();

@@ -45,11 +45,12 @@ impl Ladder {
         fs::write(
             dir.join("ladder.toml"),
             format!(
-                "referee = [\"unused\"]\ntime_ms = 1000\nsession = \"api\"\nteam_cmd = [\"unused\"]\n\
+                "referee = [\"unused\"]\nrules = [{rules:?}]\ntime_ms = 1000\nsession = \"api\"\nteam_cmd = [\"unused\"]\n\
                  [submit]\nlisten = \"127.0.0.1:0\"\nmax_jar_mb = {MAX_JAR_MB}\n\
                  [remote]\nlisten = \"127.0.0.1:0\"\n\
                  [live]\nlisten = \"127.0.0.1:0\"\n\
-                 [nodes]\nlisten = \"127.0.0.1:0\"\n"
+                 [nodes]\nlisten = \"127.0.0.1:0\"\n",
+                rules = support::binary("isolation-referee").display().to_string(),
             ),
         )
         .unwrap();
@@ -415,7 +416,9 @@ fn replay_reads_one_game_by_id_and_lets_caches_keep_it() {
         head.contains("cache-control: public, max-age=31536000, immutable"),
         "{head}"
     );
-    assert_eq!(format!("{body}\n"), GAME);
+    // La ligne enregistrée telle quelle, puis les effets rejoués au démarrage (aucun coup ici).
+    let line = GAME.trim_end().strip_suffix('}').unwrap();
+    assert_eq!(body, format!("{line},\"changes\":[]}}"));
 
     assert_eq!(ladder.request("GET", "/api/games/absent", None, b"").0, 404);
     assert_eq!(

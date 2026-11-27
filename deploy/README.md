@@ -37,7 +37,7 @@ Pour que chaque push sur `main` soumette le jar, ajouter [`templates/ladder.yml`
 | Interroger les parties | `docker compose exec ladder sqlite3 -readonly state/ladder.db`, ou les statistiques de `/api/stats` (voir `docs/api.md`) |
 | Retirer une équipe | supprimer sa ligne dans `jars/teams.toml` et son dossier `jars/<équipe>/` |
 | Changer le temps par coup | `time_ms` dans `ladder.toml`, puis `docker compose restart ladder` ; les bots `niveau-N` suivent le temps annoncé |
-| Mettre à jour | `docker compose pull && docker compose up -d` |
+| Mettre à jour | `docker compose pull && docker compose up -d`. Le premier démarrage après la base v3 rejoue tout l'historique pour en tirer les effets des coups (`effets rejoués : N parties` dans les journaux), de l'ordre d'une seconde par millier de parties, avant de relancer les parties |
 | Mettre à jour la page seule (profil `web`) | `docker compose pull web && docker compose up -d web` : le ladder continue |
 | Fixer une version | `SCOREBOARD_TAG=v0.2.0 docker compose up -d` |
 | Arrêter | `docker compose down` (les parties restent dans `state/ladder.db`) |

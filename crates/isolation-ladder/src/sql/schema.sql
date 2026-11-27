@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS games (
     tournament_game INTEGER,
     record TEXT NOT NULL,
     -- seq de la première partie de la paire du ladder ; NULL pour un tournoi (voir pair_game.sql).
-    pair INTEGER
+    pair INTEGER,
+    -- Effets de chaque demi-coup, ouverture comprise (JSON, `check` de l'arbitre) ; NULL : à remplir.
+    changes TEXT
 );
 CREATE INDEX IF NOT EXISTS games_session ON games(session);
 CREATE INDEX IF NOT EXISTS games_pair ON games(pair);
@@ -75,4 +77,12 @@ CREATE TABLE IF NOT EXISTS profiling (
     private INTEGER NOT NULL,
     public INTEGER NOT NULL CHECK (private OR NOT public),
     PRIMARY KEY (team, build)
+) WITHOUT ROWID;
+-- Descripteur de chaque jeu et version de règles joués ici (`describe` de l'arbitre). Jamais modifié :
+-- les parties d'une version gardent son affichage.
+CREATE TABLE IF NOT EXISTS descriptors (
+    game TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    descriptor TEXT NOT NULL,
+    PRIMARY KEY (game, version)
 ) WITHOUT ROWID;

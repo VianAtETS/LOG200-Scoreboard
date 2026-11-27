@@ -28,7 +28,7 @@ La page `api.html` du site (lien « API » dans la barre de navigation, GitHub P
 
 ## Parties : `GET /api/games`
 
-Les parties, une par ligne, de la plus ancienne à la plus récente, au même format que `GET /api/games/{id}` (l'ancien `games.jsonl`). Sans paramètre, les 5000 dernières : le ladder les garde en mémoire et ne relit la base qu'une fois par minute au plus, peu importe le nombre d'appels. Si la base est illisible, il sert sa dernière copie.
+Les parties, une par ligne, de la plus ancienne à la plus récente, au même format que `GET /api/games/{id}`, sans `changes` (l'ancien `games.jsonl`). Sans paramètre, les 5000 dernières : le ladder les garde en mémoire et ne relit la base qu'une fois par minute au plus, peu importe le nombre d'appels. Si la base est illisible, il sert sa dernière copie.
 
 Paramètres, tous facultatifs (avec l'un d'eux, le ladder lit la base à chaque appel) :
 
@@ -54,7 +54,7 @@ curl "https://<ladder>/api/games?team=eq100&limit=1000&before=20261111T161123.52
 
 ## Une partie : `GET /api/games/{id}`
 
-La partie telle qu'elle a été enregistrée : l'objet résultat de l'arbitre, complété par le ladder (format dans [formats.md, Base des parties](formats.md#base-des-parties-stateladderdb)). L'`id` vient de `summary.json`, `teams/<équipe>.jsonl` ou `live.json`.
+La partie telle qu'elle a été enregistrée : l'objet résultat de l'arbitre, complété par le ladder (format dans [formats.md, Base des parties](formats.md#base-des-parties-stateladderdb)), suivi de `changes` : les effets de chaque demi-coup, ouverture comprise (`changes[i]` va avec le i-ème coup de `opening` puis `moves`, chacun une liste de `{"cell", "code", "role"}`). Appliqués dans l'ordre à `initial` du descripteur (`data/game.json`), ils redonnent chaque position sans connaître les règles. `changes` manque le temps que le ladder rejoue une partie enregistrée sans (au démarrage, après la migration) ; la réponse n'est alors pas mise en cache. L'`id` vient de `summary.json`, `teams/<équipe>.jsonl` ou `live.json`.
 
 ```sh
 curl https://<ladder>/api/games/20261024T142103.512Z-eq07-eq12

@@ -274,21 +274,43 @@ fn unavailable(error: &rusqlite::Error) -> Response {
     (StatusCode::INTERNAL_SERVER_ERROR, "base indisponible\n").into_response()
 }
 
-/// Une partie, pour le replay. Une partie finie ne change plus : un CDN peut la garder indéfiniment.
+/// Une partie, pour le replay, avec `changes` : les effets de chaque demi-coup, ouverture comprise
+/// (`[{"cell", "code", "role"}]` par demi-coup), que la page applique à la position initiale du
+/// descripteur (`data/game.json`) sans connaître les règles. Une partie finie ne change plus : un CDN
+/// peut la garder indéfiniment, sauf tant que ses effets manquent.
 #[utoipa::path(get, path = "/api/games/{id}", tag = "parties",
     params(("id" = String, Path, description = "Id de la partie", example = "20261024T142103.512Z-eq07-eq12")),
     responses(
-        (status = 200, body = GameRecord),
+        (status = 200, body = GameRecord, description = "La partie, et `changes` s'ils sont connus."),
         (status = 404, description = "Partie inconnue ou encore en cours."),
         (status = 500, description = "Base indisponible."),
     ),
 )]
 async fn game(State(db): State<Arc<PathBuf>>, UrlPath(id): UrlPath<String>) -> Response {
-    match blocking(move || Db::open_read(&db)?.game_json(&id)).await {
-        Ok(Some(body)) => json("public, max-age=31536000, immutable", body),
+    let read = move || {
+        let db = Db::open_read(&db)?;
+        Ok::<_, rusqlite::Error>(
+            db.game_json(&id)?
+                .map(|record| (record, db.changes_json(&id).ok().flatten())),
+        )
+    };
+    match blocking(read).await {
+        Ok(Some((record, Some(changes)))) => match with_changes(&record, &changes) {
+            Some(body) => json("public, max-age=31536000, immutable", body),
+            None => json("no-store", record),
+        },
+        Ok(Some((record, None))) => json("no-store", record),
         Ok(None) => (StatusCode::NOT_FOUND, "partie inconnue\n").into_response(),
         Err(e) => unavailable(&e),
     }
+}
+
+/// La ligne de la partie, telle qu'enregistrée, suivie de ses effets ; `None` si l'une des deux est
+/// illisible.
+fn with_changes(record: &str, changes: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(changes).ok()?;
+    let object = record.trim_end().strip_suffix('}')?;
+    (object.starts_with('{') && object.len() > 1).then(|| format!("{object},\"changes\":{changes}}}"))
 }
 
 #[derive(Deserialize, IntoParams)]

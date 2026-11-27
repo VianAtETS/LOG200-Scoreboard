@@ -24,6 +24,7 @@ use crate::pairs::Pairs;
 use crate::play::{Report, live_hub, remote_registry};
 use crate::remote::Registry;
 use crate::roster::{Builds, NodeBans, portable_teams, roster};
+use crate::rules;
 
 use crate::schedule::Scheduler;
 use crate::standings::Standings;
@@ -54,6 +55,8 @@ pub fn run(path: &Path, rounds: Option<u64>, archives: bool) -> anyhow::Result<(
     let hub = live_hub(&reports);
     let remote = remote_registry(&cfg, &reports);
     let arena = Arc::new(Arena::new(cfg, Arc::clone(&hub)));
+    rules::adopt(arena.rules(), &db, arena.config().data_dir())?;
+    rules::backfill_changes(arena.rules(), &db)?;
     arena.drain_on(sigterm);
     arena.sweep();
     let _api = api::serve(&arena, &hub, remote.as_ref())?;
@@ -274,15 +277,24 @@ fn save(
     after: Option<&str>,
     [red, black]: [&str; 2],
 ) -> anyhow::Result<Option<GameRecord>> {
-    let Finished { record, profiles } = match outcome {
+    let Finished {
+        record,
+        profiles,
+        changes,
+    } = match outcome {
         Ok(finished) => finished,
         Err(e) => {
             eprintln!("   partie {red} contre {black} annulée : {e}");
             return Ok(None);
         }
     };
-    db.insert_game(&record, after, &profiles)
+    let seq = db
+        .insert_game(&record, after, &profiles)
         .with_context(|| cfg.db.display().to_string())?;
+    // Sans effets, la partie sera rejouée par `check` au prochain démarrage (`backfill_changes`).
+    if let Err(e) = db.set_changes(seq, &changes) {
+        eprintln!("   effets de {} non enregistrés : {e}", record.id);
+    }
     if let Err(e) = standings.record(&record, db) {
         eprintln!("   classement non publié : {e}");
     }

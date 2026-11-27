@@ -1,6 +1,6 @@
 # Spec : plateforme multi-jeux
 
-Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 et 2 faites).
+Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 à 3 faites).
 
 ## Problème
 
@@ -90,10 +90,9 @@ Le résultat v1 plus :
 | `v` | 2. |
 | `game`, `game_version` | Identité du jeu, comme dans le descripteur. |
 | `winner` | `"red"`, `"black"`, ou `null` pour une nulle. |
-| `reason` | Raisons communes (`timeout`, `disconnect`, `protocol`, `no_show`) ou propres au jeu, déclarées dans le descripteur (`no_moves` en Isolation). |
-| `changes` | Effets de chaque demi-coup, ouverture comprise : `changes[i]` va avec le i-ème coup de `opening` puis `moves`. |
+| `reason` | Une fin selon les règles : `no_moves` ou une raison propre au jeu, déclarée dans `reasons` du descripteur. Ou un abandon, commun à tous les jeux (`timeout`, `disconnect`, `protocol`, `no_show`), qui a toujours un gagnant. |
 
-Le ladder accepte encore les résultats v1 d'Isolation (anciens arbitres) : il les complète avec `check`.
+Le ladder lit encore les résultats v1 (anciens arbitres, parties déjà enregistrées). Les effets ne sont pas dans le résultat : `check`, qui valide la partie, les rend, et le ladder les range à part (voir Base), pour que les listes de parties de l'API restent légères.
 
 ## Descripteur
 
@@ -121,10 +120,10 @@ Le ladder accepte encore les résultats v1 d'Isolation (anciens arbitres) : il l
 
 ## Base
 
-- `games` : colonnes `game` et `game_version` (`isolation`, 1 pour les parties existantes).
-- `moves` : colonne `changes` (JSON), remplie par `check` pendant la migration pour les parties existantes.
-- `descriptors` : `(game, version, descriptor)`.
-- Nulles : `winner` devient nullable ; l'Elo compte 0,5, le modèle de prédiction aussi.
+- `games.changes` (schéma v3) : les effets de chaque demi-coup (JSON), rendus par `check`. Les parties enregistrées sans, dont tout l'historique d'une base v2, sont rejouées par lots au démarrage ; une partie refusée est signalée et retentée au démarrage suivant. `GET /api/games/{id}` les ajoute à la partie.
+- `descriptors` : `(game, version, descriptor)`, écrit au démarrage s'il est nouveau, jamais remplacé.
+- L'identité du jeu est dans chaque résultat v2 (`game`, `game_version`) ; une partie v1 est une partie du jeu de l'instance.
+- Nulles : `winner` vaut `draw` dans la colonne (qui reste `NOT NULL`), `null` dans le résultat ; l'Elo et le modèle de prédiction comptent 0,5, les statistiques ni victoire ni défaite. En tournoi, une manche nulle est rejouée (nouvelle ouverture, couleurs inversées) ; à la troisième, la meilleure tête de série l'emporte.
 
 ## Instances
 

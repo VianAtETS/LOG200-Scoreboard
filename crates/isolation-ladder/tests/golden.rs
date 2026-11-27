@@ -7,6 +7,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod support;
+
+/// Sans `rules` : le test ajoute l'arbitre compilé en tête.
 const CONFIG: &str = r#"referee = ["unused"]
 port = 9999
 time_ms = 1000
@@ -40,7 +43,8 @@ fn replaying_history_publishes_the_same_files() {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("data")).unwrap();
     fs::copy(fixtures.join("games.jsonl"), dir.join("data/games.jsonl")).unwrap();
-    fs::write(dir.join("ladder.toml"), CONFIG).unwrap();
+    let rules = support::binary("isolation-referee").display().to_string();
+    fs::write(dir.join("ladder.toml"), format!("rules = [{rules:?}]\n{CONFIG}")).unwrap();
 
     let status = Command::new(env!("CARGO_BIN_EXE_isolation-ladder"))
         .args(["ladder.toml", "--rounds", "0"])
