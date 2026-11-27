@@ -14,7 +14,7 @@ use crate::command::{CommandTemplate, ExecConfig};
 use crate::team_id::TeamId;
 use crate::tournament::calendar::Schedule;
 
-/// Une partie détruit au plus une case par coup.
+/// Demi-coups au plus d'une partie sans limite dans le descripteur : Isolation détruit une case par coup.
 const MAX_PLIES: u64 = 144;
 
 #[derive(Deserialize)]
@@ -199,8 +199,11 @@ impl Config {
         self.tournament.clone().unwrap_or_default()
     }
 
-    pub fn game_timeout(&self, time_ms: u64) -> Duration {
-        Duration::from_secs(self.game_timeout_s.unwrap_or(MAX_PLIES * time_ms / 1000 + 120))
+    /// `game_timeout_s`, sinon tous les demi-coups du jeu (`max_plies` de son descripteur) au temps
+    /// maximal, plus 2 minutes.
+    pub fn game_timeout(&self, time_ms: u64, max_plies: Option<u32>) -> Duration {
+        let plies = max_plies.map_or(MAX_PLIES, u64::from);
+        Duration::from_secs(self.game_timeout_s.unwrap_or(plies * time_ms / 1000 + 120))
     }
 }
 

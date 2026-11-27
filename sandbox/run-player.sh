@@ -5,6 +5,7 @@
 # Usage : run-player.sh GAME SIDE PORT FICHIER.jar
 #         (SANDBOX_PROFILE=1 : le jar tourne avec le profileur, profiler.jar a cote de ce script)
 #         run-player.sh GAME SIDE PORT --bot random|greedy|aleatoire|niveau-1|...|niveau-5 [OPTIONS DU BOT]
+#         (SANDBOX_BOT, cle `bot` de [sandbox] : le bot du jeu, isolation-bot par defaut, hnefatafl-bot...)
 set -euo pipefail
 game=$1 side=$2 port=$3
 shift 3
@@ -28,7 +29,7 @@ fi
 # Les jars tournent dans l'image sans nos binaires : ils ne peuvent pas lancer isolation-bot.
 if [ "$1" = --bot ]; then
     image=$SANDBOX_IMAGE
-    cmd=(isolation-bot --strategy "$2" --port "$port" "${@:3}")
+    cmd=("${SANDBOX_BOT:-isolation-bot}" --strategy "$2" --port "$port" "${@:3}")
 else
     image=${SANDBOX_JAR_IMAGE:-$SANDBOX_IMAGE-jar}
     args+=(-v "$(realpath "$1"):/bot.jar:ro")

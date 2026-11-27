@@ -120,7 +120,22 @@ Le jeu du lab change à chaque session ; un même serveur peut garder la session
 
 - **Cœurs** : les ladders ne se voient pas. Donner à leurs slots des `cpuset_red` et `cpuset_black` disjoints, sinon deux parties de deux instances se disputent un cœur.
 - **Session terminée** : `archived = true` dans son `ladder.toml`, puis `docker compose -f compose.multi.yml restart ladder-<id>`. Le ladder ne lance plus aucune partie ni tournoi et refuse les jars (403), mais garde classement, replays et API en ligne.
-- **Un autre jeu** : son ladder pointe `rules` et `referee` vers l'arbitre de ce jeu (voir « Sous-commandes » dans `docs/formats.md`).
+- **Un autre jeu** : son ladder pointe `rules` et `referee` vers l'arbitre de ce jeu (voir « Sous-commandes » dans `docs/formats.md`). L'image contient Hnefatafl (règles du serveur de LOG320 : `docs/rules-hnefatafl.md`) ; dans le `ladder.toml` de son instance, en partant de `ladder.example.toml` :
+
+  ```toml
+  rules = ["hnefatafl-referee"]
+  # 1 s par coup au ladder ; une partie va jusqu'à 300 demi-coups (5 min de réflexion au plus).
+  time_ms = 1000
+
+  [sandbox]
+  referee = "hnefatafl-referee"   # l'arbitre lancé par run-referee.sh
+  bot = "hnefatafl-bot"           # les bots lancés par run-player.sh --bot (aleatoire)
+
+  [tournament]
+  time_ms = 5000                  # le temps de l'énoncé, aussi la valeur par défaut
+  ```
+
+  Les bots de référence d'Isolation (`niveau-N`) n'existent pas pour Hnefatafl : `hnefatafl-bot` ne joue qu'au hasard, et sert d'adversaire aux smoke tests.
 - **GitHub Pages** reste pour un serveur d'une seule instance : `SCOREBOARD_SERVER` ne prend pas de chemin.
 
 ## Page sur GitHub Pages

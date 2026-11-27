@@ -11,4 +11,4 @@ RUN apt-get update \
 COPY player-entry.sh /usr/local/bin/
 
 FROM jar
-COPY isolation-referee isolation-bot referee-entry.sh /usr/local/bin/
+COPY isolation-referee isolation-bot hnefatafl-referee hnefatafl-bot referee-entry.sh /usr/local/bin/

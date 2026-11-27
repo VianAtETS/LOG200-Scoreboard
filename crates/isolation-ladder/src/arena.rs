@@ -282,7 +282,7 @@ impl Arena {
             opening,
             red,
             black,
-            timeout: cfg.game_timeout(time_ms),
+            timeout: cfg.game_timeout(time_ms, self.rules.describe().ok().and_then(|d| d.max_plies)),
             profile,
         };
         let result = self

@@ -24,6 +24,8 @@ export type TDescriptor = {
   initial: number[];
   pieces: TPiece[];
   special?: TSpecial[];
+  // Demi-coups au plus d'une partie, si les règles en fixent.
+  max_plies?: number;
   // Fins propres au jeu et leur libellé.
   reasons?: Record<string, string>;
 };

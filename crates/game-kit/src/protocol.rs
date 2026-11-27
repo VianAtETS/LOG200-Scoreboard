@@ -84,6 +84,11 @@ pub fn end(outcome: Outcome, last: Option<&str>) -> String {
     last.map_or_else(|| format!("5 {outcome}"), |mv| format!("5 {outcome} {mv}"))
 }
 
+/// `5 [<dernier coup>]` : fin de partie du dialecte `Classic`, sans résultat.
+pub fn end_classic(last: Option<&str>) -> String {
+    last.map_or_else(|| "5".to_string(), |mv| format!("5 {mv}"))
+}
+
 #[derive(Debug, Error)]
 pub enum RecvError {
     #[error("délai dépassé")]
@@ -96,39 +101,69 @@ pub enum RecvError {
 
 /// Connexion ligne par ligne avec échéance. Les octets d'une ligne incomplète sont conservés d'un
 /// appel à l'autre.
+/// Les deux formats du serveur officiel du cours, selon le jeu.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Dialect {
+    /// Celui d'Isolation (version 2 du protocole) : message `0` en début de partie, `5 <résultat>
+    /// [coup]` à la fin, un message par ligne.
+    #[default]
+    Current,
+    /// L'ancien serveur (Hnefatafl) : pas de message `0`, `5 [coup]` sans résultat, aucun message
+    /// terminé par `\n`. Un message reçu sans `\n` s'arrête quand le client se tait (`QUIET`).
+    Classic,
+}
+
+/// Silence qui termine un message sans fin de ligne (dialecte `Classic`) : un client écrit son coup
+/// d'un bloc.
+pub const QUIET: Duration = Duration::from_millis(10);
+
 pub struct LineConn {
     reader: BufReader<TcpStream>,
     writer: TcpStream,
     pending: Vec<u8>,
+    dialect: Dialect,
 }
 
 impl LineConn {
     pub fn new(stream: TcpStream) -> io::Result<Self> {
+        Self::with_dialect(stream, Dialect::Current)
+    }
+
+    pub fn with_dialect(stream: TcpStream, dialect: Dialect) -> io::Result<Self> {
         stream.set_nodelay(true)?;
         Ok(Self {
             writer: stream.try_clone()?,
             reader: BufReader::new(stream),
             pending: Vec::new(),
+            dialect,
         })
     }
 
+    /// Un message : suivi de `\n`, sauf en dialecte `Classic`.
     pub fn send(&mut self, line: impl fmt::Display) -> io::Result<()> {
-        self.writer.write_all(format!("{line}\n").as_bytes())?;
+        let text = match self.dialect {
+            Dialect::Current => format!("{line}\n"),
+            Dialect::Classic => line.to_string(),
+        };
+        self.writer.write_all(text.as_bytes())?;
         self.writer.flush()
     }
 
-    /// Ligne suivante, sans fin de ligne. Sans échéance, l'attente est illimitée.
+    /// Ligne suivante, sans fin de ligne. Sans échéance, l'attente est illimitée. En dialecte
+    /// `Classic`, ce qui est arrivé sans `\n` compte pour un message après `QUIET` de silence.
     pub fn recv(&mut self, deadline: Option<Instant>) -> Result<String, RecvError> {
         loop {
+            // Sans fin de ligne, on lit par tranches de silence : un message peut arriver sans `\n`.
+            let quiet = (self.dialect == Dialect::Classic).then_some(QUIET);
             let timeout = match deadline {
                 Some(deadline) => {
                     let left = deadline.saturating_duration_since(Instant::now());
                     if left.is_zero() {
                         return Err(RecvError::Timeout);
                     }
-                    Some(left.max(Duration::from_millis(1)))
+                    Some(quiet.map_or(left, |q| q.min(left)).max(Duration::from_millis(1)))
                 }
-                None => None,
+                None => quiet,
             };
             self.reader.get_ref().set_read_timeout(timeout)?;
             match self.reader.read_until(b'\n', &mut self.pending) {
@@ -139,8 +174,22 @@ impl LineConn {
                     self.pending.clear();
                     return Ok(line);
                 }
-                // Fin de flux, avec ou sans ligne incomplète.
+                // Fin de flux : sans fin de ligne, le dernier message (`5` puis la fermeture) compte encore.
+                Ok(_) if self.dialect == Dialect::Classic && !self.pending.is_empty() => {
+                    let message = String::from_utf8_lossy(&self.pending).trim().to_string();
+                    self.pending.clear();
+                    return Ok(message);
+                }
                 Ok(_) => return Err(RecvError::Closed),
+                Err(e)
+                    if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
+                        && quiet.is_some()
+                        && !self.pending.is_empty() =>
+                {
+                    let message = String::from_utf8_lossy(&self.pending).trim().to_string();
+                    self.pending.clear();
+                    return Ok(message);
+                }
                 Err(e)
                     if matches!(
                         e.kind(),

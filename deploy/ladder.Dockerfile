@@ -10,14 +10,14 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN cargo build --release --locked \
-    --bin isolation-ladder --bin isolation-referee --bin isolation-check
-RUN cargo build --profile bot --locked --bin isolation-bot
+    --bin isolation-ladder --bin isolation-referee --bin isolation-check --bin hnefatafl-referee
+RUN cargo build --profile bot --locked --bin isolation-bot --bin hnefatafl-bot
 
 FROM scratch AS build
 COPY --from=compile /src/target/release/isolation-ladder \
     /src/target/release/isolation-referee \
-    /src/target/release/isolation-check /artifacts/
-COPY --from=compile /src/target/bot/isolation-bot /artifacts/
+    /src/target/release/isolation-check /src/target/release/hnefatafl-referee /artifacts/
+COPY --from=compile /src/target/bot/isolation-bot /src/target/bot/hnefatafl-bot /artifacts/
 
 # Binaires musl de la CI, un dossier par architecture ; l'artefact perd le bit executable.
 FROM scratch AS prebuilt
@@ -51,10 +51,12 @@ RUN mkdir -p /etc/docker \
     > /etc/docker/daemon.json
 
 # isolation-referee aussi ici, hors bac a sable : ses sous-commandes sont les regles du jeu (`rules`).
-COPY --from=binaries /artifacts/isolation-ladder /artifacts/isolation-check /artifacts/isolation-referee /usr/local/bin/
+COPY --from=binaries /artifacts/isolation-ladder /artifacts/isolation-check /artifacts/isolation-referee \
+    /artifacts/hnefatafl-referee /usr/local/bin/
 # Contexte de l'image des bacs a sable, construite par le Docker interne au demarrage.
 COPY sandbox/Dockerfile sandbox/referee-entry.sh sandbox/player-entry.sh /opt/sandbox-image/
-COPY --from=binaries /artifacts/isolation-referee /artifacts/isolation-bot /opt/sandbox-image/
+COPY --from=binaries /artifacts/isolation-referee /artifacts/isolation-bot /artifacts/hnefatafl-referee \
+    /artifacts/hnefatafl-bot /opt/sandbox-image/
 COPY sandbox/run-referee.sh sandbox/run-player.sh sandbox/cleanup.sh /srv/sandbox/
 # Monte par run-player.sh dans le bac a sable d'un jar profile : l'image des jars n'en a pas.
 COPY --from=profiler /out/profiler.jar /srv/sandbox/

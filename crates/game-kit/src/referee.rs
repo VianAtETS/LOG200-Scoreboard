@@ -22,7 +22,7 @@ use rand::rngs::StdRng;
 use serde::Serialize;
 
 use crate::game::{Change, Ending, Game};
-use crate::protocol::{self as wire, LineConn, Outcome, RecvError};
+use crate::protocol::{self as wire, Dialect, LineConn, Outcome, RecvError};
 use crate::record::{GameResult, InvalidCounts, RECORD_VERSION, Reason, RefereeEvent};
 use crate::replay::Replay;
 use crate::side::{ByColor, Color};
@@ -178,44 +178,45 @@ fn play<G: Game>(game: &G, args: &PlayArgs) -> anyhow::Result<()> {
     let start = Instant::now();
     let connect_timeout = Duration::from_millis(args.connect_timeout_ms);
     let cells = game.cells(&state);
-    let (verdict, moves, move_ms, invalid) = match seat_players(&listener, connect_timeout, size, time_ms, &cells)? {
-        Lobby::Ready(players) => {
-            let mut referee = Referee {
-                game,
-                state,
-                players,
-                time: Duration::from_millis(time_ms),
-                first_move_grace: Duration::from_millis(args.first_move_grace_ms),
-                extra: ByColor {
-                    red: Duration::from_millis(args.extra_red_ms),
-                    black: Duration::from_millis(args.extra_black_ms),
-                },
-                max_invalid: args.max_invalid,
-                moves: Vec::new(),
-                move_ms: Vec::new(),
-                invalid: InvalidCounts::default(),
-            };
-            announce(&RefereeEvent::Ready {
-                changes: opening_changes,
-            });
-            let verdict = referee.run();
-            referee.players.red.shutdown();
-            referee.players.black.shutdown();
-            (verdict, referee.moves, referee.move_ms, referee.invalid)
-        }
-        Lobby::NoShow { absent, red } => {
-            // Le rouge déjà connecté apprend qu'il gagne, sans coup joué.
-            if let Some(mut red) = red {
-                let _ = red.send(wire::end(Outcome::Win, None));
-                red.shutdown();
+    let (verdict, moves, move_ms, invalid) =
+        match seat_players(&listener, connect_timeout, size, time_ms, &cells, game.dialect())? {
+            Lobby::Ready(players) => {
+                let mut referee = Referee {
+                    game,
+                    state,
+                    players,
+                    time: Duration::from_millis(time_ms),
+                    first_move_grace: Duration::from_millis(args.first_move_grace_ms),
+                    extra: ByColor {
+                        red: Duration::from_millis(args.extra_red_ms),
+                        black: Duration::from_millis(args.extra_black_ms),
+                    },
+                    max_invalid: args.max_invalid,
+                    moves: Vec::new(),
+                    move_ms: Vec::new(),
+                    invalid: InvalidCounts::default(),
+                };
+                announce(&RefereeEvent::Ready {
+                    changes: opening_changes,
+                });
+                let verdict = referee.run();
+                referee.players.red.shutdown();
+                referee.players.black.shutdown();
+                (verdict, referee.moves, referee.move_ms, referee.invalid)
             }
-            let verdict = Ending {
-                winner: Some(absent.other()),
-                reason: Reason::NoShow,
-            };
-            (verdict, Vec::new(), Vec::new(), InvalidCounts::default())
-        }
-    };
+            Lobby::NoShow { absent, red } => {
+                // Le rouge déjà connecté apprend qu'il gagne, sans coup joué.
+                if let Some(mut red) = red {
+                    let _ = red.send(end_line(game.dialect(), Outcome::Win, None));
+                    red.shutdown();
+                }
+                let verdict = Ending {
+                    winner: Some(absent.other()),
+                    reason: Reason::NoShow,
+                };
+                (verdict, Vec::new(), Vec::new(), InvalidCounts::default())
+            }
+        };
 
     let result = GameResult {
         v: RECORD_VERSION,
@@ -261,6 +262,16 @@ fn opening_state<G: Game>(game: &G, opening: &[G::Move]) -> anyhow::Result<(G::S
     Ok((replay.state, replay.changes))
 }
 
+/// Le message de fin, selon le dialecte : sans résultat pour l'ancien serveur, qui ne dit qu'à
+/// l'écran qui a gagné (et n'envoie rien pour un temps dépassé ou une nulle : on envoie `5` quand même,
+/// pour que les clients s'arrêtent).
+fn end_line(dialect: Dialect, outcome: Outcome, last: Option<&str>) -> String {
+    match dialect {
+        Dialect::Current => wire::end(outcome, last),
+        Dialect::Classic => wire::end_classic(last),
+    }
+}
+
 fn announce(event: &RefereeEvent) {
     if io::stdout().is_terminal() {
         return;
@@ -285,15 +296,19 @@ fn seat_players(
     (rows, cols): (u32, u32),
     time_ms: u64,
     cells: &[u8],
+    dialect: Dialect,
 ) -> anyhow::Result<Lobby> {
     let seat = |color| -> anyhow::Result<Option<LineConn>> {
         let Some(stream) = accept(listener, Instant::now() + timeout).context("attente des joueurs")? else {
             eprintln!("{color} ne s'est pas connecté");
             return Ok(None);
         };
-        let mut conn = LineConn::new(stream).context("socket")?;
+        let mut conn = LineConn::with_dialect(stream, dialect).context("socket")?;
         eprintln!("CONNECTED {color}");
-        let _ = conn.send(wire::new_game(rows, cols, time_ms, color));
+        // L'ancien serveur n'annonce pas la partie : le noir reçoit tout de suite le plateau.
+        if dialect == Dialect::Current {
+            let _ = conn.send(wire::new_game(rows, cols, time_ms, color));
+        }
         if color == Color::Black {
             let _ = conn.send(wire::board(color, cells));
         }
@@ -389,7 +404,7 @@ impl<G: Game> Referee<'_, G> {
                     None => [(Color::Red, Outcome::Draw), (Color::Black, Outcome::Draw)],
                 };
                 for (color, outcome) in outcomes {
-                    self.send(color, &wire::end(outcome, Some(&last)));
+                    self.send(color, &end_line(self.game.dialect(), outcome, Some(&last)));
                 }
                 return ending;
             }
@@ -432,7 +447,7 @@ impl<G: Game> Referee<'_, G> {
             } else {
                 outcome
             };
-            self.send(color, &wire::end(outcome, None));
+            self.send(color, &end_line(self.game.dialect(), outcome, None));
         }
         Ending {
             winner: Some(winner),

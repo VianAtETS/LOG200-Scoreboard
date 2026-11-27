@@ -28,6 +28,9 @@ pub struct Descriptor {
     /// Raisons de fin propres au jeu (`no_moves`), avec leur libellé.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub reasons: BTreeMap<String, String>,
+    /// Demi-coups au plus d'une partie, si les règles en fixent : borne le temps d'une partie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_plies: Option<u32>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]

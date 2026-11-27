@@ -11,6 +11,7 @@ publish = false
 game-kit = { path = "crates/game-kit" }
 isolation-core = { path = "crates/isolation-core" }
 isolation-engine = { path = "crates/isolation-engine" }
+hnefatafl = { path = "crates/hnefatafl" }
 anyhow = "1"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "query", "tokio", "ws"] }
 clap = { version = "4", features = ["derive", "env"] }

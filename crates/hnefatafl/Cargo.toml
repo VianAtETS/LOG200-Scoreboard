@@ -1,0 +1,25 @@
+[package]
+name = "hnefatafl"
+description = "Hnefatafl 13x13 of the LOG320 lab, as a game-kit Game: rules of the official server, referee and random bot"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "hnefatafl-referee"
+path = "src/bin/referee.rs"
+
+[[bin]]
+name = "hnefatafl-bot"
+path = "src/bin/bot.rs"
+
+[dependencies]
+game-kit.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

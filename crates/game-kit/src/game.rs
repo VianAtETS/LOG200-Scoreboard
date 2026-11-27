@@ -8,6 +8,7 @@ use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::descriptor::Descriptor;
+use crate::protocol::Dialect;
 use crate::record::Reason;
 use crate::side::Color;
 
@@ -25,6 +26,13 @@ pub trait Game {
     /// Codes des cases, dans l'ordre des messages `1` et `2` du protocole.
     fn cells(&self, state: &Self::State) -> Vec<u8>;
 
+    /// La position d'un plateau reçu (messages `1` et `2`), pour un client qui n'a pas vu l'ouverture.
+    /// `None` : plateau illisible, ou jeu qui ne sait pas le relire.
+    fn read_cells(&self, cells: &[u8]) -> Option<Self::State> {
+        let _ = cells;
+        None
+    }
+
     fn is_legal(&self, state: &Self::State, side: Color, mv: Self::Move) -> bool;
 
     /// Tous les coups légaux de `side`, dans un ordre stable.
@@ -35,6 +43,11 @@ pub trait Game {
 
     /// Après un coup de `mover` : la fin de partie, s'il y en a une.
     fn ending(&self, state: &Self::State, mover: Color) -> Option<Ending>;
+
+    /// Le format du serveur officiel de ce jeu.
+    fn dialect(&self) -> Dialect {
+        Dialect::Current
+    }
 
     /// Format des messages `3` et `5` du serveur officiel.
     fn protocol_move(&self, mv: Self::Move) -> String {
@@ -142,6 +155,7 @@ pub(crate) mod toy {
                     .collect(),
                 special: Vec::new(),
                 reasons: [("max_plies".to_string(), "limite de coups".to_string())].into(),
+                max_plies: None,
             }
         }
 

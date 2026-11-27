@@ -203,7 +203,12 @@ mod tests {
     #[test]
     fn defaults_and_substitution() {
         let cfg: Config = MINIMAL.parse().unwrap();
-        assert_eq!(cfg.game_timeout(cfg.time_ms), Duration::from_secs(264));
+        assert_eq!(cfg.game_timeout(cfg.time_ms, None), Duration::from_secs(264));
+        assert_eq!(
+            cfg.game_timeout(cfg.time_ms, Some(300)),
+            Duration::from_secs(420),
+            "Hnefatafl"
+        );
         let id: TeamId = "eq07".parse().unwrap();
         let team = Team::with_jar(&cfg, &id, Path::new("jars/eq07/current.jar"), false);
         assert_eq!(team.build_file(), Some(PathBuf::from("jars/eq07/current.jar")));
@@ -239,7 +244,7 @@ mod tests {
         };
         let command = vars.command(&cfg.referee, None).unwrap();
         assert_eq!(command.get_args().collect::<Vec<_>>(), ["5000"]);
-        assert_eq!(cfg.game_timeout(5000), Duration::from_mins(14));
+        assert_eq!(cfg.game_timeout(5000, None), Duration::from_mins(14));
     }
 
     #[test]

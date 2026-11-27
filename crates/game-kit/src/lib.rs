@@ -3,6 +3,7 @@
 //! et ce que la plateforme partage avec ses outils (empreintes, protocole du mode distant).
 //! Voir docs/spec-multi-jeux.md ; les formats échangés sont décrits dans docs/formats.md.
 
+pub mod bot;
 pub mod descriptor;
 pub mod digest;
 pub mod game;

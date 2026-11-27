@@ -48,6 +48,7 @@ impl Game for Isolation {
             ],
             special: Vec::new(),
             reasons: BTreeMap::from([("no_moves".into(), "plus aucun coup".into())]),
+            max_plies: None,
         }
     }
 

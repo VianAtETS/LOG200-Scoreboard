@@ -1,6 +1,6 @@
 # Spec : plateforme multi-jeux
 
-Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 à 5 faites).
+Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 à 6 faites).
 
 ## Problème
 
@@ -150,10 +150,10 @@ Chaque étape est une PR qui garde Isolation identique (tests golden).
 3. Format v2 et base : effets, descripteurs, nulles (Elo, modèle, tournoi).
 4. Page : descripteur, plateau générique, effets dans l'API et le direct.
 5. Instances multiples : configuration, déploiement, page d'accueil.
-6. Hnefatafl : règles, arbitre, bot aléatoire.
+6. Hnefatafl : `crates/hnefatafl`, règles et protocole du serveur officiel de LOG320 relevés dans son code (`docs/rules-hnefatafl.md`), dialecte `Classic` du protocole, arbitre et bot aléatoire générique (`game_kit::bot`).
 
 ## Questions ouvertes
 
-- Variante d'Hnefatafl de la session précédente (taille, capture du roi, répétitions, limite de coups) et son encodage dans le protocole officiel.
-- Nulle dans un match de tournoi au meilleur de N : rejouée, ou comptée pour moitié ?
+- ~~Variante d'Hnefatafl~~ : tranchée par l'énoncé et le code du serveur officiel (`docs/rules-hnefatafl.md`). Reste à confirmer en jouant contre le serveur lui-même (sous Wine, comme pour Isolation).
+- ~~Nulle en tournoi~~ : rejouée, la 3e donne la manche à la meilleure tête de série (D22 de `docs/spec-tournoi-hebdo.md`).
 - Renommage des crates `isolation-*` (le mot désigne aussi le bac à sable) : en fin de migration, dans une PR à part.

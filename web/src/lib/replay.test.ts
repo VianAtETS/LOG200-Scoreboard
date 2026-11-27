@@ -70,3 +70,19 @@ test('an unusable descriptor is refused, Isolation is the fallback', () => {
     assert.ok(!usable(null))
     assert.equal(cellName(ISOLATION, 138), 'G1')
 })
+
+test("Hnefatafl's descriptor, as its referee writes it, draws on the page", async () => {
+    const { readFile } = await import('node:fs/promises')
+    const descriptor = JSON.parse(await readFile(new URL('./fixtures/hnefatafl.game.json', import.meta.url), 'utf8'))
+    assert.ok(usable(descriptor))
+    assert.equal(descriptor.initial.length, 13 * 13)
+    assert.equal(cellName(descriptor, 6 * 13 + 6), 'G7', 'le trône')
+    assert.deepEqual(descriptor.special.map((s: { style: string }) => s.style).sort(), ['corner', 'corner', 'corner', 'corner', 'throne'])
+    // Un attaquant G12-L12, sans capture : les effets que rend l'arbitre.
+    const steps = positions(
+        { moves: ['G12-L12'], changes: [[{ cell: 19, code: 0, role: 'from' }, { cell: 24, code: 4, role: 'to' }]] },
+        descriptor,
+    )
+    assert.equal(steps[1].cells[24], 4)
+    assert.equal(steps[1].move, null)
+})

@@ -62,20 +62,20 @@ jobs:
         run: cargo test --workspace --release --locked --target ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-referee --bin isolation-check --bin isolation-remote
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin isolation-referee --bin isolation-check --bin isolation-remote --bin hnefatafl-referee
 
       - name: Build bot
-        run: cargo build --profile bot --locked --target ${{ matrix.target }} --bin isolation-bot
+        run: cargo build --profile bot --locked --target ${{ matrix.target }} --bin isolation-bot --bin hnefatafl-bot
 
       - name: Build ladder
         if: ${{ matrix.docker }}
         run: |
           cargo build --release --locked --target ${{ matrix.target }} --bin isolation-ladder
           mkdir -p "prebuilt/${{ matrix.docker }}"
-          for bin in isolation-ladder isolation-referee isolation-check; do
+          for bin in isolation-ladder isolation-referee isolation-check hnefatafl-referee; do
             cp "target/${{ matrix.target }}/release/$bin" "prebuilt/${{ matrix.docker }}/"
           done
-          cp "target/${{ matrix.target }}/bot/isolation-bot" "prebuilt/${{ matrix.docker }}/"
+          cp "target/${{ matrix.target }}/bot/isolation-bot" "target/${{ matrix.target }}/bot/hnefatafl-bot" "prebuilt/${{ matrix.docker }}/"
 
       - name: Upload image binaries
         if: ${{ matrix.docker }}
@@ -94,10 +94,10 @@ jobs:
           ext=""
           [[ "$TARGET" == *windows* ]] && ext=".exe"
           mkdir "$name"
-          for bin in isolation-referee isolation-check isolation-remote; do
+          for bin in isolation-referee isolation-check isolation-remote hnefatafl-referee; do
             cp "target/$TARGET/release/$bin$ext" "$name/"
           done
-          cp "target/$TARGET/bot/isolation-bot$ext" "$name/"
+          cp "target/$TARGET/bot/isolation-bot$ext" "target/$TARGET/bot/hnefatafl-bot$ext" "$name/"
           cp README.md "$name/"
           if [[ -n "$ext" ]]; then
             7z a "$name.zip" "$name" > /dev/null
