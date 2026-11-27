@@ -1,51 +1,15 @@
-//! Protocole texte du serveur officiel, une commande par ligne (tableau dans docs/formats.md).
+//! Messages du serveur officiel, décodés pour Isolation (plateau 12×12, coups à trois cases). Le
+//! cadre commun (connexion, encodage, résultats) est dans `game_kit::protocol`.
 
 use std::fmt;
-use std::io::{self, BufRead, BufReader, ErrorKind, Write};
-use std::net::{Shutdown, TcpStream};
 use std::str::FromStr;
-use std::time::{Duration, Instant};
 
+use game_kit::protocol as wire;
 use thiserror::Error;
 
+pub use game_kit::protocol::{LineConn, Outcome, PROTOCOL_VERSION, RecvError};
+
 use crate::board::{Board, BoardError, Color, Move};
-
-pub const PROTOCOL_VERSION: u32 = 2;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Outcome {
-    Win,
-    Loss,
-    /// Envoyé aux deux joueurs quand l'un d'eux dépasse son temps.
-    Timeout,
-}
-
-impl Outcome {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Win => "WIN",
-            Self::Loss => "LOSS",
-            Self::Timeout => "TIMEOUT",
-        }
-    }
-}
-
-impl fmt::Display for Outcome {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for Outcome {
-    type Err = DecodeError;
-
-    fn from_str(s: &str) -> Result<Self, DecodeError> {
-        [Self::Win, Self::Loss, Self::Timeout]
-            .into_iter()
-            .find(|o| o.as_str() == s)
-            .ok_or_else(|| DecodeError::UnknownOutcome(s.to_string()))
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ServerMsg {
@@ -83,13 +47,6 @@ pub enum DecodeError {
     Board(#[from] BoardError),
 }
 
-const fn color_code(color: Color) -> u8 {
-    match color {
-        Color::Red => 0,
-        Color::Black => 1,
-    }
-}
-
 fn numbers<T: FromStr>(line: &str, fields: &str) -> Result<Vec<T>, DecodeError> {
     fields
         .split_whitespace()
@@ -99,26 +56,23 @@ fn numbers<T: FromStr>(line: &str, fields: &str) -> Result<Vec<T>, DecodeError> 
 
 impl fmt::Display for ServerMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
+        let protocol = |mv: &Option<Move>| mv.map(|mv| mv.protocol().to_string());
+        let line = match self {
             Self::NewGame {
                 rows,
                 cols,
                 time_ms,
                 color,
-            } => write!(f, "0 {PROTOCOL_VERSION} {rows} {cols} {time_ms} {}", color_code(*color)),
+            } => wire::new_game(*rows, *cols, *time_ms, *color),
             Self::Board { color, board } => {
-                write!(f, "{}", color_code(*color) + 1)?;
-                board.cells().iter().try_for_each(|cell| write!(f, " {}", cell.code()))
+                let cells: Vec<u8> = board.cells().iter().map(|cell| cell.code()).collect();
+                wire::board(*color, &cells)
             }
-            Self::Request(Some(mv)) => write!(f, "3 {}", mv.protocol()),
-            Self::Request(None) => f.write_str("3"),
-            Self::Invalid => f.write_str("4"),
-            Self::End {
-                outcome,
-                last: Some(mv),
-            } => write!(f, "5 {outcome} {}", mv.protocol()),
-            Self::End { outcome, last: None } => write!(f, "5 {outcome}"),
-        }
+            Self::Request(mv) => wire::request(protocol(mv).as_deref()),
+            Self::Invalid => wire::INVALID.to_string(),
+            Self::End { outcome, last } => wire::end(*outcome, protocol(last).as_deref()),
+        };
+        f.write_str(&line)
     }
 }
 
@@ -155,7 +109,9 @@ impl FromStr for ServerMsg {
             "5" => {
                 let (outcome, last) = rest.split_once(' ').unwrap_or((rest, ""));
                 Ok(Self::End {
-                    outcome: outcome.parse()?,
+                    outcome: outcome
+                        .parse()
+                        .map_err(|e: wire::UnknownOutcome| DecodeError::UnknownOutcome(e.0))?,
                     last: last.parse().ok(),
                 })
             }
@@ -164,85 +120,8 @@ impl FromStr for ServerMsg {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum RecvError {
-    #[error("délai dépassé")]
-    Timeout,
-    #[error("connexion fermée")]
-    Closed,
-    #[error(transparent)]
-    Io(#[from] io::Error),
-}
-
-/// Connexion ligne par ligne avec échéance. Les octets d'une ligne incomplète sont conservés d'un
-/// appel à l'autre.
-pub struct LineConn {
-    reader: BufReader<TcpStream>,
-    writer: TcpStream,
-    pending: Vec<u8>,
-}
-
-impl LineConn {
-    pub fn new(stream: TcpStream) -> io::Result<Self> {
-        stream.set_nodelay(true)?;
-        Ok(Self {
-            writer: stream.try_clone()?,
-            reader: BufReader::new(stream),
-            pending: Vec::new(),
-        })
-    }
-
-    pub fn send(&mut self, line: impl fmt::Display) -> io::Result<()> {
-        self.writer.write_all(format!("{line}\n").as_bytes())?;
-        self.writer.flush()
-    }
-
-    /// Ligne suivante, sans fin de ligne. Sans échéance, l'attente est illimitée.
-    pub fn recv(&mut self, deadline: Option<Instant>) -> Result<String, RecvError> {
-        loop {
-            let timeout = match deadline {
-                Some(deadline) => {
-                    let left = deadline.saturating_duration_since(Instant::now());
-                    if left.is_zero() {
-                        return Err(RecvError::Timeout);
-                    }
-                    Some(left.max(Duration::from_millis(1)))
-                }
-                None => None,
-            };
-            self.reader.get_ref().set_read_timeout(timeout)?;
-            match self.reader.read_until(b'\n', &mut self.pending) {
-                Ok(_) if self.pending.ends_with(b"\n") => {
-                    let line = String::from_utf8_lossy(&self.pending)
-                        .trim_end_matches(['\r', '\n'])
-                        .to_string();
-                    self.pending.clear();
-                    return Ok(line);
-                }
-                // Fin de flux, avec ou sans ligne incomplète.
-                Ok(_) => return Err(RecvError::Closed),
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
-                    ) => {}
-                Err(e) if matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted) => {
-                    return Err(RecvError::Closed);
-                }
-                Err(e) => return Err(e.into()),
-            }
-        }
-    }
-
-    pub fn shutdown(&self) {
-        let _ = self.writer.shutdown(Shutdown::Both);
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::net::TcpListener;
-
     use super::*;
 
     fn mv(s: &str) -> Move {
@@ -326,27 +205,5 @@ mod tests {
             Err(DecodeError::UnknownOutcome(_))
         ));
         assert!(matches!("9".parse::<ServerMsg>(), Err(DecodeError::UnknownCommand(_))));
-    }
-
-    #[test]
-    fn recv_keeps_partial_line_across_timeouts() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let writer = std::thread::spawn(move || {
-            let mut s = TcpStream::connect(addr).unwrap();
-            s.write_all(b"G1-").unwrap();
-            std::thread::sleep(Duration::from_millis(80));
-            s.write_all(b"E3-C12\r\nnext\n").unwrap();
-            std::thread::sleep(Duration::from_millis(50));
-        });
-        let (stream, _) = listener.accept().unwrap();
-        let mut conn = LineConn::new(stream).unwrap();
-        let short = Instant::now() + Duration::from_millis(20);
-        assert!(matches!(conn.recv(Some(short)), Err(RecvError::Timeout)));
-        let long = Instant::now() + Duration::from_secs(2);
-        assert_eq!(conn.recv(Some(long)).unwrap(), "G1-E3-C12");
-        assert_eq!(conn.recv(Some(long)).unwrap(), "next");
-        assert!(matches!(conn.recv(Some(long)), Err(RecvError::Closed)));
-        writer.join().unwrap();
     }
 }

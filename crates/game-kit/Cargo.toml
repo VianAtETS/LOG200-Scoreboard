@@ -1,0 +1,22 @@
+[package]
+name = "game-kit"
+description = "What a game provides to the ladder: rules trait, descriptor, protocol framing, record formats and the generic referee"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+utoipa = { workspace = true, optional = true }
+
+[features]
+# Schémas OpenAPI des enregistrements, pour la doc de l'API du ladder.
+openapi = ["dep:utoipa"]
+
+[lints]
+workspace = true

@@ -53,10 +53,12 @@ fn check_jsonl(text: &str) -> Vec<String> {
         .skipped
         .iter()
         .map(|s| format!("ligne {} ignorée : {}", s.line, s.reason));
-    let invalid = jsonl
-        .games
-        .iter()
-        .filter_map(|g| g.result.validate().err().map(|e| format!("partie {} : {e}", g.id)));
+    let invalid = jsonl.games.iter().filter_map(|g| {
+        g.result
+            .validate(&isolation_core::Isolation)
+            .err()
+            .map(|e| format!("partie {} : {e}", g.id))
+    });
     skipped.chain(invalid).collect()
 }
 

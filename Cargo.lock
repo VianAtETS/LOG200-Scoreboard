@@ -443,6 +443,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "game-kit"
+version = "0.35.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "rand 0.10.3",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "utoipa",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -643,12 +656,12 @@ dependencies = [
 name = "isolation-core"
 version = "0.35.1"
 dependencies = [
+ "game-kit",
  "rand 0.10.3",
  "serde",
  "serde_json",
  "sha2",
  "thiserror",
- "utoipa",
 ]
 
 [[package]]
@@ -688,10 +701,8 @@ dependencies = [
 name = "isolation-referee"
 version = "0.35.1"
 dependencies = [
- "anyhow",
- "clap",
+ "game-kit",
  "isolation-core",
- "serde_json",
 ]
 
 [[package]]

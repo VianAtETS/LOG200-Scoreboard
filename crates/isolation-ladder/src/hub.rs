@@ -191,7 +191,7 @@ impl Hub {
                 running.turn_start = Instant::now();
                 return;
             }
-            RefereeEvent::Move { mv, ms } => (mv, ms),
+            RefereeEvent::Move { mv, ms, .. } => (mv, ms),
         };
         if running.broken {
             return;
@@ -301,6 +301,7 @@ mod tests {
         RefereeEvent::Move {
             mv: text.into(),
             ms: 12,
+            changes: Vec::new(),
         }
     }
 

@@ -158,6 +158,7 @@ mod tests {
         let mv = RefereeEvent::Move {
             mv: "G1-G4-F9".into(),
             ms: 7,
+            changes: Vec::new(),
         };
         live.hub.event("g1", mv);
         let moved = recv(&mut ws).unwrap();

@@ -2,75 +2,17 @@
 //! affichée "12" a `y = 0`. L'index `y * 12 + x` est l'ordre des cases dans les messages 1 et 2.
 
 use std::fmt;
-use std::ops::{Index, IndexMut};
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Les camps sont communs à tous les jeux ; réexportés pour les chemins historiques.
+pub use game_kit::side::{ByColor, Color};
 
 pub const SIZE: u8 = 12;
 pub const CELLS: usize = SIZE as usize * SIZE as usize;
 
 /// Leur ordre fixe celui dans lequel les coups sont générés.
 pub const DIRS: [(i8, i8); 8] = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)];
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(rename_all = "lowercase")]
-pub enum Color {
-    Red,
-    Black,
-}
-
-impl Color {
-    #[must_use]
-    pub const fn other(self) -> Self {
-        match self {
-            Self::Red => Self::Black,
-            Self::Black => Self::Red,
-        }
-    }
-
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Red => "red",
-            Self::Black => "black",
-        }
-    }
-}
-
-impl fmt::Display for Color {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
-/// Une valeur par couleur, indexée par `Color`.
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct ByColor<T> {
-    pub red: T,
-    pub black: T,
-}
-
-impl<T> Index<Color> for ByColor<T> {
-    type Output = T;
-
-    fn index(&self, color: Color) -> &T {
-        match color {
-            Color::Red => &self.red,
-            Color::Black => &self.black,
-        }
-    }
-}
-
-impl<T> IndexMut<Color> for ByColor<T> {
-    fn index_mut(&mut self, color: Color) -> &mut T {
-        match color {
-            Color::Red => &mut self.red,
-            Color::Black => &mut self.black,
-        }
-    }
-}
 
 /// Contenu d'une case ; la discriminante est la valeur du protocole.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

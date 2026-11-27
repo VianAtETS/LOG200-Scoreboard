@@ -61,7 +61,7 @@ fn play(bot_args: &[&str], opening: &str) -> GameResult {
 #[test]
 fn bots_play_a_full_valid_game() {
     let result = play(&["--strategy", "greedy"], "");
-    assert!(result.validate().is_ok());
+    assert!(result.validate(&isolation_core::Isolation).is_ok());
     assert!(result.opening.is_empty());
     assert!(!result.moves.is_empty());
     assert_eq!(result.move_ms.len(), result.moves.len());
@@ -76,7 +76,7 @@ fn opening_is_canonicalised_and_probes_find_no_divergence() {
     let loose = format!("{} , {second}", first.to_string().replace('-', " ").to_lowercase());
 
     let result = play(&["--strategy", "random", "--probe-illegal"], &loose);
-    assert!(result.validate().is_ok());
+    assert!(result.validate(&isolation_core::Isolation).is_ok());
     assert_eq!(result.opening, [first.to_string(), second.to_string()]);
     assert!(
         result.invalid.red > 0 && result.invalid.black > 0,

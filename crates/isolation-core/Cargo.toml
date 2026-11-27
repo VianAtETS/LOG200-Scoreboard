@@ -1,22 +1,22 @@
 [package]
 name = "isolation-core"
-description = "Board, rules, protocol and record formats of the Isolation lab"
+description = "Board, rules and protocol of the Isolation lab, as a game-kit Game"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+game-kit.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
-utoipa = { workspace = true, optional = true }
 
 [features]
 test-support = []
 # Schémas OpenAPI des enregistrements, pour la doc de l'API du ladder.
-openapi = ["dep:utoipa"]
+openapi = ["game-kit/openapi"]
 
 [lints]
 workspace = true

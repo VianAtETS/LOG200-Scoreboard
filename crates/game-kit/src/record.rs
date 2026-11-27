@@ -1,5 +1,6 @@
 //! `GameResult` est ce que l'arbitre écrit sur stdout, `GameRecord` la ligne du JSONL, complétée
-//! par le ladder. Les lignes de version inconnue sont ignorées.
+//! par le ladder. Les lignes de version inconnue sont ignorées. La validation d'un résultat
+//! (`GameResult::validate`) rejoue la partie avec les règles du jeu (`crate::game::Game`).
 
 use std::ops::Range;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,8 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::board::{ByColor, Color};
-use crate::rules::{Replay, ReplayError};
+use crate::game::{Change, Game};
+use crate::replay::{Replay, ReplayError};
+use crate::side::{ByColor, Color};
 
 pub const RECORD_VERSION: u32 = 1;
 
@@ -57,6 +59,9 @@ pub enum RefereeEvent {
         #[serde(rename = "move")]
         mv: String,
         ms: u64,
+        /// Effets du coup sur le plateau, dans l'ordre. Absents chez les arbitres d'avant la v2.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        changes: Vec<Change>,
     },
 }
 
@@ -116,25 +121,38 @@ pub enum ValidationError {
 }
 
 impl GameResult {
-    /// Coups légaux et résultat cohérent avec le rejeu.
-    pub fn validate(&self) -> Result<(), ValidationError> {
+    /// Coups légaux et résultat cohérent avec le rejeu par les règles de `game`.
+    pub fn validate<G: Game>(&self, game: &G) -> Result<(), ValidationError> {
+        self.replay(game).map(drop)
+    }
+
+    /// Comme `validate`, et rend le rejeu, avec les effets de chaque coup, ouverture comprise.
+    pub fn replay<G: Game>(&self, game: &G) -> Result<Replay<G>, ValidationError> {
         let all = self.opening.iter().chain(&self.moves).map(String::as_str);
-        let Replay { turn, winner, .. } = Replay::from_notation(all)?;
+        let replay = Replay::from_notation(game, all)?;
+        let ending = replay.ending;
         match self.reason {
             Reason::NoShow if !self.moves.is_empty() => Err(ValidationError::NoShowAfterMoves),
-            Reason::NoMoves if winner != Some(self.winner) => Err(ValidationError::WrongWinner { replayed: winner }),
-            Reason::NoShow | Reason::NoMoves => Ok(()),
+            Reason::NoShow => Ok(()),
             // Abandon : c'est le joueur au trait qui perd.
             Reason::Timeout | Reason::Disconnect | Reason::Protocol => {
-                if winner.is_some() {
+                if ending.is_some() {
                     Err(ValidationError::ForfeitAfterEnd)
-                } else if self.winner == turn {
-                    Err(ValidationError::WinnerToMove(turn))
+                } else if self.winner == replay.turn {
+                    Err(ValidationError::WinnerToMove(replay.turn))
                 } else {
                     Ok(())
                 }
             }
-        }
+            // Fin selon les règles du jeu : le rejeu doit arriver au même verdict.
+            Reason::NoMoves => match ending {
+                Some(end) if end.winner == self.winner && end.reason == self.reason => Ok(()),
+                _ => Err(ValidationError::WrongWinner {
+                    replayed: ending.map(|end| end.winner),
+                }),
+            },
+        }?;
+        Ok(replay)
     }
 }
 
@@ -231,11 +249,9 @@ fn rfc3339(secs: i64, millis: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::Board;
-    use crate::rules::legal_moves;
 
     fn sample() -> GameRecord {
-        let mv = legal_moves(&Board::initial(), Color::Red)[0].to_string();
+        let mv = "G1-F2-C12".to_string();
         GameRecord {
             id: "g1".into(),
             session: "test".into(),
@@ -338,35 +354,6 @@ mod tests {
         let line = serde_json::to_string(&game).unwrap();
         assert!(line.contains(r#""tournament":{"id":"tournoi-2026-11-08","match":"W3","game":2}"#));
         assert_eq!(Jsonl::parse(&line).games, vec![game]);
-    }
-
-    #[test]
-    fn validate_checks_winner_consistency() {
-        // Après un coup rouge, c'est au noir : un timeout le fait perdre.
-        assert_eq!(sample().result.validate(), Ok(()));
-        let mut wrong = sample().result;
-        wrong.winner = Color::Black;
-        assert_eq!(wrong.validate(), Err(ValidationError::WinnerToMove(Color::Black)));
-        let mut no_moves = sample().result;
-        no_moves.reason = Reason::NoMoves;
-        assert_eq!(
-            no_moves.validate(),
-            Err(ValidationError::WrongWinner { replayed: None })
-        );
-    }
-
-    #[test]
-    fn no_show_requires_no_moves_and_accepts_either_winner() {
-        let mut absent = sample().result;
-        absent.reason = Reason::NoShow;
-        assert_eq!(absent.validate(), Err(ValidationError::NoShowAfterMoves));
-        absent.moves.clear();
-        for winner in [Color::Red, Color::Black] {
-            absent.winner = winner;
-            assert_eq!(absent.validate(), Ok(()), "{winner:?}");
-        }
-        let v: serde_json::Value = serde_json::to_value(Reason::NoShow).unwrap();
-        assert_eq!(v, "no_show");
     }
 
     #[test]

@@ -79,9 +79,19 @@ Avant le résultat, l'arbitre peut écrire des objets JSON d'une ligne qui porte
 | Ligne | Sens |
 | --- | --- |
 | `{"event":"ready"}` | Les deux joueurs sont connectés : le temps du premier coup court. |
-| `{"event":"move","move":"G1-E3-C12","ms":1234}` | Coup client accepté, au format de `moves`, et son temps (comme `move_ms`). Les coups d'`opening` n'en ont pas. |
+| `{"event":"move","move":"G1-E3-C12","ms":1234,"changes":[...]}` | Coup client accepté, au format de `moves`, et son temps (comme `move_ms`). Les coups d'`opening` n'en ont pas. `changes` (facultatif) : les effets du coup sur le plateau, dans l'ordre, chacun `{"cell":138,"code":0,"role":"from"}` (index de la case dans le plateau du protocole, nouvelle valeur, `from`, `to` ou `effect`) ; voir docs/spec-multi-jeux.md. |
 
 Le résultat est la première ligne JSON sans `event`. Une ligne qui n'est pas du JSON est journalisée puis ignorée, et un événement inconnu est ignoré. Un arbitre qui n'écrit aucun événement reste conforme : ses parties sont annoncées en direct, sans coups. Le ladder rejoue chaque coup reçu ; au premier coup illisible ou illégal, le direct de la partie s'arrête, sans effet sur la partie. `isolation-referee` n'écrit ces lignes que si sa sortie n'est pas un terminal : lancé à la main, il n'affiche que le résultat.
+
+### Sous-commandes
+
+`isolation-referee`, comme tout arbitre construit avec `game_kit::referee`, a aussi trois sous-commandes qui ne parlent à aucun joueur. Le ladder ne s'en sert pas encore (étape 2 de docs/spec-multi-jeux.md) ; un autre arbitre n'est pas tenu de les fournir pour l'instant.
+
+| Commande | Sortie |
+| --- | --- |
+| `describe` | Le descripteur du jeu (taille, position initiale, légende des cases, noms des camps), en JSON sur une ligne. |
+| `opening --plies N --seed S` | Une ouverture aléatoire reproductible, au format de `--opening`. `N` impair : erreur. |
+| `check` | Lit des résultats sur l'entrée standard, un JSON par ligne, et écrit pour chacun `{"ok":true,"changes":[[...],...]}` (les effets de chaque demi-coup, ouverture comprise) ou `{"ok":false,"error":"..."}`. |
 
 Si une autre implémentation n'écrit pas `LISTENING` ni `CONNECTED red`, il suffit de laisser les marqueurs vides dans `ladder.toml` : le ladder attend alors `startup_ms` à la place.
 

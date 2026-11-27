@@ -124,7 +124,7 @@ impl Outcome {
     pub fn into_result(self, node: &str) -> Result<GameResult, GameError> {
         match self {
             Self::Ok { result } => {
-                result.validate()?;
+                result.validate(&isolation_core::Isolation)?;
                 Ok(result)
             }
             Self::Infra { side, code } => Err(GameError::Infra { side, code }),
@@ -188,6 +188,7 @@ mod tests {
                 event: RefereeEvent::Move {
                     mv: "G1-G4-F9".into(),
                     ms: 3,
+                    changes: Vec::new(),
                 },
             },
             FromNode::Need { sha256: sha() },

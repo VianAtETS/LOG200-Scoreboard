@@ -226,7 +226,7 @@ impl RefereeProcess {
             return Err(GameError::RefereeFailed(status));
         }
         let result: GameResult = serde_json::from_str(&json).map_err(|error| GameError::BadResult { json, error })?;
-        result.validate()?;
+        result.validate(&isolation_core::Isolation)?;
         Ok(result)
     }
 }
@@ -482,7 +482,8 @@ pub mod tests {
                 RefereeEvent::Ready,
                 RefereeEvent::Move {
                     mv: "G1-G4-F9".into(),
-                    ms: 3
+                    ms: 3,
+                    changes: Vec::new(),
                 }
             ]
         );
