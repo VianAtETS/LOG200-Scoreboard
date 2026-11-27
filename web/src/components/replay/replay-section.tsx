@@ -1,13 +1,15 @@
 import { NodeBadge, RemoteBadge } from '@/components/badge/badge';
 import { Board } from '@/components/board/board';
+import { useDescriptor } from '@/dao/hooks/use-descriptor';
 import { FirstIcon, LastIcon, NextIcon, PauseIcon, PlayIcon, PrevIcon } from '@/components/icons/icons';
 import { squareName } from '@/lib/replay';
+import { sideLabel } from '@/lib/game';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import type { TColor, TGame } from '@/types/games.types';
 import type { TLiveGame } from '@/types/live.types';
 import { useEffect, useState, type CSSProperties, type FC } from 'react';
-import { ENDINGS } from './replay.data';
+import { endText } from './replay.data';
 import type { TReplay, TReplayActions } from './use-replay';
 
 const SHARE = 'Copier le lien';
@@ -20,6 +22,7 @@ type Props = {
 
 const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
   const [shareLabel, setShareLabel] = useState(SHARE);
+  const descriptor = useDescriptor();
   const { steps, moveMs, index, game, live, message } = replay;
   const step = steps[index];
   const total = steps.length - 1;
@@ -47,25 +50,32 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
     setTimeout(() => setShareLabel(SHARE), 2000);
   };
 
+  const size = `Plateau ${descriptor.rows} × ${descriptor.cols}`;
   let moveCount = '';
   let moveText = null;
-  let boardLabel = 'Plateau 12 × 12';
-  if (step?.move) {
-    const { from, to, destroyed } = step.move;
+  let boardLabel = size;
+  if (step?.text) {
     // Les coups des clients sont les derniers pas, après l'ouverture.
     const ms = moveMs[index - (steps.length - moveMs.length)];
     const detail = step.opening ? ', ouverture' : ms !== undefined ? `, ${ms} ms` : '';
     moveCount = `Coup ${index} sur ${total}${detail}`;
-    moveText = (
-      <>
-        {`${squareName(from)} → ${squareName(to)} `}
-        <span className="destroyed">détruit {squareName(destroyed)}</span>
-      </>
-    );
-    boardLabel = `Coup ${index} sur ${total} : ${squareName(from)} vers ${squareName(to)}, ${squareName(destroyed)} détruite`;
+    if (step.move) {
+      // Isolation : le coup dit tout, départ, arrivée et case détruite.
+      const { from, to, destroyed } = step.move;
+      moveText = (
+        <>
+          {`${squareName(from)} → ${squareName(to)} `}
+          <span className="destroyed">détruit {squareName(destroyed)}</span>
+        </>
+      );
+      boardLabel = `Coup ${index} sur ${total} : ${squareName(from)} vers ${squareName(to)}, ${squareName(destroyed)} détruite`;
+    } else {
+      moveText = step.text;
+      boardLabel = `Coup ${index} sur ${total} : ${step.text}`;
+    }
   } else if (step) {
     moveCount = `Position initiale, ${total} coups`;
-    boardLabel = 'Plateau 12 × 12, position initiale';
+    boardLabel = `${size}, position initiale`;
   }
 
   return (
@@ -82,7 +92,7 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
               'Choisissez une partie pour la rejouer.'
             ))}
         </p>
-        {game && (
+        {game && descriptor.game === 'isolation' && (
           <a className="share analyse-link" href={pageUrl('analyse.html', { game: game.id })}>
             Analyser
           </a>
@@ -147,8 +157,9 @@ const ReplaySection: FC<Props> = ({ replay, actions, versionOf }) => {
 };
 
 const GameInfo: FC<{ game: TGame; versionOf: Props['versionOf'] }> = ({ game: g, versionOf }) => {
-  const loser = g.winner === 'red' ? 'black' : 'red';
-  const ending = ENDINGS[g.reason]?.(g[loser].team) ?? g.reason;
+  const descriptor = useDescriptor();
+  const side = (color: TColor) => sideLabel(descriptor, color).toLowerCase();
+  const ending = endText(g.winner, g.reason, { red: g.red.team, black: g.black.team }, descriptor);
   const player = (color: TColor) => (
     <>
       <strong>{[g[color].team, versionOf(g[color].team, g[color].build)].filter(Boolean).join(' ')}</strong>
@@ -158,30 +169,31 @@ const GameInfo: FC<{ game: TGame; versionOf: Props['versionOf'] }> = ({ game: g,
   return (
     <>
       {player('red')}
-      {' (rouge) contre '}
+      {` (${side('red')}) contre `}
       {player('black')}
-      {` (noir) : ${g[g.winner].team} gagne, ${ending}.`}
+      {` (${side('black')}) : ${ending}.`}
       {g.node && <NodeBadge />}
     </>
   );
 };
 
 const LiveInfo: FC<{ game: TLiveGame }> = ({ game: g }) => {
+  const descriptor = useDescriptor();
   const { winner, reason, cancelled, interrupted } = g.ended ?? {};
-  const loser = winner === 'red' ? g.black : g.red;
   const state = !g.ended
     ? 'en direct'
     : cancelled
       ? 'partie annulée'
       : interrupted
         ? 'direct interrompu'
-        : `${g[winner!]} gagne, ${ENDINGS[reason!]?.(loser) ?? reason}`;
+        : endText(winner, reason!, { red: g.red, black: g.black }, descriptor);
+  const side = (color: TColor) => sideLabel(descriptor, color).toLowerCase();
   return (
     <>
       <strong>{g.red}</strong>
-      {' (rouge) contre '}
+      {` (${side('red')}) contre `}
       <strong>{g.black}</strong>
-      {` (noir) : ${state}.`}
+      {` (${side('black')}) : ${state}.`}
     </>
   );
 };

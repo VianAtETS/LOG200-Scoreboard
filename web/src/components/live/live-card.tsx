@@ -1,3 +1,4 @@
+import { useDescriptor } from '@/dao/hooks/use-descriptor';
 import { Board } from '@/components/board/board';
 import { useInterval } from '@/hooks/use-interval';
 import { mover } from '@/lib/live';
@@ -29,12 +30,14 @@ function context(g: TLiveGame, bracket?: TTournament) {
 function result({ ended, red, black }: TLiveGame) {
   if (ended!.cancelled) return 'Partie annulée';
   if (ended!.interrupted) return 'Direct interrompu';
+  if (!ended!.winner) return 'Nulle';
   return `${ended!.winner === 'red' ? red : black} gagne`;
 }
 
 // Un clic ouvre la partie dans le replay de la page Classement, qui la suit en direct.
 const LiveCard: FC<Props> = memo(({ game: g, model, bracket }) => {
-  const steps = positions(g);
+  const descriptor = useDescriptor();
+  const steps = positions(g, descriptor);
   const index = steps.length - 1;
   const chance = winProbability(model, g.red, g.black, 'red');
 

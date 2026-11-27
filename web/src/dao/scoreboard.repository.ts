@@ -1,6 +1,8 @@
 // Lectures du ladder : fichiers publiés dans /data, et API.
 
 import { API, DATA, LATEST_RELEASE, SERVER } from '@/dao/constants/api.const';
+import { ISOLATION, usable } from '@/lib/game';
+import type { TDescriptor } from '@/types/game.types';
 import type { TDuelPair, TDuelSide, TGame, TGameRow, THeatmap, TRunningGame } from '@/types/games.types';
 import type { TGameProfile, TProfiling, TTemplateShare } from '@/types/profile.types';
 import type { TModel, TQueueFile, TSummary } from '@/types/summary.types';
@@ -157,4 +159,12 @@ export const deleteProfiles = (token: string) => asTeam<{ deleted: number }>('/p
 export async function getTemplateShare(team: string, build: string) {
   const res = await fetch(`${API}/stats/template-share?${new URLSearchParams({ team, build })}`);
   return res.ok ? (res.json() as Promise<TTemplateShare>) : null;
+}
+
+// Le jeu de l'instance (data/game.json). Absent ou incohérent (ladder d'avant la plateforme
+// multi-jeux) : Isolation.
+export async function getDescriptor(): Promise<TDescriptor> {
+  const res = await fetch(`${DATA}/game.json`, noStore).catch(() => null);
+  const value = res?.ok ? await res.json().catch(() => null) : null;
+  return usable(value) ? value : ISOLATION;
 }

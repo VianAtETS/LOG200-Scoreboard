@@ -1,7 +1,9 @@
+import type { TChange } from './game.types';
 import type { TColor, TReason, TTournamentRef } from './games.types';
 
 export type TLiveEnded = {
-  winner?: TColor;
+  // `null` : nulle.
+  winner?: TColor | null;
   reason?: TReason | string;
   cancelled?: boolean;
   interrupted?: boolean;
@@ -17,6 +19,8 @@ export type TLiveGame = {
   opening: string[];
   moves: string[];
   move_ms: number[];
+  // Effets de chaque demi-coup, ouverture comprise, si l'arbitre les donne.
+  changes?: TChange[][];
   turn_ms?: number;
   tournament?: TTournamentRef;
   turnAt: number;
@@ -31,5 +35,6 @@ export type TLiveState = 'connecting' | 'on' | 'reconnecting' | 'unavailable' | 
 export type TLiveMessage =
   | { v: number; type: 'snapshot'; games: TLiveGame[] }
   | { v: number; type: 'started'; game: TLiveGame }
-  | { v: number; type: 'move'; id: string; n: number; move: string; ms: number }
-  | { v: number; type: 'ended'; id: string; winner?: TColor; reason?: string; cancelled?: boolean };
+  | { v: number; type: 'ready'; id: string; changes: TChange[][] }
+  | { v: number; type: 'move'; id: string; n: number; move: string; ms: number; changes?: TChange[] }
+  | { v: number; type: 'ended'; id: string; winner?: TColor | null; reason?: string; cancelled?: boolean };

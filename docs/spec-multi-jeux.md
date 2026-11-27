@@ -1,6 +1,6 @@
 # Spec : plateforme multi-jeux
 
-Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 à 3 faites).
+Statut : brouillon du 2026-11-16, en cours d'implémentation sur `refactor/plateforme-multi-jeux` (étapes 1 à 4 faites).
 
 ## Problème
 
@@ -134,6 +134,8 @@ Une instance du ladder par compétition (un jeu, une session) : son `ladder.toml
 - `data/game.json` : le descripteur de l'instance. Titres, noms des camps et légende en viennent.
 - Plateau générique : `rows × cols`, cases dessinées d'après `pieces` et `special`, dernier coup marqué d'après `role`. Positions = `initial` + effets, sans aucune règle.
 - Rendus propres : un composant par jeu dans `web/src/games/<id>/`, enregistré au build, qui reçoit position, effets et descripteur. Une erreur ou une absence retombe sur la grille.
+- Sans `data/game.json` (ancien ladder, serveur golden de dev), la page suppose Isolation ; sans effets (partie pas encore rejouée, direct d'un ancien arbitre), elle rejoue les coups d'Isolation, qui disent tout. La page Analyse reste propre à Isolation : son lien n'apparaît que pour ce jeu.
+- Direct : l'arbitre donne les effets de l'ouverture dans `ready` et ceux de chaque coup dans `move` ; le hub les relaie (`ready`, `move`) et les garde dans le snapshot tant qu'ils sont complets.
 
 ## Étapes
 

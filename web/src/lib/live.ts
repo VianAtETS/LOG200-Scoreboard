@@ -32,11 +32,20 @@ export function apply(games: TLiveGames, msg: TLiveMessage, now: number): TLiveG
     case 'started':
       next.set(msg.game.id, live(msg.game));
       return next;
+    case 'ready': {
+      // Effets de l'ouverture : le direct d'un jeu autre qu'Isolation part de la bonne position.
+      const g = games.get(msg.id);
+      if (!g || g.ended || g.moves.length > 0) return games;
+      next.set(msg.id, { ...g, changes: msg.changes });
+      return next;
+    }
     case 'move': {
       const g = games.get(msg.id);
       if (!g || g.ended) return games;
       if (msg.n !== g.moves.length) return 'resync';
-      next.set(msg.id, { ...g, moves: [...g.moves, msg.move], move_ms: [...g.move_ms, msg.ms], turnAt: now });
+      // Les effets ne valent que complets : un coup sans les siens les retire tous.
+      const changes = g.changes && msg.changes ? [...g.changes, msg.changes] : undefined;
+      next.set(msg.id, { ...g, moves: [...g.moves, msg.move], move_ms: [...g.move_ms, msg.ms], changes, turnAt: now });
       return next;
     }
     case 'ended': {

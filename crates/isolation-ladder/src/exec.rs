@@ -468,7 +468,7 @@ pub mod tests {
         let out = Arc::clone(&seen) as Arc<dyn GameOutput>;
         let game = Local::new(cfg).run(&run, out).unwrap();
         assert_eq!((game.winner, game.reason), (Some(Color::Black), Reason::Timeout));
-        assert_eq!(*seen.events.lock().unwrap(), [RefereeEvent::Ready]);
+        assert_eq!(*seen.events.lock().unwrap(), [RefereeEvent::Ready { changes: vec![] }]);
         for side in ["red", "black"] {
             let log = std::fs::read_to_string(dir.join(format!("{side}.log"))).unwrap();
             assert_eq!(log.trim(), format!("joueur-{side}"));
@@ -509,7 +509,7 @@ pub mod tests {
         assert_eq!(
             events,
             [
-                RefereeEvent::Ready,
+                RefereeEvent::Ready { changes: vec![] },
                 RefereeEvent::Move {
                     mv: "G1-G4-F9".into(),
                     ms: 3,

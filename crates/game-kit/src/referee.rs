@@ -168,7 +168,7 @@ fn play<G: Game>(game: &G, args: &PlayArgs) -> anyhow::Result<()> {
         bail!("--port et --time-ms sont obligatoires");
     };
     let opening: Vec<G::Move> = parse_opening(&args.opening)?;
-    let state = opening_state(game, &opening)?;
+    let (state, opening_changes) = opening_state(game, &opening)?;
     let listener =
         TcpListener::bind((args.bind.as_str(), port)).with_context(|| format!("écoute sur {}:{port}", args.bind))?;
     eprintln!("LISTENING {port}");
@@ -195,7 +195,9 @@ fn play<G: Game>(game: &G, args: &PlayArgs) -> anyhow::Result<()> {
                 move_ms: Vec::new(),
                 invalid: InvalidCounts::default(),
             };
-            announce(&RefereeEvent::Ready);
+            announce(&RefereeEvent::Ready {
+                changes: opening_changes,
+            });
             let verdict = referee.run();
             referee.players.red.shutdown();
             referee.players.black.shutdown();
@@ -247,7 +249,8 @@ fn parse_opening<M: std::str::FromStr>(text: &str) -> anyhow::Result<Vec<M>> {
         .collect()
 }
 
-fn opening_state<G: Game>(game: &G, opening: &[G::Move]) -> anyhow::Result<G::State> {
+/// La position après l'ouverture, et les effets de ses demi-coups.
+fn opening_state<G: Game>(game: &G, opening: &[G::Move]) -> anyhow::Result<(G::State, Vec<Vec<Change>>)> {
     let replay = Replay::from_moves(game, opening.iter().copied()).context("ouverture")?;
     if replay.ending.is_some() {
         bail!("l'ouverture termine la partie");
@@ -255,7 +258,7 @@ fn opening_state<G: Game>(game: &G, opening: &[G::Move]) -> anyhow::Result<G::St
     if replay.turn != Color::Red {
         bail!("l'ouverture doit compter un nombre pair de demi-coups");
     }
-    Ok(replay.state)
+    Ok((replay.state, replay.changes))
 }
 
 fn announce(event: &RefereeEvent) {

@@ -1,3 +1,5 @@
+import { useDescriptor } from '@/dao/hooks/use-descriptor';
+import { sideLabel } from '@/lib/game';
 import { NodeBadge, RemoteBadge } from '@/components/badge/badge';
 import { REASONS } from '@/components/replay/replay.data';
 import { fullFormat, roundDelta, shortWhen, signed } from '@/lib/format';
@@ -17,6 +19,7 @@ type Props = {
 };
 
 const GameItem: FC<Props> = ({ game: g, rating, current, selectedTeam, sideOrder = 'color', onSelect }) => {
+  const descriptor = useDescriptor();
   const selectedColor = g.red.team === selectedTeam ? 'red' : g.black.team === selectedTeam ? 'black' : undefined;
   let left: TColor = 'red';
   if (selectedColor && sideOrder !== 'color') {
@@ -26,7 +29,7 @@ const GameItem: FC<Props> = ({ game: g, rating, current, selectedTeam, sideOrder
   const right: TColor = left === 'red' ? 'black' : 'red';
   const change = (color: TColor) => roundDelta(rating(g[color])[1]);
   const who = (color: TColor) =>
-    `${g[color].team} (${color === 'red' ? 'rouge' : 'noir'}${g[color].remote ? ', distant' : ''}${change(color) ? `, ${signed(change(color))}` : ''})`;
+    `${g[color].team} (${sideLabel(descriptor, color).toLowerCase()}${g[color].remote ? ', distant' : ''}${change(color) ? `, ${signed(change(color))}` : ''})`;
 
   const side = (color: TColor) => {
     const d = change(color);
@@ -49,7 +52,7 @@ const GameItem: FC<Props> = ({ game: g, rating, current, selectedTeam, sideOrder
         type="button"
         className="game"
         data-id={g.id}
-        aria-label={`${who(left)} contre ${who(right)}, ${g[g.winner].team} gagne${g.node ? ', sur un nœud' : ''}`}
+        aria-label={`${who(left)} contre ${who(right)}, ${g.winner ? `${g[g.winner].team} gagne` : 'nulle'}${g.node ? ', sur un nœud' : ''}`}
         aria-current={current ? 'true' : undefined}
         onClick={() => onSelect(g)}
       >

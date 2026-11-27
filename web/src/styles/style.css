@@ -1373,11 +1373,12 @@ th[aria-sort] {
     --pawn-glow-color: color-mix(in srgb, var(--color-pawn-red) 55%, white);
     --pawn-glow-boost: 1;
     display: grid;
-    grid-template-columns: 1.5em repeat(12, minmax(0, 1fr));
-    grid-template-rows: repeat(12, minmax(0, 1fr)) 1.5em;
+    /* Taille du jeu (descripteur) : 12 × 12 par défaut, celle d'Isolation. */
+    grid-template-columns: 1.5em repeat(var(--cols, 12), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows, 12), minmax(0, 1fr)) 1.5em;
     gap: clamp(var(--space-half), 0.5vmin, 0.375rem);
     width: min(100%, 560px);
-    aspect-ratio: 1;
+    aspect-ratio: var(--cols, 12) / var(--rows, 12);
     font-size: clamp(0.625rem, 0.5rem + 0.4vw, 0.8125rem);
 }
 
@@ -1462,6 +1463,27 @@ th[aria-sort] {
     --pawn-light: var(--color-pawn-black-highlight);
     --pawn-dark: var(--color-pawn-black);
     --pawn-edge: 0 0 0 var(--border-width) var(--color-pawn-edge);
+}
+
+/* Roi (Hnefatafl...) : un pion marqué d'un point clair au centre. */
+.pawn.king::after {
+    content: '';
+    position: absolute;
+    inset: 36%;
+    border-radius: inherit;
+    background: var(--pawn-light);
+    box-shadow: 0 0 0 var(--border-width) var(--pawn-dark);
+}
+
+/* Pièce sans camp ni style connu : un pion neutre. */
+.pawn.neutral {
+    --pawn-light: var(--color-text-muted);
+    --pawn-dark: var(--color-tile);
+}
+
+/* Case particulière (trône, coins) : teintée, sous la pièce. */
+.cell.special {
+    background: color-mix(in srgb, var(--color-tile) 70%, var(--color-text-muted));
 }
 
 /* Colonnes égales : la largeur ne dépend pas du coup affiché. */

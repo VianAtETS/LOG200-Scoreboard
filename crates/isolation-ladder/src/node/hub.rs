@@ -740,7 +740,7 @@ mod tests {
         );
         peer.say(&FromNode::Event {
             game: "g1".into(),
-            event: RefereeEvent::Ready,
+            event: RefereeEvent::Ready { changes: vec![] },
         });
         peer.say(&FromNode::Result {
             game: "g1".into(),
@@ -751,7 +751,7 @@ mod tests {
             },
         });
         assert_eq!(played.recv_timeout(Duration::from_secs(5)).unwrap().unwrap(), result());
-        assert_eq!(*seen.events.lock().unwrap(), [RefereeEvent::Ready]);
+        assert_eq!(*seen.events.lock().unwrap(), [RefereeEvent::Ready { changes: vec![] }]);
         assert_eq!(fs::read_to_string(dir.join("red.log")).unwrap(), "rouge");
         let _ = fs::remove_dir_all(&dir);
     }

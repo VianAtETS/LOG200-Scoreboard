@@ -59,7 +59,7 @@ function measure(cells: number[]) {
   return m;
 }
 
-export function analyse(steps: TStep[], game: { winner?: TColor; reason?: string }): TAnalysis {
+export function analyse(steps: TStep[], game: { winner?: TColor | null; reason?: string }): TAnalysis {
   const series = (): TSeries => ({ mob: [], terr: [], reg: [] });
   const a: TAnalysis = { red: series(), black: series(), crit: new Map(), tip: null };
   for (const step of steps) {

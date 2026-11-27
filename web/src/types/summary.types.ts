@@ -23,6 +23,8 @@ export type TTeamRating = {
   games: number;
   wins: number;
   losses: number;
+  // Absent sans nulle : jamais en Isolation.
+  draws?: number;
   build_wins: number;
   build_games: number;
   pace?: TPace;

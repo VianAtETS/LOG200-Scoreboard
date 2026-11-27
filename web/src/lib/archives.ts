@@ -67,7 +67,8 @@ export function archivedRows(
       if (g.winner === color) {
         r.wins++;
         r.build_wins++;
-      } else r.losses++;
+      } else if (g.winner) r.losses++;
+      else r.draws = (r.draws ?? 0) + 1;
       r.remote ||= Boolean(side.remote);
       r.last = g.ts;
       out.set(id, r);

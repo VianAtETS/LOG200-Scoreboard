@@ -51,12 +51,12 @@ fn play(bot_args: &[&str], opening: &str) -> (GameResult, [String; 2]) {
         .unwrap();
     let result: GameResult = serde_json::from_str(result).unwrap();
     let events: Vec<RefereeEvent> = events.iter().map(|line| serde_json::from_str(line).unwrap()).collect();
-    assert_eq!(events.first(), Some(&RefereeEvent::Ready));
+    assert!(matches!(events.first(), Some(RefereeEvent::Ready { .. })));
     let moves: Vec<&str> = events[1..]
         .iter()
         .map(|event| match event {
             RefereeEvent::Move { mv, .. } => mv.as_str(),
-            RefereeEvent::Ready => panic!("ready en double"),
+            RefereeEvent::Ready { .. } => panic!("ready en double"),
         })
         .collect();
     assert_eq!(moves, result.moves, "un événement par coup client, dans l'ordre");

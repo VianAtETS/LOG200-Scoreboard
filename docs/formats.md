@@ -78,7 +78,7 @@ Avant le résultat, l'arbitre peut écrire des objets JSON d'une ligne qui porte
 
 | Ligne | Sens |
 | --- | --- |
-| `{"event":"ready"}` | Les deux joueurs sont connectés : le temps du premier coup court. |
+| `{"event":"ready","changes":[[...]]}` | Les deux joueurs sont connectés : le temps du premier coup court. `changes` (facultatif) : les effets de chaque demi-coup de l'ouverture, pour que le direct parte de la bonne position. |
 | `{"event":"move","move":"G1-E3-C12","ms":1234,"changes":[...]}` | Coup client accepté, au format de `moves`, et son temps (comme `move_ms`). Les coups d'`opening` n'en ont pas. `changes` (facultatif) : les effets du coup sur le plateau, dans l'ordre, chacun `{"cell":138,"code":0,"role":"from"}` (index de la case dans le plateau du protocole, nouvelle valeur, `from`, `to` ou `effect`) ; voir docs/spec-multi-jeux.md. |
 
 Le résultat est la première ligne JSON sans `event`. Une ligne qui n'est pas du JSON est journalisée puis ignorée, et un événement inconnu est ignoré. Un arbitre qui n'écrit aucun événement reste conforme : ses parties sont annoncées en direct, sans coups. Le ladder relaie chaque coup tel quel : il ne connaît pas les règles, l'arbitre fait foi. `isolation-referee` n'écrit ces lignes que si sa sortie n'est pas un terminal : lancé à la main, il n'affiche que le résultat.
@@ -238,9 +238,10 @@ Le serveur parle seul. Chaque message est un objet JSON avec `v` (version du pro
 
 | `type` | Champs | Sens |
 | --- | --- | --- |
-| `snapshot` | `games` | Premier message : toutes les parties en cours. |
+| `snapshot` | `games` | Premier message : toutes les parties en cours. Une partie porte `changes` (effets de chaque demi-coup, ouverture comprise) tant que l'arbitre les donne tous. |
 | `started` | `game` | Une partie commence. |
-| `move` | `id`, `n`, `move`, `ms` | Coup client numéro `n` (index dans `moves`, à partir de 0) de la partie `id`. |
+| `ready` | `id`, `changes` | Les joueurs sont connectés ; `changes` : les effets de l'ouverture. Ignoré par une page qui ne le connaît pas. |
+| `move` | `id`, `n`, `move`, `ms`, `changes` (facultatif) | Coup client numéro `n` (index dans `moves`, à partir de 0) de la partie `id`, et ses effets. Un coup sans effets (ancien arbitre) : la page rejoue les coups elle-même, ce que seule une partie d'Isolation permet. |
 | `ended` | `id`, puis `winner` (`null` pour une nulle) et `reason`, ou `cancelled: true` | Fin de la partie. Annulée (arbitre en échec, résultat refusé…), elle ne sera pas dans la base. |
 
 Une partie (`games`, `game`) : `id`, `red`, `black`, `since` (lancement), `time_ms`, `tournament` (absent hors tournoi), `opening`, `moves`, `move_ms`, et `turn_ms` : temps déjà écoulé sur le coup en cours, mesuré par le ladder pour ne pas dépendre de l'horloge du client.

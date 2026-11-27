@@ -1,6 +1,8 @@
+import { useDescriptor } from '@/dao/hooks/use-descriptor';
 import { getGame } from '@/dao/scoreboard.repository';
 import { positions, type TStep } from '@/lib/replay';
 import { searchParams, setParam } from '@/lib/url';
+import type { TDescriptor } from '@/types/game.types';
 import type { TGame, TGameRow } from '@/types/games.types';
 import type { TLiveGame } from '@/types/live.types';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -42,6 +44,9 @@ const useReplay = () => {
   const timer = useRef<ReturnType<typeof setInterval>>(undefined);
   // Dernier replay demandé : une réponse plus ancienne arrivée en retard est ignorée.
   const seq = useRef(0);
+  // Le jeu de l'instance, qui donne la position initiale ; Isolation tant qu'il n'est pas lu.
+  const descriptor = useDescriptor();
+  const shape = useRef<TDescriptor>(descriptor);
 
   const actions = useMemo(() => {
     const commit = (patch: Partial<TReplay>) => {
@@ -74,7 +79,7 @@ const useReplay = () => {
         }
         if (current !== seq.current) return;
         stopPlayback();
-        const steps = positions(g);
+        const steps = positions(g, shape.current);
         const moveMs = g.move_ms?.length === g.moves.length ? g.move_ms : [];
         setParam('game', pinned ? g.id : null);
         commit({ id: g.id, game: g, live: null, steps, moveMs, index: steps.length - 1, pinned, message: null });
@@ -84,7 +89,7 @@ const useReplay = () => {
         if (ref.current.live === g) return;
         const { id, index, steps: before } = ref.current;
         const following = !id || index === before.length - 1;
-        const steps = positions(g);
+        const steps = positions(g, shape.current);
         commit({
           id: g.id,
           game: null,
@@ -131,10 +136,22 @@ const useReplay = () => {
         commit({ message });
       },
 
+      // Le descripteur arrive après une première partie peut-être : elle est rejouée avec lui.
+      reshape(next: TDescriptor) {
+        if (shape.current === next) return;
+        shape.current = next;
+        const { game, live, index } = ref.current;
+        const g = live ?? game;
+        if (!g) return;
+        const steps = positions(g, next);
+        commit({ steps, index: Math.min(index, steps.length - 1) });
+      },
+
       current: () => ref.current,
     };
   }, []);
 
+  useEffect(() => actions.reshape(descriptor), [actions, descriptor]);
   useEffect(() => () => clearInterval(timer.current), []);
 
   return { replay, actions };

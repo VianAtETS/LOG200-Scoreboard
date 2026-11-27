@@ -2,9 +2,11 @@
 // profilage, et la part du gabarit que les équipes de la partie publient. Le token reste dans l'onglet.
 
 import { queryKeys } from '@/dao/hooks/query-keys';
+import { useDescriptor } from '@/dao/hooks/use-descriptor';
 import { deleteProfiles, getProfile, getProfiling, getTemplateShare, putProfiling } from '@/dao/scoreboard.repository';
 import { useTeamToken } from '@/hooks/use-team-token';
 import { describe } from '@/lib/analysis';
+import { sideLabel } from '@/lib/game';
 import { callTree, topMethods, type TCallNode } from '@/lib/profile';
 import type { TColor, TGame } from '@/types/games.types';
 import type { TGameProfile, TProfiling } from '@/types/profile.types';
@@ -74,6 +76,7 @@ const CallRows: FC<{ nodes: TCallNode[]; hidden: number; depth: number; profile:
 
 const ProfileView: FC<{ profile: TGameProfile }> = ({ profile }) => {
   const [flat, setFlat] = useState(false);
+  const descriptor = useDescriptor();
   const { tree, arena } = profile;
   const root = callTree(tree.paths, tree.samples);
   const depth = describe(arena.flatMap((m) => (m.depth === undefined ? [] : [m.depth])));
@@ -81,7 +84,7 @@ const ProfileView: FC<{ profile: TGameProfile }> = ({ profile }) => {
     <>
       <ul className="profile-facts">
         <li>
-          Côté {profile.color === 'red' ? 'rouge' : 'noir'}, build <code>{profile.build}</code> : {profile.moves} coups, {profile.turns} segments de calcul.
+          Côté {sideLabel(descriptor, profile.color).toLowerCase()}, build <code>{profile.build}</code> : {profile.moves} coups, {profile.turns} segments de calcul.
         </li>
         <li>
           {number(tree.samples)} échantillons, {number(tree.sampled_ms / 1000, 1)} s de calcul vus sur {number(tree.think_ms / 1000, 1)} s de réflexion.

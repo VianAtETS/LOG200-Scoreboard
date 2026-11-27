@@ -116,7 +116,9 @@ const DuelPage = () => {
                       <td>{pair.opening.join(' · ')}</td>
                       {pair.games.map((id, g) => (
                         <td key={id}>
-                          <a href={pageUrl('analyse.html', { game: id })}>{pair.winners[g]} gagne</a>
+                          <a href={pageUrl('analyse.html', { game: id })}>
+                            {pair.winners[g] ? `${pair.winners[g]} gagne` : 'Nulle'}
+                          </a>
                         </td>
                       ))}
                     </tr>

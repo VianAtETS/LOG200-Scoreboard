@@ -41,3 +41,8 @@ test('paires 2-0 de chaque côté et paires 1-1', () => {
     assert.deepEqual(pairCounts(pairs, 'eq12'), { a: 1, b: 2, split: 2 })
     assert.deepEqual(pairCounts([], 'eq07'), { a: 0, b: 0, split: 0 })
 })
+
+test('a draw counts half a pair', () => {
+    const pair = (winners: [string | null, string | null]) => ({ games: ['g1', 'g2'] as [string, string], winners, opening: [] })
+    assert.deepEqual(pairCounts([pair(['a', null]), pair([null, 'b']), pair([null, null])], 'a'), { a: 1, b: 1, split: 1 })
+})

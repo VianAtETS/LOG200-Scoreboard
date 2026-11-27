@@ -6,13 +6,15 @@ import type { TDuelPair } from '../types/games.types';
 
 export type TPairCounts = { a: number; b: number; split: number };
 
-// Paires gagnées 2-0 par `a`, par l'autre équipe, et paires 1-1.
+// Paires gagnées par `a` (2-0, ou 1,5-0,5 avec une nulle), par l'autre équipe, et paires partagées.
 export function pairCounts(pairs: TDuelPair[], a: string): TPairCounts {
   const counts = { a: 0, b: 0, split: 0 };
-  for (const [first, second] of pairs.map((p) => p.winners)) {
-    if (first !== second) counts.split++;
-    else if (first === a) counts.a++;
-    else counts.b++;
+  for (const winners of pairs.map((p) => p.winners)) {
+    // Points de `a` sur la paire : 1 par victoire, 0,5 par nulle (`null`).
+    const points = winners.reduce((sum, w) => sum + (w === a ? 1 : w === null ? 0.5 : 0), 0);
+    if (points > 1) counts.a++;
+    else if (points < 1) counts.b++;
+    else counts.split++;
   }
   return counts;
 }

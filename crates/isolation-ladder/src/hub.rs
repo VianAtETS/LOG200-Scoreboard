@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
-use game_kit::Color;
 use game_kit::record::{Reason, RefereeEvent, TournamentGame};
+use game_kit::{Change, Color};
 
 use crate::sync::lock;
 
@@ -51,6 +51,10 @@ struct Game {
     opening: Vec<String>,
     moves: Vec<String>,
     move_ms: Vec<u64>,
+    /// Effets de chaque demi-coup, ouverture comprise, tant que l'arbitre les donne tous ; sinon absents,
+    /// et la page rejoue les coups (Isolation) comme avant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    changes: Option<Vec<Vec<Change>>>,
 }
 
 #[derive(Serialize)]
@@ -78,12 +82,19 @@ enum Out<'a> {
     Started {
         game: Shown<'a>,
     },
+    /// Les joueurs sont là : les effets de l'ouverture, pour partir de la bonne position.
+    Ready {
+        id: &'a str,
+        changes: &'a [Vec<Change>],
+    },
     Move {
         id: &'a str,
         n: usize,
         #[serde(rename = "move")]
         mv: &'a str,
         ms: u64,
+        #[serde(skip_serializing_if = "<[Change]>::is_empty")]
+        changes: &'a [Change],
     },
     Ended {
         id: &'a str,
@@ -167,6 +178,7 @@ impl Hub {
                 opening: start.opening.to_vec(),
                 moves: Vec::new(),
                 move_ms: Vec::new(),
+                changes: None,
             },
             turn_start: Instant::now(),
         };
@@ -186,17 +198,33 @@ impl Hub {
         let Some(running) = state.games.iter_mut().find(|r| r.game.id == id) else {
             return;
         };
-        let (mv, ms) = match event {
-            RefereeEvent::Ready => {
+        let (mv, ms, changes) = match event {
+            RefereeEvent::Ready { changes } => {
                 running.turn_start = Instant::now();
+                // Complets si l'arbitre en donne un par demi-coup d'ouverture (aucun sans ouverture).
+                if changes.len() == running.game.opening.len() {
+                    let message = encode(Out::Ready { id, changes: &changes });
+                    running.game.changes = Some(changes);
+                    state.publish(&message);
+                }
                 return;
             }
             // Relayé tel quel : l'arbitre fait foi, le ladder ne connaît pas les règles.
-            RefereeEvent::Move { mv, ms, .. } => (mv, ms),
+            RefereeEvent::Move { mv, ms, changes } => (mv, ms, changes),
         };
         running.turn_start = Instant::now();
         let n = running.game.moves.len();
-        let message = encode(Out::Move { id, n, mv: &mv, ms });
+        let message = encode(Out::Move {
+            id,
+            n,
+            mv: &mv,
+            ms,
+            changes: &changes,
+        });
+        match &mut running.game.changes {
+            Some(all) if !changes.is_empty() => all.push(changes),
+            known => *known = None,
+        }
         running.game.moves.push(mv);
         running.game.move_ms.push(ms);
         state.publish(&message);
@@ -291,6 +319,53 @@ mod tests {
             ms: 12,
             changes: Vec::new(),
         }
+    }
+
+    #[test]
+    fn effects_are_relayed_and_kept_only_while_complete() {
+        let change = |cell| Change {
+            cell,
+            code: 1,
+            role: game_kit::Role::Effect,
+        };
+        let hub = quiet();
+        start(&hub, "g1", &["G1-G4-F9".to_string()]);
+        let mut watcher = hub.subscribe().unwrap();
+        hub.event(
+            "g1",
+            RefereeEvent::Ready {
+                changes: vec![vec![change(41)]],
+            },
+        );
+        let ready = json(&watcher.events.try_recv().unwrap());
+        assert_eq!(
+            (&ready["type"], &ready["changes"][0][0]["cell"]),
+            (&"ready".into(), &41.into())
+        );
+        hub.event(
+            "g1",
+            RefereeEvent::Move {
+                mv: "F12-F11-A1".into(),
+                ms: 5,
+                changes: vec![change(132)],
+            },
+        );
+        let moved = json(&watcher.events.try_recv().unwrap());
+        assert_eq!(moved["changes"][0]["cell"], 132);
+        let later = hub.subscribe().unwrap();
+        assert_eq!(
+            json(&later.snapshot)["games"][0]["changes"].as_array().unwrap().len(),
+            2
+        );
+
+        // Un coup sans effets (ancien arbitre) : la page rejouera les coups elle-même.
+        hub.event("g1", mv("G4-G5-A2"));
+        assert!(json(&watcher.events.try_recv().unwrap()).get("changes").is_none());
+        assert!(
+            json(&hub.subscribe().unwrap().snapshot)["games"][0]
+                .get("changes")
+                .is_none()
+        );
     }
 
     #[test]

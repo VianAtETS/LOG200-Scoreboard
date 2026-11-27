@@ -84,3 +84,14 @@ test('the live fallback prioritizes active games and respects the filter', () =>
     assert.equal(pickLive(games, ['b', 'c'], true, 'g1'), undefined)
     assert.equal(pickLive(games, [], false, 'g1'), undefined)
 })
+
+test("les effets suivent ready puis chaque coup, et tombent au premier coup sans", () => {
+    const effect = (cell) => ({ cell, code: 1, role: 'effect' })
+    let games = apply(new Map(), { v: 1, type: 'started', game: game('g1', { opening: ['A1'] }) }, 0)
+    games = apply(games, { v: 1, type: 'ready', id: 'g1', changes: [[effect(0)]] }, 10)
+    games = apply(games, { v: 1, type: 'move', id: 'g1', n: 0, move: 'B2', ms: 5, changes: [effect(4)] }, 20)
+    assert.deepEqual(games.get('g1').changes, [[effect(0)], [effect(4)]])
+    games = apply(games, { v: 1, type: 'move', id: 'g1', n: 1, move: 'C3', ms: 5 }, 30)
+    assert.equal(games.get('g1').changes, undefined)
+    assert.equal(apply(games, { v: 1, type: 'ready', id: 'g1', changes: [] }, 40), games, 'ready après les coups ignoré')
+})

@@ -1,4 +1,5 @@
 import { CloseIcon, MenuIcon } from '@/components/icons/icons';
+import { useDescriptor } from '@/dao/hooks/use-descriptor';
 import { pageUrl } from '@/lib/url';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState, type FC, type PropsWithChildren, type ReactNode } from 'react';
@@ -17,11 +18,16 @@ const MOBILE = '(max-width: 640px)';
 
 const Brand: FC<{ heading?: boolean; showVersion: boolean }> = ({ heading = false, showVersion }) => {
   const Title = heading ? 'h1' : 'p';
+  const { name } = useDescriptor();
+  // Les titres des pages Astro sont écrits pour Isolation : ceux d'une autre instance prennent son jeu.
+  useEffect(() => {
+    if (heading && name !== 'Isolation') document.title = document.title.replace('Isolation', name);
+  }, [heading, name]);
   return (
     <div className="brand" aria-hidden={heading ? undefined : true}>
       <Logo />
       <Title className="title">
-        Ladder Isolation{' '}
+        Ladder {name}{' '}
         <span className="title-meta">
           <span className="title-course">LOG200</span>
           {showVersion && <VersionBadge />}

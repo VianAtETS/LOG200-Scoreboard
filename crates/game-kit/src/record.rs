@@ -136,7 +136,12 @@ pub struct GameResult {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum RefereeEvent {
-    Ready,
+    /// Les deux joueurs sont connectés. `changes` : les effets des demi-coups de l'ouverture (absents
+    /// chez les arbitres d'avant la v2), pour que le direct parte de la bonne position.
+    Ready {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        changes: Vec<Vec<Change>>,
+    },
     Move {
         #[serde(rename = "move")]
         mv: String,

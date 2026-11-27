@@ -1,5 +1,7 @@
 // Formats publiés par le ladder : docs/formats.md.
 
+import type { TChange } from './game.types';
+
 export type TColor = 'red' | 'black';
 
 export type TReason = 'no_moves' | 'timeout' | 'disconnect' | 'protocol' | 'no_show';
@@ -40,7 +42,8 @@ export type TTimelineRow = TRatingRow & { tournament?: true };
 
 // Ligne de summary.json (recent) et de teams/<équipe>.jsonl.
 export type TGameRow = TRatingRow & {
-  winner: TColor;
+  // `null` : nulle (jamais en Isolation).
+  winner: TColor | null;
   reason: TReason | string;
   moves: number;
   duration_ms: number;
@@ -54,6 +57,11 @@ export type TGameRow = TRatingRow & {
 
 // Partie complète de /api/games/<id>.
 export type TGame = Omit<TGameRow, 'moves' | 'node'> & {
+  // Le jeu et la version de ses règles (résultat v2).
+  game?: string;
+  game_version?: number;
+  // Effets de chaque demi-coup, ouverture comprise : /api/games/<id> les ajoute.
+  changes?: TChange[][];
   // Nom du nœud, dans /api/games/<id>.
   node?: string;
   opening?: string[];
@@ -80,7 +88,8 @@ export type TDuelSide = { team: string; build?: string };
 // Une paire complète du ladder (GET /api/stats/pairs) : deux parties, même ouverture, couleurs inversées.
 export type TDuelPair = {
   games: [string, string];
-  winners: [string, string];
+  // `null` pour une nulle.
+  winners: [string | null, string | null];
   opening: string[];
 };
 
